@@ -67,18 +67,40 @@ def get_sentence_embedding(text, tokenizer, model, device):
 
 
 async def rephrase_text_with_chatgpt(text, question_text, client):
-    if not text or client is None: return text
-    system_prompt = "Bạn là một trợ lý ngôn ngữ chuyên sửa lỗi chính tả tiếng Việt một cách chính xác."
-    user_prompt = f"""Văn bản sau là câu trả lời của sinh viên, được nhận dạng từ giọng nói. Nhiệm vụ của bạn là chỉ sửa các lỗi chính tả (ví dụ: 'chủng' thành 'chuẩn') do giọng nói vùng miền hoặc phát âm sai.
-Tuyệt đối KHÔNG được loại bỏ các từ bị lặp, không thêm từ, và không thay đổi cấu trúc hay trật tự câu gốc.
-Trả về duy nhất văn bản đã được sửa.
+    if not text or client is None: 
+        return text
+    
+    # Prompt cải tiến với ràng buộc chặt chẽ hơn
+    system_prompt = """Bạn là một trợ lý sửa lỗi văn bản tiếng Việt.
+
+NGUYÊN TẮC QUAN TRỌNG:
+1. CHỈ sửa lỗi chính tả, lỗi đánh máy, lỗi nhận dạng giọng nói
+2. KHÔNG ĐƯỢC thêm từ mới nào
+3. KHÔNG ĐƯỢC xóa từ nào (trừ từ lặp thừa)
+4. KHÔNG ĐƯỢC thay đổi cấu trúc câu
+5. KHÔNG ĐƯỢC thay đổi ý nghĩa của câu
+6. KHÔNG ĐƯỢC diễn giải lại nội dung
+
+VÍ DỤ:
+- "chủng năng" → "chuẩn năng" (đúng)
+- "tôi là sinh viên" → "tôi là một sinh viên" (SAI - đã thêm từ)
+- "tôi nói nói về" → "tôi nói về" (đúng - xóa lặp)
+- "data" → "dữ liệu" (SAI - đã thay đổi từ)
+
+Chỉ trả về văn bản đã sửa, KHÔNG thêm giải thích."""
+
+    user_prompt = f"""Câu trả lời sau được nhận dạng từ giọng nói, cần sửa lỗi:
 
 --- CÂU HỎI ---
 {question_text}
 
 --- CÂU TRẢ LỜI GỐC ---
 {text}
+
+--- YÊU CẦU ---
+Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
 """
+
     try:
         resp = await asyncio.to_thread(
             client.chat.completions.create,
@@ -87,9 +109,27 @@ Trả về duy nhất văn bản đã được sửa.
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.0,
+            temperature=0.0,  # Giảm randomness
         )
-        return resp.choices[0].message.content.strip()
+        rephrased = resp.choices[0].message.content.strip()
+        
+        # Validation: Kiểm tra độ tương đồng
+        if text and rephrased and text != rephrased:
+            # Tính độ tương đồng đơn giản dựa trên độ dài
+            len_original = len(text.split())
+            len_rephrased = len(rephrased.split())
+            ratio = len_rephrased / len_original if len_original > 0 else 1
+            
+            # Nếu độ dài thay đổi quá nhiều (> 30%), dùng bản gốc
+            if ratio < 0.7 or ratio > 1.3:
+                logger.warning(
+                    f"Rephrasing thay đổi độ dài quá nhiều: "
+                    f"{len_original} → {len_rephrased} (ratio={ratio:.2f}). "
+                    f"Sử dụng bản gốc."
+                )
+                return text
+        
+        return rephrased
     except Exception as e:
         logger.error(f"Lỗi rephrase OpenAI: {e}")
         return text
@@ -131,23 +171,38 @@ async def score_student_answer_with_openai(student_answer_raw, question_barem, o
     if openai_client is None: return 0.0, "OpenAI client chưa được khởi tạo."
 
     max_score = float(question_barem.get("max_score", 10.0))
+    
     system_prompt = (
-        "Bạn là một chuyên gia chấm điểm câu trả lời vấn đáp về khoa học dữ liệu. "
-        "Chấm điểm nghiêm ngặt theo barem dưới đây. "
-        f"Điểm tối đa cho câu hỏi này là {max_score:.2f}.\n"
-        "ĐẦU RA BẮT BUỘC: một chuỗi JSON hợp lệ duy nhất có dạng "
-        '{"diem_so": float, "phan_hoi": "string"}. '
-        "Không thêm bất kỳ văn bản nào ngoài JSON."
+        "Bạn là một chuyên gia chấm điểm câu trả lời vấn đáp về khoa học dữ liệu.\n\n"
+        "NGUYÊN TẮC CHẤM ĐIỂM:\n"
+        f"1. Chấm điểm nghiêm ngặt theo barem. Điểm tối đa: {max_score:.2f}\n"
+        "2. ẢO GIÁC DETECTION: Nếu câu trả lời có vẻ được AI tạo ra (ví dụ: quá hoàn hảo, "
+        "cấu trúc không tự nhiên, từ vựng không phù hợp với sinh viên), giảm 30-50% điểm.\n"
+        "3. Câu trả lời quá ngắn hoặc không liên quan: 0 điểm.\n"
+        "4. Câu trả lời chỉ đọc lại câu hỏi: 0 điểm.\n"
+        "5. Phải có nội dung thực sự từ sinh viên mới có điểm.\n\n"
+        "ĐẦU RA BẮT BUỘC: JSON format:\n"
+        '{"diem_so": float, "phan_hoi": "string"}\n'
+        "KHÔNG thêm văn bản nào khác ngoài JSON."
     )
-    barem_lines = [f"- {kp.get('id', 'KP')}: (Trọng số {kp.get('weight', 0)}). {kp.get('text', '')}" for kp in
-                   question_barem.get("key_points", [])]
+    
+    barem_lines = [
+        f"- {kp.get('id', 'KP')}: (Trọng số {kp.get('weight', 0)}). {kp.get('text', '')}" 
+        for kp in question_barem.get("key_points", [])
+    ]
     barem_block = "\n".join(barem_lines) if barem_lines else "(Không có key_points)"
+    
     user_prompt = (
         f"--- CÂU HỎI ---\n{question_barem.get('question', '')}\n\n"
-        f"--- BAREM ---\n{barem_block}\n\n"
-        f"--- CÂU TRẢ LỜI CỦA SINH VIÊN ---\n{student_answer_raw}\n\n"
-        f"--- HÃY CHẤM ĐIỂM DƯỚI DẠNG JSON, KHÔNG THÊM CHỮ NÀO NGOÀI JSON ---"
+        f"--- BAREM CHẤM ĐIỂM ---\n{barem_block}\n\n"
+        f"--- CÂU TRẢ LỜI SINH VIÊN (đã transcribe từ giọng nói) ---\n{student_answer_raw}\n\n"
+        f"--- CHẤM ĐIỂM ---\n"
+        f"1. Đánh giá: Câu trả lời có được sinh viên thực sự nói không?\n"
+        f"2. Chấm điểm theo barem (nếu câu trả lời hợp lệ).\n"
+        f"3. Nếu có ảo giác AI, ghi rõ trong phản hồi và giảm điểm.\n\n"
+        f"Trả về JSON duy nhất, KHÔNG thêm chữ nào khác."
     )
+    
     try:
         resp = await asyncio.to_thread(
             openai_client.chat.completions.create,
@@ -268,18 +323,52 @@ class Command(BaseCommand):
             return None
         duration, rms = wav_duration_and_rms(wav_path)
         logger.info(f"WAV duration ~ {duration:.2f}s; RMS ~ {rms:.1f}")
-        if duration < 2.0 or rms < 50:
-            msg = 'Âm thanh quá ngắn hoặc tín hiệu quá nhỏ. Vui lòng nói rõ ràng trong ít nhất 2 giây.'
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': msg})
-            if os.path.exists(wav_path): os.remove(wav_path)
-            return ""
+        
+        # Kiểm tra RMS để phát hiện silence (không có âm thanh thực)
+        # Ngưỡng RMS < 50.0 thường là silence hoặc nhiễu nền
+        RMS_THRESHOLD = 50.0
+        if rms < RMS_THRESHOLD:
+            logger.info(f"Phát hiện silence (RMS={rms:.1f} < {RMS_THRESHOLD}). Trả về 'Không có âm thanh'.")
+            await self.channel_layer.send(reply_channel, 
+                {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+            return None
+        
+        # Removed duration check - users can now submit audio of any length
         try:
-            with open(wav_path, "rb") as audio_file:
-                transcription = await asyncio.to_thread(self.openai_client.audio.transcriptions.create,
-                                                        model="whisper-1", file=audio_file, language="vi",
-                                                        temperature=0, prompt=whisper_prompt or "")
+            # Sử dụng prompt context để giúp Whisper hiểu bối cảnh tốt hơn
+            context_prompt = whisper_prompt or ""
+            if context_prompt:
+                context_prompt = f"Bối cảnh: {context_prompt}. "
+            
+            transcription = await asyncio.to_thread(
+                self.openai_client.audio.transcriptions.create,
+                model="whisper-1",
+                file=audio_file,
+                language="vi",
+                temperature=0,  # Giảm randomness
+                prompt=context_prompt,  # Context giúp hiểu từ vựng chuyên môn
+            )
+            
             raw = transcription.text.strip()
             logger.info(f"Transcript nhận được: '{raw}'")
+            
+            # Validation thêm
+            if raw:
+                # Kiểm tra nếu transcript quá ngắn
+                words = raw.split()
+                if len(words) < 3 and len(chunks) > 0:
+                    logger.warning(
+                        f"Transcript quá ngắn ({len(words)} từ) dù có dữ liệu audio. "
+                        f"Có thể lỗi transcribe."
+                    )
+            
+            # Nếu Whisper trả về chuỗi rỗng, coi như không có âm thanh
+            if not raw:
+                logger.info("Whisper trả về chuỗi rỗng. Trả về 'Không có âm thanh'.")
+                await self.channel_layer.send(reply_channel, 
+                    {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+                return None
+            
             return raw
         except Exception as e:
             logger.error(f"Lỗi Whisper: {e}")

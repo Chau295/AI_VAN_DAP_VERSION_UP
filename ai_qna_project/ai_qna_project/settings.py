@@ -21,6 +21,16 @@ ALLOWED_HOSTS = []
 
 # Application definition
 
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
 INSTALLED_APPS = [
     'channels',  # Thêm channels lên đầu
     'django.contrib.admin',
@@ -30,16 +40,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'qna',
-]
-
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 ROOT_URLCONF = 'ai_qna_project.urls'
@@ -105,9 +105,9 @@ USE_TZ = True
 
 
 # URLs
-LOGIN_URL = 'login' # Sử dụng tên URL thay vì đường dẫn cứng
-LOGIN_REDIRECT_URL = 'qna:dashboard'
+LOGIN_URL = 'login'
 LOGOUT_REDIRECT_URL = 'login'
+LOGIN_REDIRECT_URL = 'qna:post_login_redirect'
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

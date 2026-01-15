@@ -1,0 +1,383 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sinh Mã đề thi bằng AI - {{ selected_subject.name }}{% endblock %}
+
+{% block content %}
+<style>
+    .difficulty-easy { border-left: 4px solid #10b981; }
+    .difficulty-medium { border-left: 4px solid #f59e0b; }
+    .difficulty-hard { border-left: 4px solid #ef4444; }
+    .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+</style>
+
+<div class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Sinh Mã đề thi bằng AI</h1>
+                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
+            </div>
+            <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+                <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
+            </a>
+        </div>
+
+        <!-- Subject Selector -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="flex items-center gap-4">
+                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
+                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {% for subj in subjects %}
+                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Hidden field for subject_id -->
+        <input type="hidden" id="selectedSubjectId" value="{{ selected_subject.id }}">
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Upload Material & Generate Codes -->
+            <div class="space-y-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">
+                        <i class="fas fa-upload mr-2 text-blue-500"></i>Upload Tài liệu bài giảng
+                    </h2>
+                    <form id="uploadMaterialForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tiêu đề tài liệu</label>
+                            <input type="text" id="materialTitle" name="title" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" placeholder="VD: Chương 1 - Giới thiệu" required>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">File tài liệu (PDF, Word, PPT)</label>
+                            <input type="file" id="materialFile" name="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
+                            <i class="fas fa-upload mr-2"></i>Upload Tài liệu
+                        </button>
+                    </form>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">
+                        <i class="fas fa-magic mr-2 text-green-500"></i>Sinh Mã đề thi bằng AI
+                    </h2>
+                    <form id="generateCodesForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Chọn tài liệu</label>
+                            <select id="materialSelect" name="material_id" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 px-3 py-2" required>
+                                <option value="">-- Chọn tài liệu --</option>
+                                {% for material in materials %}
+                                    <option value="{{ material.id }}">{{ material.title }} ({{ material.uploaded_at|date:"d/m/Y" }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Số lượng mã đề (4, 8, 16)</label>
+                            <input type="number" id="numCodes" name="num_codes" min="1" max="16" step="1" value="4" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 px-3 py-2" required>
+                            <p class="text-xs text-gray-500 mt-1">Mỗi mã đề gồm 3 câu hỏi theo 3 mức độ: Dễ, Trung bình, Khó</p>
+                        </div>
+                        <button type="submit" id="generateBtn" class="w-full bg-green-500 text-white font-semibold py-3 px-4 rounded-lg hover:bg-green-600 transition-colors">
+                            <i class="fas fa-cogs mr-2"></i>Sinh Mã đề thi
+                        </button>
+                    </form>
+                    <div id="loadingIndicator" class="hidden text-center py-4">
+                        <div class="loading-spinner mx-auto mb-3"></div>
+                        <p class="text-gray-600">Đang sinh mã đề thi bằng AI...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending Exam Codes -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-clock mr-2 text-yellow-500"></i>Mã đề chờ duyệt
+                </h2>
+                <p class="text-gray-600 text-sm mb-4">Xem và duyệt các mã đề thi được sinh bởi AI</p>
+                
+                <div id="pendingCodesContainer" class="space-y-4 max-h-[600px] overflow-y-auto">
+                    {% if pending_exam_codes %}
+                        {% for exam_code in pending_exam_codes %}
+                            <div id="examCode_{{ exam_code.id }}" class="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div class="flex justify-between items-start mb-3">
+                                    <h3 class="font-bold text-lg text-gray-800">{{ exam_code.code_name }}</h3>
+                                    <div class="flex gap-2">
+                                        <button onclick="approveExamCode({{ exam_code.id }})" class="text-green-500 hover:text-green-700" title="Duyệt">
+                                            <i class="fas fa-check-circle"></i>
+                                        </button>
+                                        <button onclick="deleteExamCode({{ exam_code.id }})" class="text-red-500 hover:text-red-700" title="Xoá">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div class="difficulty-easy bg-green-50 p-3 rounded">
+                                        <div class="flex justify-between items-start">
+                                            <span class="text-xs font-semibold text-green-700 uppercase">Dễ</span>
+                                            <button onclick="editQuestion({{ exam_code.id }}, 'EASY')" class="text-blue-500 hover:text-blue-700 text-sm">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </div>
+                                        <p class="text-sm text-gray-700 mt-1" id="easy_text_{{ exam_code.id }}">{{ exam_code.question_easy.question_text }}</p>
+                                    </div>
+                                    <div class="difficulty-medium bg-yellow-50 p-3 rounded">
+                                        <div class="flex justify-between items-start">
+                                            <span class="text-xs font-semibold text-yellow-700 uppercase">Trung bình</span>
+                                            <button onclick="editQuestion({{ exam_code.id }}, 'MEDIUM')" class="text-blue-500 hover:text-blue-700 text-sm">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </div>
+                                        <p class="text-sm text-gray-700 mt-1" id="medium_text_{{ exam_code.id }}">{{ exam_code.question_medium.question_text }}</p>
+                                    </div>
+                                    <div class="difficulty-hard bg-red-50 p-3 rounded">
+                                        <div class="flex justify-between items-start">
+                                            <span class="text-xs font-semibold text-red-700 uppercase">Khó</span>
+                                            <button onclick="editQuestion({{ exam_code.id }}, 'HARD')" class="text-blue-500 hover:text-blue-700 text-sm">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </div>
+                                        <p class="text-sm text-gray-700 mt-1" id="hard_text_{{ exam_code.id }}">{{ exam_code.question_hard.question_text }}</p>
+                                    </div>
+                                </div>
+                                {% if exam_code.source_material %}
+                                    <p class="text-xs text-gray-500 mt-3">
+                                        <i class="fas fa-book mr-1"></i>Nguồn: {{ exam_code.source_material }}
+                                    </p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fas fa-inbox text-4xl mb-3"></i>
+                            <p>Chưa có mã đề thi nào chờ duyệt.</p>
+                            <p class="text-sm mt-2">Upload tài liệu và sinh mã đề bằng AI để bắt đầu.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Edit Question -->
+<div id="editQuestionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800">Chỉnh sửa Câu hỏi</h3>
+            <button onclick="closeEditQuestionModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <form id="editQuestionForm" class="space-y-4">
+            <input type="hidden" id="editExamCodeId" name="exam_code_id">
+            <input type="hidden" id="editDifficulty" name="difficulty">
+            <div>
+                <label id="difficultyLabel" class="block text-sm font-medium text-gray-700 mb-1">Câu hỏi</label>
+                <textarea id="editQuestionText" name="new_text" rows="4" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required></textarea>
+            </div>
+            <div class="flex justify-end gap-3 pt-4">
+                <button type="button" onclick="closeEditQuestionModal()" class="bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+                    Hủy
+                </button>
+                <button type="submit" class="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
+                    <i class="fas fa-save mr-2"></i>Lưu thay đổi
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Upload Material
+document.getElementById('uploadMaterialForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('subject_id', document.getElementById('selectedSubjectId').value);
+    
+    fetch("{% url 'qna:lecturer_upload_material_screen' %}", {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData,
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Đã upload tài liệu thành công!');
+            location.reload();
+        } else {
+            alert('Lỗi: ' + data.error);
+        }
+    });
+});
+
+// Generate Exam Codes
+document.getElementById('generateCodesForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const generateBtn = document.getElementById('generateBtn');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    
+    generateBtn.disabled = true;
+    loadingIndicator.classList.remove('hidden');
+    formData.append('subject_id', document.getElementById('selectedSubjectId').value);
+    
+    fetch("{% url 'qna:lecturer_generate_codes_with_ai_screen' %}", {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData,
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Đã sinh thành công ' + data.created_count + ' mã đề thi!');
+            location.reload();
+        } else {
+            alert('Lỗi: ' + data.error);
+        }
+    })
+    .finally(() => {
+        generateBtn.disabled = false;
+        loadingIndicator.classList.add('hidden');
+    });
+});
+
+function approveExamCode(examCodeId) {
+    if (confirm('Bạn có chắc chắn muốn duyệt mã đề thi này? Sau khi duyệt, mã đề có thể được sử dụng cho ca thi.')) {
+        const formData = new FormData();
+        fetch("{% url 'qna:lecturer_approve_exam_code' 0 %}".replace('0', examCodeId), {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('examCode_' + examCodeId).remove();
+                alert('Đã duyệt mã đề thi thành công!');
+            } else {
+                alert('Lỗi: ' + data.error);
+            }
+        });
+    }
+}
+
+function deleteExamCode(examCodeId) {
+    if (confirm('Bạn có chắc chắn muốn xoá mã đề thi này?')) {
+        fetch("{% url 'qna:lecturer_delete_exam_code' 0 %}".replace('0', examCodeId), {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('examCode_' + examCodeId).remove();
+                alert('Đã xoá mã đề thi thành công!');
+            } else {
+                alert('Lỗi: ' + data.error);
+            }
+        });
+    }
+}
+
+function editQuestion(examCodeId, difficulty) {
+    document.getElementById('editExamCodeId').value = examCodeId;
+    document.getElementById('editDifficulty').value = difficulty;
+    
+    // Get current question text
+    let textElement;
+    let labelText;
+    if (difficulty === 'EASY') {
+        textElement = document.getElementById('easy_text_' + examCodeId);
+        labelText = 'Câu hỏi Dễ';
+    } else if (difficulty === 'MEDIUM') {
+        textElement = document.getElementById('medium_text_' + examCodeId);
+        labelText = 'Câu hỏi Trung bình';
+    } else {
+        textElement = document.getElementById('hard_text_' + examCodeId);
+        labelText = 'Câu hỏi Khó';
+    }
+    
+    document.getElementById('difficultyLabel').textContent = labelText;
+    document.getElementById('editQuestionText').value = textElement.textContent.trim();
+    document.getElementById('editQuestionModal').classList.remove('hidden');
+}
+
+function closeEditQuestionModal() {
+    document.getElementById('editQuestionModal').classList.add('hidden');
+}
+
+document.getElementById('editQuestionForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const examCodeId = document.getElementById('editExamCodeId').value;
+    const difficulty = document.getElementById('editDifficulty').value;
+    const newText = document.getElementById('editQuestionText').value;
+    
+    const formData = new FormData();
+    formData.append('difficulty', difficulty);
+    formData.append('new_text', newText);
+    
+    fetch("{% url 'qna:lecturer_edit_exam_code_question' 0 %}".replace('0', examCodeId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData,
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update the displayed text
+            let textElement;
+            if (difficulty === 'EASY') {
+                textElement = document.getElementById('easy_text_' + examCodeId);
+            } else if (difficulty === 'MEDIUM') {
+                textElement = document.getElementById('medium_text_' + examCodeId);
+            } else {
+                textElement = document.getElementById('hard_text_' + examCodeId);
+            }
+            textElement.textContent = newText;
+            closeEditQuestionModal();
+            alert('Đã chỉnh sửa câu hỏi thành công!');
+        } else {
+            alert('Lỗi: ' + data.error);
+        }
+    });
+});
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

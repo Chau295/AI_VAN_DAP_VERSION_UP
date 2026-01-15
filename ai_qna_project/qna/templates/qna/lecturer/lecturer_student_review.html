@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Xem Bài làm Sinh viên - {{ subject.name }}{% endblock %}
+
+{% block content %}
+<style>
+    .score-high { color: #10b981; }
+    .score-medium { color: #f59e0b; }
+    .score-low { color: #ef4444; }
+</style>
+
+<div class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Xem Bài làm Sinh viên</h1>
+                <p class="text-lg text-gray-500">{{ subject.name }}</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{% url 'qna:lecturer_export_reports_screen' %}?subject_id={{ selected_subject.id }}" class="bg-green-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors">
+                    <i class="fas fa-file-excel mr-2"></i>Xuất Báo cáo
+                </a>
+                <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+                    <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
+                </a>
+            </div>
+        </div>
+
+        <!-- Subject Selector -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="flex items-center gap-4">
+                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
+                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {% for subj in subjects %}
+                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Thống kê -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="bg-blue-100 text-blue-500 p-3 rounded-lg mr-4">
+                        <i class="fas fa-users fa-lg"></i>
+                    </div>
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Xem Bài làm Sinh viên</h1>
+                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
+            </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="bg-green-100 text-green-500 p-3 rounded-lg mr-4">
+                        <i class="fas fa-check-circle fa-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm">Đã hoàn thành</p>
+                        <p class="text-2xl font-bold text-gray-800">{{ sessions|length }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="bg-yellow-100 text-yellow-500 p-3 rounded-lg mr-4">
+                        <i class="fas fa-star fa-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm">Điểm trung bình</p>
+                        <p class="text-2xl font-bold text-gray-800">
+                            {% widthratio sessions|length 1 0 as zero %}
+                            {% if sessions|length > 0 %}
+                                {% regroup sessions by user.username as user_sessions %}
+                                {% for user in user_sessions %}
+                                    {% for session in user.list %}
+                                        {% if forloop.first %}
+                                            {% if session.final_score %}
+                                                {% if forloop.parentloop.first %}{{ session.final_score|floatformat:1 }}{% endif %}
+                                            {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endfor %}
+                                N/A
+                            {% else %}
+                                0.0
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center">
+                    <div class="bg-red-100 text-red-500 p-3 rounded-lg mr-4">
+                        <i class="fas fa-user-times fa-lg"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm">Vắng thi</p>
+                        <p class="text-2xl font-bold text-gray-800">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Danh sách bài làm -->
+        <div class="bg-white rounded-xl shadow-md">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-clipboard-list mr-2 text-blue-500"></i>Danh sách Bài làm
+                </h2>
+                <p class="text-gray-600 text-sm mt-1">Xem chi tiết bài làm và điểm số của sinh viên</p>
+            </div>
+            <div class="p-6">
+                {% if sessions %}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-gray-600">
+                            <thead class="bg-gray-50 text-xs uppercase">
+                                <tr>
+                                    <th scope="col" class="py-3 px-4">Sinh viên</th>
+                                    <th scope="col" class="py-3 px-4">Lớp</th>
+                                    <th scope="col" class="py-3 px-4">Ngày thi</th>
+                                    <th scope="col" class="py-3 px-4">Điểm</th>
+                                    <th scope="col" class="py-3 px-4">Trạng thái</th>
+                                    <th scope="col" class="py-3 px-4 text-center">Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for session in sessions %}
+                                    <tr class="border-b hover:bg-gray-50">
+                                        <td class="py-4 px-4 font-medium">
+                                            {{ session.user.userprofile.full_name|default:session.user.username }}
+                                        </td>
+                                        <td class="py-4 px-4">
+                                            {{ session.user.userprofile.class_name|default:'-' }}
+                                        </td>
+                                        <td class="py-4 px-4">
+                                            {{ session.created_at|date:"d/m/Y H:i" }}
+                                        </td>
+                                        <td class="py-4 px-4">
+                                            {% if session.final_score %}
+                                                <span class="font-bold {% if session.final_score >= 8 %}score-high{% elif session.final_score >= 5 %}score-medium{% else %}score-low{% endif %}">
+                                                    {{ session.final_score|floatformat:1 }}
+                                                </span>
+                                            {% else %}
+                                                <span class="text-gray-400">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="py-4 px-4">
+                                            {% if session.is_completed %}
+                                                <span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Đã hoàn thành</span>
+                                            {% else %}
+                                                <span class="bg-yellow-100 text-yellow-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Đang thực hiện</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="py-4 px-4 text-center">
+                                            <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="text-blue-500 hover:text-blue-700 mx-1" title="Xem chi tiết">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-inbox text-4xl mb-3"></i>
+                        <p>Chưa có bài làm nào.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

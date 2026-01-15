@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Quản lý Câu hỏi & Mã đề - {{ selected_subject.name }}{% endblock %}
+
+{% block content %}
+<style>
+    .difficulty-easy { border-left: 4px solid #10b981; }
+    .difficulty-medium { border-left: 4px solid #f59e0b; }
+    .difficulty-hard { border-left: 4px solid #ef4444; }
+</style>
+
+<div class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Quản lý Câu hỏi & Mã đề thi</h1>
+                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
+            </div>
+            <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+                <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
+            </a>
+        </div>
+
+        <!-- Subject Selector -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="flex items-center gap-4">
+                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
+                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {% for subj in subjects %}
+                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Hidden field for subject_id -->
+        <input type="hidden" id="selectedSubjectId" value="{{ selected_subject.id }}">
+
+        <!-- Danh sách Mã đề thi đã duyệt -->
+        <div class="bg-white rounded-xl shadow-md mb-8">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-file-alt mr-2 text-blue-500"></i>Mã đề thi đã duyệt
+                </h2>
+                <p class="text-gray-600 text-sm mt-1">Danh sách các mã đề thi đã được duyệt và có thể sử dụng cho ca thi</p>
+            </div>
+            <div class="p-6">
+                {% if exam_codes %}
+                    <div class="space-y-4">
+                        {% for exam_code in exam_codes %}
+                            <div class="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div class="flex justify-between items-start mb-3">
+                                    <h3 class="font-bold text-lg text-gray-800">{{ exam_code.code_name }}</h3>
+                                    <div class="flex gap-2">
+                                        <button onclick="editExamCode({{ exam_code.id }})" class="text-blue-500 hover:text-blue-700">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button onclick="deleteExamCode({{ exam_code.id }})" class="text-red-500 hover:text-red-700">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="difficulty-easy bg-green-50 p-3 rounded">
+                                        <span class="text-xs font-semibold text-green-700 uppercase">Dễ</span>
+                                        <p class="text-sm text-gray-700 mt-1">{{ exam_code.question_easy.question_text|truncatewords:10 }}</p>
+                                    </div>
+                                    <div class="difficulty-medium bg-yellow-50 p-3 rounded">
+                                        <span class="text-xs font-semibold text-yellow-700 uppercase">Trung bình</span>
+                                        <p class="text-sm text-gray-700 mt-1">{{ exam_code.question_medium.question_text|truncatewords:10 }}</p>
+                                    </div>
+                                    <div class="difficulty-hard bg-red-50 p-3 rounded">
+                                        <span class="text-xs font-semibold text-red-700 uppercase">Khó</span>
+                                        <p class="text-sm text-gray-700 mt-1">{{ exam_code.question_hard.question_text|truncatewords:10 }}</p>
+                                    </div>
+                                </div>
+                                {% if exam_code.source_material %}
+                                    <p class="text-xs text-gray-500 mt-3">
+                                        <i class="fas fa-book mr-1"></i>Nguồn: {{ exam_code.source_material }}
+                                    </p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-inbox text-4xl mb-3"></i>
+                        <p>Chưa có mã đề thi nào được duyệt.</p>
+                        <a href="{% url 'qna:lecturer_generate_codes_screen' %}?subject_id={{ selected_subject.id }}" class="text-blue-500 hover:text-blue-700 mt-2 inline-block">
+                            <i class="fas fa-magic mr-1"></i>Sinh mã đề bằng AI
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Danh sách tất cả câu hỏi -->
+        <div class="bg-white rounded-xl shadow-md">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-list mr-2 text-green-500"></i>Tất cả câu hỏi trong môn học
+                </h2>
+                <p class="text-gray-600 text-sm mt-1">Danh sách tất cả câu hỏi có sẵn để sử dụng cho mã đề thi</p>
+            </div>
+            <div class="p-6">
+                {% if all_questions %}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-gray-600">
+                            <thead class="bg-gray-50 text-xs uppercase">
+                                <tr>
+                                    <th scope="col" class="py-3 px-4">ID</th>
+                                    <th scope="col" class="py-3 px-4">Nội dung câu hỏi</th>
+                                    <th scope="col" class="py-3 px-4">Loại</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for question in all_questions %}
+                                    <tr class="border-b hover:bg-gray-50">
+                                        <td class="py-4 px-4 font-medium">{{ question.question_id_in_barem }}</td>
+                                        <td class="py-4 px-4">{{ question.question_text|truncatewords:15 }}</td>
+                                        <td class="py-4 px-4">
+                                            {% if question.is_supplementary %}
+                                                <span class="bg-purple-100 text-purple-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Phụ</span>
+                                            {% else %}
+                                                <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Chính</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-question-circle text-4xl mb-3"></i>
+                        <p>Chưa có câu hỏi nào trong môn học này.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Edit Exam Code -->
+<div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800">Chỉnh sửa Mã đề thi</h3>
+            <button onclick="closeEditModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <form id="editExamCodeForm" class="space-y-4">
+            <input type="hidden" id="editExamCodeId" name="exam_code_id">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Câu hỏi Dễ</label>
+                <select id="editEasyQuestion" name="easy_question" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+                    <option value="">-- Chọn câu hỏi --</option>
+                    {% for q in all_questions %}
+                        <option value="{{ q.id }}">{{ q.question_text|truncatewords:15 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Câu hỏi Trung bình</label>
+                <select id="editMediumQuestion" name="medium_question" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+                    <option value="">-- Chọn câu hỏi --</option>
+                    {% for q in all_questions %}
+                        <option value="{{ q.id }}">{{ q.question_text|truncatewords:15 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Câu hỏi Khó</label>
+                <select id="editHardQuestion" name="hard_question" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2">
+                    <option value="">-- Chọn câu hỏi --</option>
+                    {% for q in all_questions %}
+                        <option value="{{ q.id }}">{{ q.question_text|truncatewords:15 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex justify-end gap-3 pt-4">
+                <button type="button" onclick="closeEditModal()" class="bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+                    Hủy
+                </button>
+                <button type="submit" class="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
+                    <i class="fas fa-save mr-2"></i>Lưu thay đổi
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function editExamCode(examCodeId) {
+    document.getElementById('editExamCodeId').value = examCodeId;
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+}
+
+function deleteExamCode(examCodeId) {
+    if (confirm('Bạn có chắc chắn muốn xoá mã đề thi này?')) {
+        fetch("{% url 'qna:lecturer_delete_exam_code' 0 %}".replace('0', examCodeId), {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Lỗi: ' + data.error);
+            }
+        });
+    }
+}
+
+document.getElementById('editExamCodeForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const examCodeId = document.getElementById('editExamCodeId').value;
+    
+    // Update easy question
+    const easyQuestionId = document.getElementById('editEasyQuestion').value;
+    if (easyQuestionId) {
+        updateQuestion(examCodeId, 'EASY', easyQuestionId);
+    }
+    
+    // Update medium question
+    const mediumQuestionId = document.getElementById('editMediumQuestion').value;
+    if (mediumQuestionId) {
+        updateQuestion(examCodeId, 'MEDIUM', mediumQuestionId);
+    }
+    
+    // Update hard question
+    const hardQuestionId = document.getElementById('editHardQuestion').value;
+    if (hardQuestionId) {
+        updateQuestion(examCodeId, 'HARD', hardQuestionId);
+    }
+    
+    closeEditModal();
+    setTimeout(() => location.reload(), 500);
+});
+
+function updateQuestion(examCodeId, difficulty, questionId) {
+    const formData = new FormData();
+    formData.append('difficulty', difficulty);
+    formData.append('question_id', questionId);
+    
+    fetch("{% url 'qna:lecturer_update_exam_code_question' 0 %}".replace('0', examCodeId), {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData,
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert('Lỗi: ' + data.error);
+        }
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}
