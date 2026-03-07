@@ -1,0 +1,19 @@
+# Môi trường ảo
+.venv/
+venv/
+env/
+
+# Cache & Bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Database local
+db.sqlite3
+
+# Thư mục chứa file tải lên (media) và static gom lại (staticfiles)
+media/
+staticfiles/
+
+# Biến môi trường local
+.env
