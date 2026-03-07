@@ -1,19 +1,24 @@
-# Môi trường ảo
+.idea/
+__pycache__/
+*.py[cod]
+*$py.class
+
 .venv/
 venv/
 env/
 
-# Cache & Bytecode
-__pycache__/
-*.pyc
-*.pyo
-
-# Database local
 db.sqlite3
+*.sqlite3
 
-# Thư mục chứa file tải lên (media) và static gom lại (staticfiles)
 media/
 staticfiles/
 
-# Biến môi trường local
+temp_audio_*.webm
+*.wav
+
 .env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
