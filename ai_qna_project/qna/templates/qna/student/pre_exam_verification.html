@@ -55,10 +55,6 @@
           <h2 class="text-xl font-semibold text-gray-800">Bắt đầu thi</h2>
         </div>
         
-        <div id="verification-status" class="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-          <p class="text-gray-600">Vui lòng chụp ảnh khuôn mặt trước khi bắt đầu thi</p>
-        </div>
-        
         <div class="mt-4 flex justify-center">
           <button id="start-exam-btn" disabled class="bg-purple-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg">
             <i class="fas fa-play-circle mr-2"></i>Vào thi
@@ -201,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Enable start exam button
     elements.startExamBtn.disabled = false;
-    updateVerificationStatus('info', 'Sẵn sàng. Nhấn nút "Vào thi" để bắt đầu bài thi.');
+
   }
 
   // Start exam

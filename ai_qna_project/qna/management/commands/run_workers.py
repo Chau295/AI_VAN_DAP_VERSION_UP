@@ -21,7 +21,16 @@ from django.conf import settings
 from channels.layers import get_channel_layer
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ObjectDoesNotExist
-from qna.models import Question, ExamSession, ExamResult, SupplementaryResult
+from qna.models import (
+    Question,
+    ExamSession,
+    ExamResult,
+    SupplementaryResult,
+    Subject,
+    LectureMaterial,
+)
+from django.core.cache import cache
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +76,9 @@ def get_sentence_embedding(text, tokenizer, model, device):
 
 
 async def rephrase_text_with_chatgpt(text, question_text, client):
-    if not text or client is None: 
+    if not text or client is None:
         return text
-    
+
     # Prompt cải tiến với ràng buộc chặt chẽ hơn
     system_prompt = """Bạn là một trợ lý sửa lỗi văn bản tiếng Việt.
 
@@ -112,14 +121,14 @@ Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
             temperature=0.0,  # Giảm randomness
         )
         rephrased = resp.choices[0].message.content.strip()
-        
+
         # Validation: Kiểm tra độ tương đồng
         if text and rephrased and text != rephrased:
             # Tính độ tương đồng đơn giản dựa trên độ dài
             len_original = len(text.split())
             len_rephrased = len(rephrased.split())
             ratio = len_rephrased / len_original if len_original > 0 else 1
-            
+
             # Nếu độ dài thay đổi quá nhiều (> 30%), dùng bản gốc
             if ratio < 0.7 or ratio > 1.3:
                 logger.warning(
@@ -128,7 +137,7 @@ Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
                     f"Sử dụng bản gốc."
                 )
                 return text
-        
+
         return rephrased
     except Exception as e:
         logger.error(f"Lỗi rephrase OpenAI: {e}")
@@ -167,11 +176,12 @@ def score_student_answer_traditional(student_answer_raw, question_barem, tokeniz
             total_score += float(kp.get("weight", 0.0))
     return min(total_score, float(question_barem.get("max_score", 10.0)))
 
+
 async def score_student_answer_with_openai(student_answer_raw, question_barem, openai_client, model_name="gpt-4o-mini"):
     if openai_client is None: return 0.0, "OpenAI client chưa được khởi tạo."
 
     max_score = float(question_barem.get("max_score", 10.0))
-    
+
     system_prompt = (
         "Bạn là một chuyên gia chấm điểm câu trả lời vấn đáp về khoa học dữ liệu.\n\n"
         "NGUYÊN TẮC CHẤM ĐIỂM:\n"
@@ -185,13 +195,13 @@ async def score_student_answer_with_openai(student_answer_raw, question_barem, o
         '{"diem_so": float, "phan_hoi": "string"}\n'
         "KHÔNG thêm văn bản nào khác ngoài JSON."
     )
-    
+
     barem_lines = [
-        f"- {kp.get('id', 'KP')}: (Trọng số {kp.get('weight', 0)}). {kp.get('text', '')}" 
+        f"- {kp.get('id', 'KP')}: (Trọng số {kp.get('weight', 0)}). {kp.get('text', '')}"
         for kp in question_barem.get("key_points", [])
     ]
     barem_block = "\n".join(barem_lines) if barem_lines else "(Không có key_points)"
-    
+
     user_prompt = (
         f"--- CÂU HỎI ---\n{question_barem.get('question', '')}\n\n"
         f"--- BAREM CHẤM ĐIỂM ---\n{barem_block}\n\n"
@@ -202,7 +212,7 @@ async def score_student_answer_with_openai(student_answer_raw, question_barem, o
         f"3. Nếu có ảo giác AI, ghi rõ trong phản hồi và giảm điểm.\n\n"
         f"Trả về JSON duy nhất, KHÔNG thêm chữ nào khác."
     )
-    
+
     try:
         resp = await asyncio.to_thread(
             openai_client.chat.completions.create,
@@ -237,6 +247,27 @@ def convert_webm_to_wav(webm_path: str) -> Optional[str]:
     except FileNotFoundError:
         logger.error("Lỗi: không tìm thấy 'ffmpeg' trong PATH.")
         return None
+
+
+def extract_material_text(material) -> str:
+    path = material.file_path or ""
+    lower = path.lower()
+
+    try:
+        if lower.endswith(".txt"):
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+
+        if lower.endswith(".pdf"):
+            return f"[PDF] {material.title}"
+
+        if lower.endswith(".docx"):
+            return f"[DOCX] {material.title}"
+
+    except Exception as e:
+        logger.warning(f"Không thể đọc file {path}: {e}")
+
+    return f"[UNKNOWN] {material.title}"
 
 
 # ====== WORKER CLASS ======
@@ -323,23 +354,23 @@ class Command(BaseCommand):
             return None
         duration, rms = wav_duration_and_rms(wav_path)
         logger.info(f"WAV duration ~ {duration:.2f}s; RMS ~ {rms:.1f}")
-        
+
         # Kiểm tra RMS để phát hiện silence (không có âm thanh thực)
         # Ngưỡng RMS < 50.0 thường là silence hoặc nhiễu nền
         RMS_THRESHOLD = 50.0
         if rms < RMS_THRESHOLD:
             logger.info(f"Phát hiện silence (RMS={rms:.1f} < {RMS_THRESHOLD}). Trả về 'Không có âm thanh'.")
-            await self.channel_layer.send(reply_channel, 
-                {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+            await self.channel_layer.send(reply_channel,
+                                          {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
             return None
-        
+
         # Removed duration check - users can now submit audio of any length
         try:
             # Sử dụng prompt context để giúp Whisper hiểu bối cảnh tốt hơn
             context_prompt = whisper_prompt or ""
             if context_prompt:
                 context_prompt = f"Bối cảnh: {context_prompt}. "
-            
+
             transcription = await asyncio.to_thread(
                 self.openai_client.audio.transcriptions.create,
                 model="whisper-1",
@@ -348,10 +379,10 @@ class Command(BaseCommand):
                 temperature=0,  # Giảm randomness
                 prompt=context_prompt,  # Context giúp hiểu từ vựng chuyên môn
             )
-            
+
             raw = transcription.text.strip()
             logger.info(f"Transcript nhận được: '{raw}'")
-            
+
             # Validation thêm
             if raw:
                 # Kiểm tra nếu transcript quá ngắn
@@ -361,14 +392,14 @@ class Command(BaseCommand):
                         f"Transcript quá ngắn ({len(words)} từ) dù có dữ liệu audio. "
                         f"Có thể lỗi transcribe."
                     )
-            
+
             # Nếu Whisper trả về chuỗi rỗng, coi như không có âm thanh
             if not raw:
                 logger.info("Whisper trả về chuỗi rỗng. Trả về 'Không có âm thanh'.")
-                await self.channel_layer.send(reply_channel, 
-                    {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+                await self.channel_layer.send(reply_channel,
+                                              {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
                 return None
-            
+
             return raw
         except Exception as e:
             logger.error(f"Lỗi Whisper: {e}")
@@ -492,13 +523,140 @@ class Command(BaseCommand):
             logger.error(f"Lỗi không mong muốn trong process_supplementary_question: {e}", exc_info=True)
             await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': f'Lỗi worker: {str(e)}'})
 
+    async def process_generate_questions(self, message):
+        job_id = message["job_id"]
+        subject_id = message["subject_id"]
+        document_ids = message["document_ids"]
+        total_count = message["total_count"]
+        level_config = message["level_config"]
+
+        cache_key = f"qna_question_job_{job_id}"
+
+        try:
+            cache.set(cache_key, {
+                "status": "PROCESSING",
+                "progress": 20,
+                "questions": [],
+                "summary": {},
+                "error_message": "",
+            }, timeout=1800)
+
+            subject = await sync_to_async(Subject.objects.get)(id=subject_id)
+            materials = await sync_to_async(list)(
+                LectureMaterial.objects.filter(subject=subject, id__in=document_ids)
+            )
+
+            doc_text_parts = []
+            for m in materials:
+                text = await sync_to_async(extract_material_text)(m)
+                doc_text_parts.append(f"--- Nguồn: {m.title} ---\n{text[:5000]}")
+
+            doc_text = "\n\n".join(doc_text_parts)
+
+            easy = int(level_config.get("easy", 0))
+            medium = int(level_config.get("medium", 0))
+            hard = int(level_config.get("hard", 0))
+
+            system_prompt = (
+                "Bạn là một chuyên gia học thuật ra đề thi vấn đáp đại học.\n"
+                "Nhiệm vụ: Dựa vào nội dung tài liệu được cung cấp, tạo câu hỏi đúng với số lượng và mức độ được yêu cầu.\n"
+                "ĐẦU RA BẮT BUỘC: JSON object theo format "
+                '{"questions": [{"content": "...", "difficulty": "EASY|MEDIUM|HARD", "source": "tên tài liệu"}]}'
+            )
+
+            user_prompt = f"""
+                Tạo tổng cộng {total_count} câu hỏi:
+                - EASY: {easy}
+                - MEDIUM: {medium}
+                - HARD: {hard}
+
+                Dựa trên tài liệu sau:
+                {doc_text}
+                """
+
+            if self.openai_client is None:
+                raise RuntimeError("OpenAI client chưa được khởi tạo.")
+
+            resp = await asyncio.to_thread(
+                self.openai_client.chat.completions.create,
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                temperature=0.7,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+
+            data = json.loads(resp.choices[0].message.content)
+            questions_data = data.get("questions", [])
+
+            formatted_questions = []
+            for q in questions_data:
+                diff = str(q.get("difficulty", "MEDIUM")).upper()
+                if diff not in ["EASY", "MEDIUM", "HARD"]:
+                    diff = "MEDIUM"
+
+                content = (q.get("content") or "").strip()
+
+                # ==== BẮT BUỘC LƯU VÀO DATABASE VỚI TIỀN TỐ DRAFT_ ====
+                new_q = await sync_to_async(Question.objects.create)(
+                    subject=subject,
+                    question_text=content,
+                    difficulty=diff,
+                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}",  # Lưu dưới dạng nháp
+                    is_supplementary=False
+                )
+
+                formatted_questions.append({
+                    "id": new_q.id,
+                    "content": content,
+                    "difficulty": diff,
+                    "source": q.get("source", subject.name),
+                    "created_at": timezone.now().strftime("%d/%m/%Y"),
+                })
+
+            summary = {
+                "all": len(formatted_questions),
+                "easy": len([q for q in formatted_questions if q["difficulty"] == "EASY"]),
+                "medium": len([q for q in formatted_questions if q["difficulty"] == "MEDIUM"]),
+                "hard": len([q for q in formatted_questions if q["difficulty"] == "HARD"]),
+            }
+
+            cache.set(cache_key, {
+                "status": "COMPLETE",
+                "progress": 100,
+                "questions": formatted_questions,
+                "summary": summary,
+                "error_message": "",
+            }, timeout=1800)
+
+            logger.info(f"Đã sinh xong {len(formatted_questions)} câu hỏi cho job_id={job_id}")
+
+        except Exception as exc:
+            logger.error(f"Lỗi khi sinh câu hỏi (job {job_id}): {exc}", exc_info=True)
+            cache.set(cache_key, {
+                "status": "FAIL",
+                "progress": 100,
+                "questions": [],
+                "summary": {},
+                "error_message": str(exc),
+            }, timeout=1800)
+
     async def run(self):
-        logger.info("Worker đang lắng nghe trên kênh 'asr-tasks'...")
+        logger.info("Worker đang lắng nghe trên kênh 'asr-tasks'.")
         while True:
             message = await self.channel_layer.receive('asr-tasks')
             task_type = message.get('type')
+
+            if task_type == 'ai.generate_questions':
+                logger.info(f"Nhận lệnh sinh câu hỏi AI, job_id={message.get('job_id')}")
+                asyncio.create_task(self.process_generate_questions(message))
+                continue
+
             reply_channel = message.get('reply_channel')
-            if not reply_channel: continue
+            if not reply_channel:
+                continue
 
             if task_type == 'asr.stream.start':
                 logger.info(f"Bắt đầu stream cho kênh {reply_channel}")
@@ -514,6 +672,7 @@ class Command(BaseCommand):
                 if not chunks:
                     logger.warning(f"Không có chunk audio nào để xử lý cho kênh {reply_channel}. Bỏ qua.")
                     continue
+
                 message['__chunks'] = chunks
                 if mode in ('main', 'primary'):
                     asyncio.create_task(self.process_main_question(message))

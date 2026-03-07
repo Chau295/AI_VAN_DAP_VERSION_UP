@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'qna',
+    'daphne',
 ]
 
 ROOT_URLCONF = 'ai_qna_project.urls'
@@ -135,4 +136,11 @@ CHANNEL_LAYERS = {
             "hosts": [("127.0.0.1", 6379)],
         },
     },
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",  # /1 nghĩa là dùng database số 1 của Redis cho việc cache
+    }
 }

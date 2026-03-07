@@ -98,45 +98,17 @@
                     <span class="ml-3">Dashboard</span>
                 </a>
 
-                <!-- 2. Môn học (Subjects) - Submenu -->
-                <div>
-                    <button onclick="toggleSubmenu('subjectMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
-                        <div class="flex items-center">
-                            <i class="fas fa-book w-6 text-gray-300"></i>
-                            <span class="ml-3">Môn học</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-gray-400 transition-transform" id="subjectMenuArrow"></i>
-                    </button>
-                    <div id="subjectMenu" class="submenu ml-6 space-y-1">
-                        <a href="{% url 'qna:lecturer_subject_list' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_subject_list' %}active{% endif %}">
-                            <i class="fas fa-list w-5 mr-2"></i>Danh sách môn học
-                        </a>
-                        {% for subject in user.userprofile.subjects_taught.all %}
-                        <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_subject_workspace' and request.resolver_match.kwargs.subject_code == subject.subject_code %}active{% endif %}">
-                            <i class="fas fa-tasks w-5 mr-2"></i>Quản lý môn học: {{ subject.name }}
-                        </a>
-                        {% endfor %}
-                    </div>
-                </div>
+                <!-- 2. Quản lý câu hỏi (Question Management) -->
+                <a href="{% url 'qna:lecturer_questions_screen' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_questions_screen' %}active{% endif %}">
+                    <i class="fas fa-question-circle w-6 text-gray-300"></i>
+                    <span class="ml-3">Quản lý câu hỏi</span>
+                </a>
 
-                <!-- 3. Câu hỏi & Đề thi (Questions & Exam Codes) - Submenu -->
-                <div>
-                    <button onclick="toggleSubmenu('questionMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
-                        <div class="flex items-center">
-                            <i class="fas fa-question-circle w-6 text-gray-300"></i>
-                            <span class="ml-3">Câu hỏi & Đề thi</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-gray-400 transition-transform" id="questionMenuArrow"></i>
-                    </button>
-                    <div id="questionMenu" class="submenu ml-6 space-y-1">
-                        <a href="{% url 'qna:lecturer_questions_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_questions_screen' %}active{% endif %}">
-                            <i class="fas fa-edit w-5 mr-2"></i>Quản lý câu hỏi
-                        </a>
-                        <a href="{% url 'qna:lecturer_generate_codes_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_generate_codes_screen' %}active{% endif %}">
-                            <i class="fas fa-magic w-5 mr-2"></i>Sinh mã đề bằng AI
-                        </a>
-                    </div>
-                </div>
+                <!-- 3. Quản lý đề thi (Exam Management) -->
+                <a href="{% url 'qna:lecturer_exam_codes_screen' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_exam_codes_screen' or request.resolver_match.url_name == 'lecturer_generate_codes_screen' %}active{% endif %}">
+                    <i class="fas fa-file-alt w-6 text-gray-300"></i>
+                    <span class="ml-3">Quản lý đề thi</span>
+                </a>
 
                 <!-- 4. Ca thi (Exam Sessions) - Submenu -->
                 <div>
@@ -202,10 +174,18 @@
                 <!-- ============ MENU CHUNG ============ -->
                 
                 <!-- Thông tin cá nhân -->
-                <a href="{% url 'qna:profile' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
-                    <i class="fas fa-user w-6 text-gray-300"></i>
-                    <span class="ml-3">Thông tin cá nhân</span>
-                </a>
+
+                {% if user.userprofile.is_lecturer %}
+                    <a href="{% url 'qna:lecturer_profile' %}"class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
+                        <i class="fas fa-user w-6 text-gray-300"></i>
+                        <span class="ml-3">Thông tin cá nhân</span>
+                    </a>
+                {% else %}
+                    <a href="{% url 'qna:profile' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
+                        <i class="fas fa-user w-6 text-gray-300"></i>
+                        <span class="ml-3">Thông tin cá nhân</span>
+                    </a>
+                {% endif %}
             </nav>
 
             <!-- Logout -->
