@@ -1,0 +1,81 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="vi" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - DUE-EXAM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Thêm một font chữ đẹp hơn từ Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Be Vietnam Pro', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <main class="flex items-center justify-center min-h-screen w-full p-4">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-8">
+                <img src="{% static 'images/logo.jpg' %}" alt="Logo" class="w-24 h-24 mx-auto mb-4 rounded-full shadow-lg border-4 border-white">
+                <h1 class="text-3xl font-bold text-gray-800">Chào mừng trở lại!</h1>
+                <p class="text-gray-500 mt-2">Đăng nhập để tiếp tục với hệ thống thi DUE-EXAM.</p>
+            </div>
+
+            <div class="bg-white p-8 rounded-2xl shadow-xl">
+                <form method="post" class="space-y-6">
+                    {% csrf_token %}
+
+                    {% if messages or form.non_field_errors %}
+                        <div class="space-y-3">
+                            {% if messages %}
+                                {% for message in messages %}
+                                     <div class="p-3 rounded-lg text-sm font-medium {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'success' %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                                        {{ message }}
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                            {% if form.non_field_errors %}
+                                <div class="p-3 rounded-lg text-sm font-medium bg-red-100 text-red-800">
+                                    {% for error in form.non_field_errors %}
+                                        <p>{{ error }}</p>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+
+                    <div>
+                        <label for="{{ form.username.id_for_label }}" class="block text-sm font-medium text-gray-700">Mã sinh viên (Tên đăng nhập)</label>
+                        <div class="mt-1">
+                            <input type="text" name="{{ form.username.name }}" id="{{ form.username.id_for_label }}"
+                                   class="appearance-none block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-shadow"
+                                   placeholder="Nhập mã sinh viên của bạn" required>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="{{ form.password.id_for_label }}" class="block text-sm font-medium text-gray-700">Mật khẩu</label>
+                        <div class="mt-1">
+                            <input type="password" name="{{ form.password.name }}" id="{{ form.password.id_for_label }}"
+                                   class="appearance-none block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-shadow"
+                                   placeholder="Nhập mật khẩu" required>
+                        </div>
+                    </div>
+
+                    <input type="hidden" name="next" value="{{ next }}">
+
+                    <div>
+                        <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300">
+                             Đăng nhập
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+</body>
+</html>

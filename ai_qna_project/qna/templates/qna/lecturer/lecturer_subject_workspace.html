@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Quản lý môn học - {{ subject.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-2">{{ subject.name }}</h2>
+            <p class="text-gray-500">
+                <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-semibold">
+                    {{ subject.subject_code }}
+                </span>
+            </p>
+        </div>
+        <div class="flex space-x-2">
+            <a href="{% url 'qna:lecturer_subject_dashboard' subject.subject_code %}" 
+               class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                <i class="fas fa-chart-line mr-2"></i>Xem Dashboard
+            </a>
+            <a href="{% url 'qna:lecturer_subject_list' %}" 
+               class="bg-gray-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition-colors">
+                <i class="fas fa-arrow-left mr-2"></i>Quay lại
+            </a>
+        </div>
+    </div>
+
+    <!-- Thống kê nhanh -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Tổng số kỳ thi</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ total_exams }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <i class="fas fa-clipboard-list text-blue-500 text-3xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Kỳ thi hoàn thành</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ completed_exams }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <i class="fas fa-check-circle text-green-500 text-3xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Ca thi sắp tới</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ upcoming_groups|length }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <i class="fas fa-calendar-alt text-purple-500 text-3xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Mã đề đã duyệt</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ approved_codes }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <i class="fas fa-file-code text-orange-500 text-3xl"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Các hành động nhanh -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+        <h3 class="text-xl font-bold text-gray-800 mb-4">Hành động nhanh</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <a href="{% url 'qna:lecturer_generate_codes_screen' %}?subject_id={{ subject.id }}" 
+               class="flex items-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-robot text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Sinh mã đề bằng AI</p>
+                    <p class="text-sm text-gray-500">Tạo câu hỏi từ tài liệu</p>
+                </div>
+            </a>
+
+            <a href="{% url 'qna:lecturer_questions_screen' %}?subject_id={{ subject.id }}" 
+               class="flex items-center p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors border border-green-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-question-circle text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Quản lý câu hỏi</p>
+                    <p class="text-sm text-gray-500">Thêm, sửa, xoá câu hỏi</p>
+                </div>
+            </a>
+
+            <a href="{% url 'qna:lecturer_create_session_screen' %}?subject_id={{ subject.id }}" 
+               class="flex items-center p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors border border-purple-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-calendar-plus text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Tạo ca thi mới</p>
+                    <p class="text-sm text-gray-500">Lên lịch cho kỳ thi</p>
+                </div>
+            </a>
+
+            <a href="{% url 'qna:lecturer_student_review_screen' %}?subject_id={{ subject.id }}" 
+               class="flex items-center p-4 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors border border-orange-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-users text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Xem bài làm sinh viên</p>
+                    <p class="text-sm text-gray-500">Đánh giá kết quả thi</p>
+                </div>
+            </a>
+
+            <a href="{% url 'qna:lecturer_export_reports_screen' %}?subject_id={{ subject.id }}" 
+               class="flex items-center p-4 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-file-export text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Xuất báo cáo</p>
+                    <p class="text-sm text-gray-500">Tải xuống kết quả</p>
+                </div>
+            </a>
+
+            <a href="{% url 'qna:lecturer_manage_rooms' %}" 
+               class="flex items-center p-4 bg-pink-50 rounded-lg hover:bg-pink-100 transition-colors border border-pink-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-pink-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-door-open text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Quản lý phòng thi</p>
+                    <p class="text-sm text-gray-500">Thêm, xoá phòng thi</p>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Ca thi sắp tới -->
+    {% if upcoming_groups %}
+    <div class="bg-white rounded-xl shadow-md p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800">Ca thi sắp tới</h3>
+            <a href="{% url 'qna:lecturer_exam_sessions_list' %}?subject_id={{ subject.id }}" 
+               class="text-blue-600 hover:text-blue-900 font-medium">
+                Xem tất cả <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+        </div>
+        <div class="space-y-3">
+            {% for group in upcoming_groups %}
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 mr-4">
+                        <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-calendar text-purple-600"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="font-semibold text-gray-900">{{ group.group_name }}</p>
+                        <p class="text-sm text-gray-500">
+                            <i class="fas fa-clock mr-1"></i>
+                            {{ group.exam_date|date:"H:i d/m/Y" }}
+                            <span class="mx-2">|</span>
+                            <i class="fas fa-hourglass-half mr-1"></i>
+                            {{ group.duration_minutes }} phút
+                        </p>
+                    </div>
+                </div>
+                <span class="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                    {{ group.get_status_display }}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

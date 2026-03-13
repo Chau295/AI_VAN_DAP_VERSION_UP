@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Danh sách Ca thi - {{ selected_subject.name }}{% endblock %}
+
+{% block content %}
+<style>
+    .status-draft { background-color: #e5e7eb; color: #6b7280; }
+    .status-scheduled { background-color: #dbeafe; color: #1d4ed8; }
+    .status-ongoing { background-color: #d1fae5; color: #059669; }
+    .status-completed { background-color: #f3f4f6; color: #4b5563; }
+    .status-cancelled { background-color: #fee2e2; color: #dc2626; }
+</style>
+
+<div class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Danh sách Ca thi</h1>
+                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
+            </div>
+            <div class="flex gap-3">
+                <a href="{% url 'qna:lecturer_create_session_screen' %}?subject_id={{ selected_subject.id }}" class="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg shadow hover:bg-blue-600 transition-colors">
+                    <i class="fas fa-plus mr-2"></i>Tạo Ca thi mới
+                </a>
+                <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+                    <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
+                </a>
+            </div>
+        </div>
+
+        <!-- Subject Selector -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div class="flex items-center gap-4">
+                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
+                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {% for subj in subjects %}
+                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Hidden field for subject_id -->
+        <input type="hidden" id="selectedSubjectId" value="{{ selected_subject.id }}">
+
+        <!-- Statistics -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-600 text-sm">Tổng số ca thi</p>
+                        <p class="text-2xl font-bold text-gray-800">{{ exam_groups|length }}</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fas fa-calendar text-blue-500 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-600 text-sm">Đã lên lịch</p>
+                        <p class="text-2xl font-bold text-blue-600">{{ exam_groups|length }}</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <i class="fas fa-clock text-green-500 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-600 text-sm">Đang diễn ra</p>
+                        <p class="text-2xl font-bold text-green-600">0</p>
+                    </div>
+                    <div class="bg-yellow-100 p-3 rounded-full">
+                        <i class="fas fa-play text-yellow-500 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-600 text-sm">Đã hoàn thành</p>
+                        <p class="text-2xl font-bold text-gray-600">0</p>
+                    </div>
+                    <div class="bg-gray-100 p-3 rounded-full">
+                        <i class="fas fa-check text-gray-500 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exam Groups List -->
+        <div class="bg-white rounded-xl shadow-md">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-list mr-2 text-blue-500"></i>Danh sách Ca thi
+                </h2>
+                <p class="text-gray-600 text-sm mt-1">Quản lý và theo dõi các ca thi đã tạo</p>
+            </div>
+            <div class="p-6">
+                {% if exam_groups %}
+                    <div class="space-y-4">
+                        {% for exam_group in exam_groups %}
+                            <div class="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div class="flex justify-between items-start mb-3">
+                                    <div>
+                                        <h3 class="font-bold text-lg text-gray-800">{{ exam_group.group_name }}</h3>
+                                        <p class="text-sm text-gray-500">
+                                            <i class="fas fa-calendar mr-1"></i>{{ exam_group.exam_date|date:"d/m/Y H:i" }}
+                                            <span class="mx-2">|</span>
+                                            <i class="fas fa-clock mr-1"></i>{{ exam_group.duration_minutes }} phút
+                                        </p>
+                                    </div>
+                                    <span class="text-xs px-3 py-1 rounded-full font-medium status-{{ exam_group.status|lower }}">
+                                        {% if exam_group.status == 'DRAFT' %}Nháp
+                                        {% elif exam_group.status == 'SCHEDULED' %}Đã lên lịch
+                                        {% elif exam_group.status == 'ONGOING' %}Đang diễn ra
+                                        {% elif exam_group.status == 'COMPLETED' %}Đã kết thúc
+                                        {% else %}Đã hủy{% endif %}
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
+                                    <div>
+                                        <i class="fas fa-file-alt mr-1 text-blue-500"></i>
+                                        <span class="font-medium">{{ exam_group.exam_codes.count }}</span> Mã đề
+                                    </div>
+                                    <div>
+                                        <i class="fas fa-door-open mr-1 text-purple-500"></i>
+                                        <span class="font-medium">{{ exam_group.rooms.count }}</span> Phòng
+                                    </div>
+                                    <div>
+                                        <i class="fas fa-users mr-1 text-green-500"></i>
+                                        <span class="font-medium">0</span> Sinh viên
+                                    </div>
+                                    <div>
+                                        {% if exam_group.exam_password %}
+                                            <i class="fas fa-lock mr-1 text-red-500"></i>
+                                            <span class="font-medium">Có mật khẩu</span>
+                                        {% else %}
+                                            <i class="fas fa-unlock mr-1 text-gray-400"></i>
+                                            <span class="font-medium text-gray-400">Không mật khẩu</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="viewExamGroupDetails({{ exam_group.id }})" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600 transition-colors">
+                                        <i class="fas fa-eye mr-1"></i>Chi tiết
+                                    </button>
+                                    {% if exam_group.status == 'DRAFT' or exam_group.status == 'SCHEDULED' %}
+                                        <button onclick="editExamGroup({{ exam_group.id }})" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition-colors">
+                                            <i class="fas fa-edit mr-1"></i>Sửa
+                                        </button>
+                                        <button onclick="cancelExamGroup({{ exam_group.id }})" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition-colors">
+                                            <i class="fas fa-times mr-1"></i>Hủy
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-inbox text-5xl mb-4"></i>
+                        <p class="text-lg">Chưa có ca thi nào được tạo.</p>
+                        <p class="text-sm mt-2">Tạo ca thi đầu tiên để bắt đầu tổ chức kỳ thi.</p>
+                        <a href="{% url 'qna:lecturer_create_session_screen' %}?subject_id={{ selected_subject.id }}" class="inline-block mt-4 bg-blue-500 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-600 transition-colors">
+                            <i class="fas fa-plus mr-2"></i>Tạo Ca thi mới
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Exam Group Details -->
+<div id="examGroupDetailsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[80vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-gray-800">Chi tiết Ca thi</h3>
+            <button onclick="closeExamGroupModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div id="examGroupDetailsContent"></div>
+    </div>
+</div>
+
+<script>
+function viewExamGroupDetails(examGroupId) {
+    // In a real implementation, this would fetch details via AJAX
+    alert('Tính năng chi tiết ca thi đang được phát triển!');
+}
+
+function editExamGroup(examGroupId) {
+    window.location.href = "{% url 'qna:lecturer_create_session_screen' %}?subject_id={{ selected_subject.id }}&edit=" + examGroupId;
+}
+
+function cancelExamGroup(examGroupId) {
+    if (confirm('Bạn có chắc chắn muốn hủy ca thi này?')) {
+        // In a real implementation, this would send a POST request
+        alert('Tính năng hủy ca thi đang được phát triển!');
+    }
+}
+
+function closeExamGroupModal() {
+    document.getElementById('examGroupDetailsModal').classList.add('hidden');
+}
+</script>
+{% endblock %}

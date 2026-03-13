@@ -1,0 +1,278 @@
+{% load static %}
+<html lang="vi" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Hệ thống Thi vấn đáp AI{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{% static 'css/all.min.css' %}">
+    <style>
+        /* CSS cho liên kết active */
+        .sidebar-link.active {
+            background-color: #4ade80;
+            color: #1f2937;
+            font-weight: 600;
+        }
+        .sidebar-link.active i {
+            color: #1f2937;
+        }
+
+        /* CSS cho menu con */
+        .submenu {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .submenu.open {
+            max-height: 500px;
+        }
+        .submenu-link.active {
+            background-color: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+
+        /* CSS cho sidebar thu gọn */
+        #sidebar {
+            transition: margin-left 0.3s ease-in-out;
+        }
+        #sidebar.collapsed {
+            margin-left: -16rem; /* 16rem = w-64 */
+        }
+        
+        /* Mobile menu toggle */
+        .mobile-menu-btn {
+            display: none;
+        }
+        @media (max-width: 768px) {
+            .mobile-menu-btn {
+                display: flex;
+            }
+            #sidebar {
+                position: fixed;
+                z-index: 50;
+                margin-left: -16rem;
+            }
+            #sidebar.mobile-open {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans h-full">
+
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-64 bg-blue-800 text-gray-200 flex flex-col flex-shrink-0">
+            <!-- Logo Section -->
+            <div class="p-6 flex items-center justify-center border-b border-orange-500">
+                <img src="{% static 'images/logo.jpg' %}" alt="Logo" class="w-10 h-10 mr-3">
+                <div>
+                    <h1 class="text-2xl font-bold text-white">DUE-EXAM</h1>
+                    <p class="text-sm text-gray-300">AI Oral Exam System</p>
+                </div>
+            </div>
+
+            <!-- User Info -->
+            <div class="px-4 py-3 border-b border-blue-700">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                        {{ user.username|slice:":1"|upper }}
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-white font-semibold">{{ user.userprofile.full_name|default:user.username }}</p>
+                        <p class="text-sm text-gray-400">
+                            {% if user.userprofile.is_lecturer %}Giảng viên{% else %}Sinh viên{% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+                {% if user.userprofile.is_lecturer %}
+                <!-- ============ MENU GIẢNG VIÊN - NEW STRUCTURE ============ -->
+                
+                <!-- 1. Dashboard -->
+                <a href="{% url 'qna:lecturer_dashboard' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_dashboard' %}active{% endif %}">
+                    <i class="fas fa-home w-6 text-gray-300"></i>
+                    <span class="ml-3">Môn học</span>
+                </a>
+            <!-- 2. Câu hỏi& Đề thi -->
+                {% with url_name=request.resolver_match.url_name %}
+                <div class="relative">
+                    <button onclick="toggleQnADropdown()"
+                            class="w-full text-left sidebar-link flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 focus:outline-none {% if url_name == 'lecturer_questions_screen' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' %}bg-blue-800{% endif %}">
+                        <div class="flex items-center">
+                            <i class="fas fa-folder-open w-6 text-gray-300"></i>
+                            <span class="ml-3 text-white">Câu hỏi & Đề thi</span>
+                        </div>
+                        <i id="qna-icon" class="fas fa-chevron-down text-gray-300 text-sm transition-transform duration-300 {% if url_name == 'lecturer_questions_screen' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' %}rotate-180{% endif %}"></i>
+                    </button>
+
+                    <div id="qna-dropdown" class="mt-1 flex flex-col gap-1 overflow-hidden transition-all duration-300 {% if url_name == 'lecturer_questions_screen' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' %}block{% else %}hidden{% endif %}">
+
+                        <a href="{% url 'qna:lecturer_questions_screen' %}"
+                           class="flex items-center pl-12 pr-4 py-2 text-sm rounded-lg transition-colors hover:bg-blue-600 {% if url_name == 'lecturer_questions_screen' %}text-white font-semibold bg-blue-700/50{% else %}text-gray-300{% endif %}">
+                            <i class="fas fa-question-circle w-5 text-gray-400"></i>
+                            <span>Quản lý câu hỏi</span>
+                        </a>
+
+                        <a href="{% url 'qna:lecturer_exam_codes_screen' %}"
+                           class="flex items-center pl-12 pr-4 py-2 text-sm rounded-lg transition-colors hover:bg-blue-600 {% if url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' %}text-white font-semibold bg-blue-700/50{% else %}text-gray-300{% endif %}">
+                            <i class="fas fa-file-alt w-5 text-gray-400"></i>
+                            <span>Quản lý đề thi</span>
+                        </a>
+
+                    </div>
+                </div>
+                {% endwith %}
+
+                <!-- 3. Ca thi (Exam Sessions) - Submenu -->
+                <div>
+                    <button onclick="toggleSubmenu('examSessionMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
+                        <div class="flex items-center">
+                            <i class="fas fa-calendar-alt w-6 text-gray-300"></i>
+                            <span class="ml-3">Ca thi</span>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400 transition-transform" id="examSessionMenuArrow"></i>
+                    </button>
+                    <div id="examSessionMenu" class="submenu ml-6 space-y-1">
+                        <a href="{% url 'qna:lecturer_create_session_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_create_session_screen' %}active{% endif %}">
+                            <i class="fas fa-plus-circle w-5 mr-2"></i>Tạo ca thi
+                        </a>
+                        <a href="{% url 'qna:lecturer_exam_sessions_list' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_exam_sessions_list' %}active{% endif %}">
+                            <i class="fas fa-list-alt w-5 mr-2"></i>Danh sách ca thi
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 4. Kết quả (Results) - Submenu -->
+                <div>
+                    <button onclick="toggleSubmenu('resultMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
+                        <div class="flex items-center">
+                            <i class="fas fa-chart-bar w-6 text-gray-300"></i>
+                            <span class="ml-3">Kết quả</span>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400 transition-transform" id="resultMenuArrow"></i>
+                    </button>
+                    <div id="resultMenu" class="submenu ml-6 space-y-1">
+                        <a href="{% url 'qna:lecturer_student_review_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_student_review_screen' %}active{% endif %}">
+                            <i class="fas fa-user-graduate w-5 mr-2"></i>Xem bài làm sinh viên
+                        </a>
+                        <a href="{% url 'qna:lecturer_export_reports_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_export_reports_screen' %}active{% endif %}">
+                            <i class="fas fa-file-excel w-5 mr-2"></i>Xuất báo cáo
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 5. Quản lý phòng thi (Manage Rooms) -->
+                <a href="{% url 'qna:lecturer_manage_rooms' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_manage_rooms' %}active{% endif %}">
+                    <i class="fas fa-door-open w-6 text-gray-300"></i>
+                    <span class="ml-3">Quản lý phòng thi</span>
+                </a>
+
+                {% else %}
+                <!-- ============ MENU SINH VIÊN ============ -->
+                
+                <!-- Dashboard -->
+                <a href="{% url 'qna:dashboard' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                    <i class="fas fa-home w-6 text-gray-300"></i>
+                    <span class="ml-3">Trang chủ</span>
+                </a>
+
+                <!-- Lịch sử thi -->
+                <a href="{% url 'qna:history' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'history' or request.resolver_match.url_name == 'history_detail' %}active{% endif %}">
+                    <i class="fas fa-history w-6 text-gray-300"></i>
+                    <span class="ml-3">Lịch sử thi</span>
+                </a>
+
+                {% endif %}
+
+                <!-- ============ MENU CHUNG ============ -->
+                
+                <!-- Thông tin cá nhân -->
+
+                {% if user.userprofile.is_lecturer %}
+                    <a href="{% url 'qna:lecturer_profile' %}"class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
+                        <i class="fas fa-user w-6 text-gray-300"></i>
+                        <span class="ml-3">Thông tin cá nhân</span>
+                    </a>
+                {% else %}
+                    <a href="{% url 'qna:profile' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
+                        <i class="fas fa-user w-6 text-gray-300"></i>
+                        <span class="ml-3">Thông tin cá nhân</span>
+                    </a>
+                {% endif %}
+            </nav>
+
+            <!-- Logout -->
+            <div class="p-4 border-t border-blue-700">
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="w-full flex items-center px-4 py-3 rounded-lg transition-colors text-red-400 hover:bg-red-500 hover:text-white">
+                        <i class="fas fa-sign-out-alt w-6"></i>
+                        <span class="ml-3">Đăng xuất</span>
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-6 md:p-10 overflow-y-auto">
+            <!-- Mobile Menu Button -->
+            <button onclick="toggleMobileMenu()" class="mobile-menu-btn fixed top-4 left-4 z-50 bg-blue-800 text-white p-3 rounded-lg shadow-lg hover:bg-blue-700">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+            
+            {% block content %}
+            {% endblock %}
+        </main>
+    </div>
+    
+    {% block extra_js %}{% endblock %}
+    
+    <script>
+        // Toggle submenu
+        function toggleSubmenu(menuId) {
+            const menu = document.getElementById(menuId);
+            const arrow = document.getElementById(menuId + 'Arrow');
+            menu.classList.toggle('open');
+            if (arrow) {
+                arrow.classList.toggle('rotate-180');
+            }
+        }
+
+        // Toggle mobile menu
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('mobile-open');
+        }
+
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.querySelector('.mobile-menu-btn');
+            if (window.innerWidth <= 768 &&
+                !sidebar.contains(event.target) &&
+                !mobileBtn.contains(event.target)) {
+                sidebar.classList.remove('mobile-open');
+            }
+        });
+        function toggleQnADropdown() {
+        const dropdown = document.getElementById('qna-dropdown');
+        const icon = document.getElementById('qna-icon');
+
+        // Kiểm tra xem dropdown có đang bị ẩn (hidden) không
+        if (dropdown.classList.contains('hidden')) {
+            dropdown.classList.remove('hidden');
+            dropdown.classList.add('block');
+            icon.classList.add('rotate-180'); // Xoay mũi tên lên
+        } else {
+            dropdown.classList.add('hidden');
+            dropdown.classList.remove('block');
+            icon.classList.remove('rotate-180'); // Xoay mũi tên xuống
+        }
+    }
+    </script>
+</body>
+</html>

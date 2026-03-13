@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load static %}
+{% load tz %}
+
+{% block title %}Lịch sử bài thi{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-6">
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800">Lịch sử bài thi</h1>
+      <p class="text-sm text-gray-500 mt-1">Xem lại các phiên thi gần đây của bạn.</p>
+    </div>
+    <a href="{% url 'qna:dashboard' %}" class="inline-flex items-center px-4 py-2 rounded-lg border text-sm font-semibold hover:bg-gray-50">
+      ← Quay lại trang chính
+    </a>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Môn học</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ngày tạo</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hoàn thành</th>
+          <!-- ĐÃ BỎ cột Điểm TB phần chính -->
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng điểm cuối</th>
+          <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+        </tr>
+      </thead>
+
+      <tbody class="bg-white divide-y divide-gray-200">
+        {% for session in sessions %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+            {{ session.subject.name }}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            {{ session.created_at|timezone:"Asia/Ho_Chi_Minh"|date:"d/m/Y H:i" }}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm">
+            {% if session.is_completed %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Đã hoàn thành</span>
+              <div class="text-gray-500 text-xs mt-1">{{ session.completed_at|timezone:"Asia/Ho_Chi_Minh"|date:"d/m/Y H:i" }}</div>
+            {% else %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Đang làm</span>
+            {% endif %}
+          </td>
+          <!-- CHỈ GIỮ Tổng điểm cuối -->
+          <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
+            {{ session.calculated_final_score|default:0|floatformat:2 }} / 10
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-center">
+            <a href="{% url 'qna:history_detail' session.id %}" class="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700">
+              Xem chi tiết
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="px-6 py-6 text-center text-gray-500">
+            Bạn chưa có lịch sử bài thi nào.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

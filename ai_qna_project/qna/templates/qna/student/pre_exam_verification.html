@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Xác thực trước khi thi{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 py-8 px-4">
+  <div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-xl shadow-lg p-8">
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">Xác thực trước khi thi</h1>
+        <p class="text-gray-600">Vui lòng chụp ảnh khuôn mặt để bắt đầu bài thi</p>
+      </div>
+
+      <!-- Chụp ảnh khuôn mặt -->
+      <div class="mb-8">
+        <div class="flex items-center mb-4">
+          <span class="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold mr-3">1</span>
+          <h2 class="text-xl font-semibold text-gray-800">Chụp ảnh khuôn mặt</h2>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <div class="relative bg-black rounded-lg overflow-hidden" style="aspect-ratio: 4/3;">
+              <video id="webcam-video" autoplay muted playsinline class="w-full h-full object-cover"></video>
+              <canvas id="face-canvas" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
+            </div>
+            <div class="mt-4 flex gap-3">
+              <button id="start-camera-btn" class="flex-1 bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                <i class="fas fa-camera mr-2"></i>Bật camera
+              </button>
+              <button id="capture-face-btn" disabled class="flex-1 bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-camera-retro mr-2"></i>Chụp ảnh
+              </button>
+            </div>
+          </div>
+          
+          <div>
+            <div id="face-preview-container" class="border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50" style="aspect-ratio: 4/3;">
+              <div id="face-placeholder" class="text-center text-gray-400">
+                <i class="fas fa-user-circle text-6xl mb-2"></i>
+                <p>Ảnh khuôn mặt sẽ hiển thị ở đây</p>
+              </div>
+              <img id="face-preview" class="hidden w-full h-full object-cover rounded-lg" alt="Ảnh khuôn mặt">
+            </div>
+            <p id="face-status" class="mt-2 text-sm text-gray-500 text-center">Chưa chụp ảnh</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Xác thực và bắt đầu thi -->
+      <div class="mb-8">
+        <div class="flex items-center mb-4">
+          <span class="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold mr-3">2</span>
+          <h2 class="text-xl font-semibold text-gray-800">Bắt đầu thi</h2>
+        </div>
+        
+        <div class="mt-4 flex justify-center">
+          <button id="start-exam-btn" disabled class="bg-purple-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg">
+            <i class="fas fa-play-circle mr-2"></i>Vào thi
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading Indicator -->
+      <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 text-center">
+          <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p id="loading-text" class="text-gray-700">Đang xử lý...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Lật camera selfie như gương */
+#webcam-video {
+  transform: scaleX(-1);
+}
+
+/* Nút camera khi hover */
+button:enabled {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+button:disabled {
+  transform: none;
+  box-shadow: none;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  
+  // State
+  const state = {
+    faceImageBase64: null,
+    sessionId: null,
+    cameraStream: null
+  };
+
+  // DOM Elements
+  const elements = {
+    webcamVideo: document.getElementById('webcam-video'),
+    faceCanvas: document.getElementById('face-canvas'),
+    startCameraBtn: document.getElementById('start-camera-btn'),
+    captureFaceBtn: document.getElementById('capture-face-btn'),
+    facePreview: document.getElementById('face-preview'),
+    facePlaceholder: document.getElementById('face-placeholder'),
+    faceStatus: document.getElementById('face-status'),
+    startExamBtn: document.getElementById('start-exam-btn'),
+    verificationStatus: document.getElementById('verification-status'),
+    loadingOverlay: document.getElementById('loading-overlay'),
+    loadingText: document.getElementById('loading-text')
+  };
+
+  // Show/Hide loading
+  function showLoading(text) {
+    elements.loadingText.textContent = text;
+    elements.loadingOverlay.classList.remove('hidden');
+  }
+
+  function hideLoading() {
+    elements.loadingOverlay.classList.add('hidden');
+  }
+
+  // Update verification status display
+  function updateVerificationStatus(type, message) {
+    const statusEl = elements.verificationStatus;
+    
+    if (type === 'info') {
+      statusEl.className = 'bg-blue-50 border border-blue-200 rounded-lg p-6 text-center';
+      statusEl.innerHTML = `<p class="text-blue-700">${message}</p>`;
+    } else if (type === 'success') {
+      statusEl.className = 'bg-green-50 border border-green-200 rounded-lg p-6 text-center';
+      statusEl.innerHTML = `<i class="fas fa-check-circle text-green-600 text-4xl mb-2"></i><p class="text-green-700">${message}</p>`;
+    } else if (type === 'error') {
+      statusEl.className = 'bg-red-50 border border-red-200 rounded-lg p-6 text-center';
+      statusEl.innerHTML = `<i class="fas fa-times-circle text-red-600 text-4xl mb-2"></i><p class="text-red-700">${message}</p>`;
+    }
+  }
+
+  // Start camera
+  async function startCamera() {
+    try {
+      state.cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        }
+      });
+      elements.webcamVideo.srcObject = state.cameraStream;
+      await elements.webcamVideo.play();
+      
+      elements.startCameraBtn.disabled = true;
+      elements.startCameraBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Camera đã bật';
+      elements.captureFaceBtn.disabled = false;
+      
+      console.log('Camera started');
+    } catch (error) {
+      console.error('Camera access error:', error);
+      alert('Không thể truy cập camera. Vui lòng cấp quyền camera và thử lại.');
+    }
+  }
+
+  // Capture face from webcam
+  function captureFace() {
+    const canvas = document.createElement('canvas');
+    canvas.width = elements.webcamVideo.videoWidth;
+    canvas.height = elements.webcamVideo.videoHeight;
+    const ctx = canvas.getContext('2d');
+    
+    // Lật canvas theo chiều ngang để ảnh khớp với video hiển thị (selfie mode)
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    
+    ctx.drawImage(elements.webcamVideo, 0, 0);
+    
+    state.faceImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // Show preview
+    elements.facePreview.src = state.faceImageBase64;
+    elements.facePreview.classList.remove('hidden');
+    elements.facePlaceholder.classList.add('hidden');
+    elements.faceStatus.textContent = 'Đã chụp ảnh';
+    elements.faceStatus.className = 'mt-2 text-sm text-green-600 text-center';
+    
+    // Enable start exam button
+    elements.startExamBtn.disabled = false;
+
+  }
+
+  // Start exam
+  async function startExam() {
+    if (!state.faceImageBase64) {
+      alert('Vui lòng chụp ảnh trước khi bắt đầu thi.');
+      return;
+    }
+    
+    showLoading('Đang lưu ảnh...');
+    
+    try {
+      // Save image to server
+      const formData = new FormData();
+      formData.append('face_image', state.faceImageBase64);
+      formData.append('subject_code', '{{ subject_code }}');
+      formData.append('csrfmiddlewaretoken', csrfToken);
+      
+      const response = await fetch('{% url "qna:verify_face" %}', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        updateVerificationStatus('success', 'Đã lưu ảnh thành công! Đang chuyển hướng...');
+        
+        // Redirect to exam page
+        setTimeout(() => {
+          window.location.href = "{% url 'qna:exam_page' subject_code %}";
+        }, 2000);
+      } else {
+        throw new Error(data.message || 'Lỗi khi lưu ảnh');
+      }
+      
+    } catch (error) {
+      console.error('Start exam error:', error);
+      updateVerificationStatus('error', `Lỗi: ${error.message}`);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  // Event Listeners
+  elements.startCameraBtn.addEventListener('click', startCamera);
+  elements.captureFaceBtn.addEventListener('click', captureFace);
+  elements.startExamBtn.addEventListener('click', startExam);
+});
+</script>
+{% endblock %}
