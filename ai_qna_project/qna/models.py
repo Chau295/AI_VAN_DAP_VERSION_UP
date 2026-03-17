@@ -10,6 +10,17 @@ class DifficultyLevel(models.TextChoices):
     HARD = "HARD", "Khó"
 
 
+class SemesterChoices(models.TextChoices):
+    HK1 = "HK1", "HK1"
+    HK2 = "HK2", "HK2"
+    SUMMER = "SUMMER", "HK hè"
+
+
+class ExamSetStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Chưa duyệt"
+    APPROVED = "APPROVED", "Đã duyệt"
+
+
 class Subject(models.Model):
     name = models.CharField(max_length=255, verbose_name="Tên môn học")
     subject_code = models.CharField(max_length=20, unique=True, verbose_name="Mã môn học")
@@ -74,6 +85,7 @@ class Question(models.Model):
         verbose_name="Độ khó",
     )
     is_supplementary = models.BooleanField(default=False, verbose_name="Là câu hỏi phụ")
+    is_exam_clone = models.BooleanField(default=False, verbose_name="Bản sao dùng cho mã đề")
     created_at = models.DateTimeField(auto_now_add=True, null=True, verbose_name="Ngày tạo")
 
     class Meta:
@@ -87,48 +99,136 @@ class Question(models.Model):
         return self.question_text[:80]
 
 
+class ExamSet(models.Model):
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="exam_sets", verbose_name="Môn học")
+    name = models.CharField(max_length=255, blank=True, default="", verbose_name="Tên bộ đề")
+    academic_year = models.CharField(max_length=20, verbose_name="Năm học")
+    semester = models.CharField(max_length=10, choices=SemesterChoices.choices, default=SemesterChoices.HK1, verbose_name="Học kỳ")
+    number_of_versions = models.PositiveIntegerField(default=1, verbose_name="Số mã đề")
+    easy_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu dễ trong ma trận")
+    medium_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu trung bình trong ma trận")
+    hard_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu khó trong ma trận")
+    easy_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.0, verbose_name="Điểm câu dễ")
+    medium_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.5, verbose_name="Điểm câu trung bình")
+    hard_score = models.DecimalField(max_digits=5, decimal_places=1, default=3.0, verbose_name="Điểm câu khó")
+    shuffle_question_order = models.BooleanField(default=True, verbose_name="Tự động xáo trộn thứ tự câu hỏi")
+    allow_duplicate_questions = models.BooleanField(default=False, verbose_name="Cho phép câu hỏi trùng lặp giữa các mã đề")
+    status = models.CharField(max_length=20, choices=ExamSetStatus.choices, default=ExamSetStatus.DRAFT, verbose_name="Trạng thái")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_exam_sets", verbose_name="Người tạo")
+    question_banks = models.ManyToManyField(QuestionBank, blank=True, related_name="exam_sets", verbose_name="Nguồn câu hỏi")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Bộ đề thi"
+        verbose_name_plural = "Bộ đề thi"
+
+    def __str__(self):
+        return self.display_name
+
+    @property
+    def display_name(self):
+        return self.name or self.subject.name
+
+    @property
+    def total_questions(self):
+        return self.easy_pool_size + self.medium_pool_size + self.hard_pool_size
+
+    @property
+    def total_score(self):
+        return (self.easy_pool_size * float(self.easy_score)) + (self.medium_pool_size * float(self.medium_score)) + (self.hard_pool_size * float(self.hard_score))
+
+    @property
+    def approved_codes_count(self):
+        return self.exam_codes.filter(is_approved=True).count()
+
+    @property
+    def is_linked(self):
+        return self.exam_codes.filter(exam_session_groups__isnull=False).exists()
+
+    @property
+    def linked_status_label(self):
+        return "Đã dùng" if self.is_linked else "Chưa dùng"
+
+    @property
+    def status_label(self):
+        return self.get_status_display()
+
+
 class ExamCode(models.Model):
-    """Mã đề thi - Chứa 3 câu hỏi với 3 mức độ khó"""
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="exam_codes", verbose_name="Môn học")
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name="exam_codes",
+        verbose_name="Môn học"
+    )
+    exam_set = models.ForeignKey(
+        ExamSet,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="exam_codes",
+        verbose_name="Bộ đề thi"
+    )
     code_name = models.CharField(max_length=100, verbose_name="Tên mã đề")
-
-    question_easy = models.ForeignKey(
-        Question,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="exam_codes_easy",
-        verbose_name="Câu hỏi Dễ",
-    )
-    question_medium = models.ForeignKey(
-        Question,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="exam_codes_medium",
-        verbose_name="Câu hỏi Trung bình",
-    )
-    question_hard = models.ForeignKey(
-        Question,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="exam_codes_hard",
-        verbose_name="Câu hỏi Khó",
-    )
-
+    code_number = models.PositiveIntegerField(default=0, verbose_name="Số thứ tự mã đề")
     source_material = models.TextField(blank=True, null=True, verbose_name="Nguồn tài liệu")
     is_approved = models.BooleanField(default=False, verbose_name="Đã duyệt")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["code_number", "created_at"]
         verbose_name = "Mã đề thi"
         verbose_name_plural = "Mã đề thi"
 
     def __str__(self):
         return f"{self.code_name} - {self.subject.name}"
+
+    @property
+    def ordered_questions(self):
+        return list(
+            self.exam_code_questions.select_related("question")
+            .order_by("display_order", "id")
+        )
+
+    @property
+    def total_questions(self):
+        return self.exam_code_questions.count()
+
+    @property
+    def is_linked(self):
+        return self.exam_session_groups.exists()
+
+class ExamCodeQuestion(models.Model):
+    exam_code = models.ForeignKey(
+        ExamCode,
+        on_delete=models.CASCADE,
+        related_name="exam_code_questions",
+        verbose_name="Mã đề"
+    )
+    question = models.ForeignKey(
+        Question,
+        on_delete=models.CASCADE,
+        related_name="exam_code_items",
+        verbose_name="Câu hỏi"
+    )
+    difficulty = models.CharField(
+        max_length=10,
+        choices=DifficultyLevel.choices,
+        verbose_name="Độ khó"
+    )
+    display_order = models.PositiveIntegerField(default=1, verbose_name="Thứ tự hiển thị")
+    score = models.DecimalField(max_digits=5, decimal_places=2, default=1, verbose_name="Điểm")
+
+    class Meta:
+        ordering = ["display_order", "id"]
+        verbose_name = "Câu hỏi trong mã đề"
+        verbose_name_plural = "Câu hỏi trong mã đề"
+
+    def __str__(self):
+        return f"{self.exam_code.code_name} - Câu {self.display_order}"
 
 
 class LectureMaterial(models.Model):
@@ -152,7 +252,6 @@ class LectureMaterial(models.Model):
     file_type = models.CharField(max_length=50, verbose_name="Loại file")
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày upload")
 
-    # ---- DÒNG NÀY ĐỂ QUẢN LÝ PHIÊN TẢI TÀI LIỆU ----
     workspace_id = models.CharField(max_length=100, blank=True, null=True, verbose_name="Phiên làm việc")
 
     class Meta:

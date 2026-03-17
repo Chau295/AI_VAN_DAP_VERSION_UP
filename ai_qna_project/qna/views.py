@@ -2567,3 +2567,18 @@ def lecturer_export_questions_word(request):
 
     document.save(response)
     return response
+
+# ===== Exam management =====
+from .exam_management import (
+    lecturer_exam_codes_screen,
+    lecturer_generate_codes_screen,
+    lecturer_exam_set_detail_screen,
+    lecturer_create_exam_set,
+    lecturer_update_exam_code_content,
+    lecturer_regenerate_exam_code,
+    lecturer_delete_exam_code,
+    lecturer_approve_exam_code,
+    lecturer_publish_exam_set,
+    lecturer_save_exam_set_draft,
+    lecturer_delete_exam_set,
+)

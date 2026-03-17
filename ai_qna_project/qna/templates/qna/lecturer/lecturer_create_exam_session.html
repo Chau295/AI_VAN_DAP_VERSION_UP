@@ -1,304 +1,449 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Tạo Ca thi mới - {{ selected_subject.name }}{% endblock %}
+{% block title %}Tạo đề thi{% endblock %}
 
 {% block content %}
 <style>
-    .exam-code-card { transition: all 0.2s ease-in-out; }
-    .exam-code-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .exam-code-card.selected { border-color: #3b82f6; background-color: #eff6ff; }
+  :root {
+    --bg: #f3f5fa;
+    --panel: #ffffff;
+    --border: #e6ebf2;
+    --text: #152033;
+    --muted: #7a8699;
+    --blue: #1f6feb;
+    --blue-600: #1558c0;
+    --green: #16a34a;
+    --red: #dc2626;
+    --amber: #f59e0b;
+    --shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    --radius-lg: 18px;
+    --radius-md: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  .qm2-page {
+    background: var(--bg);
+    min-height: calc(100vh - 80px);
+    padding: 28px 24px 32px;
+    font-family: inherit;
+  }
+
+  .qm2-shell { max-width: 1080px; margin: 0 auto; display: grid; gap: 24px; }
+
+  .qm2-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  .qm2-title h1 { font-size: 26px; line-height: 1.2; font-weight: 800; letter-spacing: -0.6px; color: var(--text); margin: 0; }
+  .qm2-title .sub { margin-top: 6px; font-size: 14px; color: var(--muted); }
+
+  .qm2-btn { height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid transparent; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: .18s ease; text-decoration: none; white-space: nowrap; }
+  .qm2-btn:hover { transform: translateY(-1px); }
+  .qm2-btn-primary { background: var(--blue); color: #fff; }
+  .qm2-btn-primary:hover { background: var(--blue-600); box-shadow: 0 4px 12px rgba(31,111,235,0.2); }
+  .qm2-btn-outline { background: #fff; color: #475569; border: 1px solid #cfd7e3; }
+
+  .qm2-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; padding: 24px; }
+
+  .qm2-input, .qm2-select { width: 100%; height: 40px; border: 1px solid #d7deea; border-radius: 10px; padding: 0 14px; font-size: 13px; color: var(--text); background: #fff; outline: none; transition: 0.2s; font-family: inherit; }
+  .qm2-input:focus, .qm2-select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12); }
+
+  .qm2-table { width: 100%; border-collapse: collapse; text-align: left; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: table; }
+  .qm2-table th { padding: 14px 20px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; border-bottom: 1px solid var(--border); background: #f8fafc; }
+  .qm2-table td { padding: 14px 20px; font-size: 14px; color: var(--text); border-bottom: 1px solid var(--border); vertical-align: middle; }
+
+  .qm2-pill { display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; gap: 6px;}
+  .qm2-pill i { font-size: 8px; }
+  .qm2-pill-green { background: #e8f8ef; color: #137a38; }
+  .qm2-pill-amber { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+  .qm2-pill-red { background: #fef2f2; color: var(--red); border: 1px solid #fecaca; }
+
+  .qm2-section-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 20px; }
+  .qm2-step-badge { width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+
+  .qm2-grid-3 { display: grid; grid-template-columns: 1.2fr 0.8fr 1fr; gap: 20px; }
+  .qm2-form-group { margin-bottom: 16px; }
+  .qm2-label { display: block; font-size: 13px; font-weight: 700; color: #475569; margin-bottom: 8px; }
+
+  .qm2-semester-switch { display: flex; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  .qm2-semester-switch button { flex: 1; height: 32px; border: 0; background: transparent; border-radius: 6px; font-weight: 600; color: #64748b; cursor: pointer; transition: 0.2s; }
+  .qm2-semester-switch button.active { background: #eef4ff; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+
+  .qm2-stepper-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid #d7deea; background: #fff; color: #64748b; cursor: pointer; transition: 0.2s; }
+  .qm2-stepper-btn:hover { background: #f1f5f9; color: var(--text); }
+  .qm2-stepper-val { min-width: 28px; text-align: center; font-weight: 700; font-size: 14px; }
+
+  .qm2-check-item { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer; }
+  .qm2-check-item input { width: 16px; height: 16px; accent-color: var(--blue); }
+
+  .qm2-summary-box { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-weight: 600; color: #475569; display: inline-flex; gap: 12px; }
+  .qm2-summary-box strong { color: var(--blue); }
+
+  /* =========================================
+     Select2 Customization - ĐÃ CHỈNH SỬA
+     ========================================= */
+  .select2-container--default .select2-selection--multiple {
+    min-height: 44px;
+    border: 1px solid #d7deea !important;
+    border-radius: 10px !important;
+    padding: 4px 8px;
+    background-color: #fff;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+  }
+  .select2-container--default.select2-container--focus .select2-selection--multiple {
+    border-color: var(--blue) !important;
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.1) !important;
+  }
+
+  /* Style cho cục Tag - KHÔNG CÓ NÚT XÓA */
+  .select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background-color: #f1f5f9; /* Nền xám nhạt tinh tế */
+    border: 1px solid #e2e8f0; /* Viền nhẹ nhàng */
+    border-radius: 6px; /* Bo góc vuông vắn hiện đại */
+    padding: 6px 12px;
+    color: #334155; /* Chữ xám đậm dễ đọc */
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-right: 8px;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+
+  /* Dropdown list */
+  .select2-dropdown {
+    border: 1px solid #d7deea !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 20px -4px rgba(0,0,0,0.1) !important;
+    overflow: hidden;
+    margin-top: 4px;
+    animation: qm2FadeIn 0.2s ease-out;
+  }
+  @keyframes qm2FadeIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Style cho item khi hover trong list */
+  .select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: #f8fafc !important;
+    color: var(--blue) !important;
+    font-weight: 600;
+  }
+  .select2-results__option {
+    padding: 10px 14px;
+    font-size: 14px;
+    color: var(--text);
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .select2-results__option:last-child {
+    border-bottom: none;
+  }
+
+  @media (max-width: 768px) {
+    .qm2-page { padding: 18px 12px 24px; }
+    .qm2-grid-3 { grid-template-columns: 1fr; gap: 16px; }
+  }
 </style>
 
-<div class="bg-gray-50 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800">Tạo Ca thi mới</h1>
-                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
-            </div>
-            <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
-                <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
-            </a>
-        </div>
+<div class="qm2-page">
+  <div class="qm2-shell">
 
-        <!-- Subject Selector -->
-        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-            <div class="flex items-center gap-4">
-                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
-                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {% for subj in subjects %}
-                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-
-        <!-- Hidden field for subject_id -->
-        <input type="hidden" id="selectedSubjectId" value="{{ selected_subject.id }}">
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Form tạo ca thi -->
-            <div class="space-y-6">
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
-                        <i class="fas fa-calendar-plus mr-2 text-blue-500"></i>Thông tin ca thi
-                    </h2>
-                    <form id="createExamGroupForm" class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tên ca thi</label>
-                            <input type="text" id="groupName" name="group_name" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" placeholder="VD: Ca thi giữa kỳ - K25CNTT" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Ngày giờ thi</label>
-                            <input type="datetime-local" id="examDate" name="exam_date" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Thời gian làm bài (phút)</label>
-                            <input type="number" id="duration" name="duration_minutes" min="15" max="180" value="60" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Mật khẩu bài thi (tùy chọn)</label>
-                            <input type="text" id="examPassword" name="exam_password" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" placeholder="Để trống nếu không cần mật khẩu">
-                            <p class="text-xs text-gray-500 mt-1">Sinh viên phải nhập đúng mật khẩu để bắt đầu bài thi</p>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
-                        <i class="fas fa-file-alt mr-2 text-green-500"></i>Chọn Mã đề thi
-                    </h2>
-                    <p class="text-gray-600 text-sm mb-4">Chọn một hoặc nhiều mã đề thi để sử dụng cho ca thi này</p>
-                    <div id="examCodesContainer" class="space-y-3 max-h-[300px] overflow-y-auto">
-                        {% if approved_exam_codes %}
-                            {% for exam_code in approved_exam_codes %}
-                                <div class="exam-code-card border rounded-lg p-3 cursor-pointer" data-code-id="{{ exam_code.id }}" onclick="toggleExamCode({{ exam_code.id }})">
-                                    <div class="flex items-center">
-                                        <input type="checkbox" id="code_{{ exam_code.id }}" class="mr-3" onchange="toggleExamCode({{ exam_code.id }})">
-                                        <div class="flex-1">
-                                            <h4 class="font-semibold text-gray-800">{{ exam_code.code_name }}</h4>
-                                            <p class="text-xs text-gray-500">3 câu hỏi: Dễ, Trung bình, Khó</p>
-                                        </div>
-                                        <i class="fas fa-check-circle text-green-500 hidden" id="check_{{ exam_code.id }}"></i>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="text-center py-4 text-gray-500">
-                                <p>Chưa có mã đề thi nào được duyệt.</p>
-                                <a href="{% url 'qna:lecturer_generate_codes_screen' %}?subject_id={{ selected_subject.id }}" class="text-blue-500 hover:text-blue-700 text-sm">
-                                    <i class="fas fa-magic mr-1"></i>Sinh mã đề bằng AI
-                                </a>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
-                        <i class="fas fa-door-open mr-2 text-purple-500"></i>Chọn Phòng thi
-                    </h2>
-                    <p class="text-gray-600 text-sm mb-4">Chọn các phòng thi để tổ chức ca thi này</p>
-                    <div id="roomsContainer" class="space-y-3 max-h-[250px] overflow-y-auto">
-                        {% if all_rooms %}
-                            {% for room in all_rooms %}
-                                <div class="border rounded-lg p-3 cursor-pointer hover:bg-gray-50" data-room-id="{{ room.id }}" onclick="toggleRoom({{ room.id }})">
-                                    <div class="flex items-center">
-                                        <input type="checkbox" id="room_{{ room.id }}" class="mr-3" onchange="toggleRoom({{ room.id }})">
-                                        <div class="flex-1">
-                                            <h4 class="font-semibold text-gray-800">{{ room.room_name }}</h4>
-                                            <p class="text-xs text-gray-500">Mã phòng: {{ room.room_code }} | Sức chứa: {{ room.capacity }}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="text-center py-4 text-gray-500">
-                                <p>Chưa có phòng thi nào.</p>
-                                <a href="{% url 'qna:lecturer_manage_rooms' %}" class="text-blue-500 hover:text-blue-700 text-sm">
-                                    <i class="fas fa-plus mr-1"></i>Tạo phòng thi mới
-                                </a>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <button type="button" onclick="createExamGroup()" class="w-full bg-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-600 transition-colors">
-                    <i class="fas fa-save mr-2"></i>Tạo Ca thi
-                </button>
-            </div>
-
-            <!-- Danh sách ca thi đã tạo -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-list mr-2 text-orange-500"></i>Ca thi đã tạo
-                </h2>
-                <div id="examGroupsContainer" class="space-y-4 max-h-[700px] overflow-y-auto">
-                    {% if exam_groups %}
-                        {% for exam_group in exam_groups %}
-                            <div class="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                                <div class="flex justify-between items-start mb-2">
-                                    <h3 class="font-bold text-lg text-gray-800">{{ exam_group.group_name }}</h3>
-                                    <span class="text-xs px-2 py-1 rounded-full {% if exam_group.status == 'SCHEDULED' %}bg-blue-100 text-blue-800{% elif exam_group.status == 'ONGOING' %}bg-green-100 text-green-800{% elif exam_group.status == 'COMPLETED' %}bg-gray-100 text-gray-800{% else %}bg-red-100 text-red-800{% endif %}">
-                                        {% if exam_group.status == 'DRAFT' %}Nháp{% elif exam_group.status == 'SCHEDULED' %}Đã lên lịch{% elif exam_group.status == 'ONGOING' %}Đang diễn ra{% elif exam_group.status == 'COMPLETED' %}Đã kết thúc{% else %}Đã hủy{% endif %}
-                                    </span>
-                                </div>
-                                <div class="text-sm text-gray-600 space-y-1">
-                                    <p><i class="fas fa-calendar mr-2"></i>{{ exam_group.exam_date|date:"d/m/Y H:i" }}</p>
-                                    <p><i class="fas fa-clock mr-2"></i>{{ exam_group.duration_minutes }} phút</p>
-                                    <p><i class="fas fa-file-alt mr-2"></i>{{ exam_group.exam_codes.count }} mã đề</p>
-                                    <p><i class="fas fa-door-open mr-2"></i>{{ exam_group.rooms.count }} phòng</p>
-                                    {% if exam_group.exam_password %}
-                                        <p><i class="fas fa-lock mr-2"></i>Đặt mật khẩu</p>
-                                    {% endif %}
-                                </div>
-                                <div class="flex gap-2 mt-3">
-                                    <button onclick="viewExamGroupDetails({{ exam_group.id }})" class="text-blue-500 hover:text-blue-700 text-sm">
-                                        <i class="fas fa-eye mr-1"></i>Chi tiết
-                                    </button>
-                                    {% if exam_group.status == 'DRAFT' or exam_group.status == 'SCHEDULED' %}
-                                        <button onclick="editExamGroup({{ exam_group.id }})" class="text-green-500 hover:text-green-700 text-sm">
-                                            <i class="fas fa-edit mr-1"></i>Sửa
-                                        </button>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="text-center py-8 text-gray-500">
-                            <i class="fas fa-inbox text-4xl mb-3"></i>
-                            <p>Chưa có ca thi nào được tạo.</p>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+    <div class="qm2-topbar">
+      <div class="qm2-title">
+        <h1>Tạo đề thi mới</h1>
+        <div class="sub">Thiết lập các tham số để tạo đề thi chất lượng cao từ ngân hàng câu hỏi.</div>
+      </div>
+      <a href="{% url 'qna:lecturer_exam_codes_screen' %}" class="qm2-btn qm2-btn-outline">
+        <i class="fas fa-arrow-left"></i> Quay lại
+      </a>
     </div>
+
+    <div class="qm2-card">
+      <div class="qm2-section-title">
+        <span class="qm2-step-badge">1</span> Lựa chọn môn học & Nguồn
+      </div>
+
+      <div class="qm2-grid-3">
+        <div class="qm2-form-group">
+          <label class="qm2-label">Chọn môn học <span style="color:var(--red)">*</span></label>
+          <select id="subjectId" class="qm2-select" onchange="reloadBySubject(this.value)">
+            <option value="">-- Chọn môn học --</option>
+            {% for subject in subjects %}
+              <option value="{{ subject.id }}" {% if selected_subject and subject.id == selected_subject.id %}selected{% endif %}>{{ subject.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="qm2-form-group">
+          <label class="qm2-label">Năm học <span style="color:var(--red)">*</span></label>
+          <input id="academicYear" class="qm2-input" type="text" value="{{ default_year }}" placeholder="VD: 2024-2025">
+        </div>
+
+        <div class="qm2-form-group">
+          <label class="qm2-label">Kỳ học <span style="color:var(--red)">*</span></label>
+          <input type="hidden" id="semester" value="HK1">
+          <div class="qm2-semester-switch">
+            <button type="button" class="active" data-value="HK1" onclick="setSemester(this)">Học kỳ 1</button>
+            <button type="button" data-value="HK2" onclick="setSemester(this)">Học kỳ 2</button>
+            <button type="button" data-value="SUMMER" onclick="setSemester(this)">HK hè</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="qm2-form-group" style="margin-top: 8px;">
+        <label class="qm2-label">Nguồn câu hỏi <span style="color:var(--red)">*</span></label>
+        <select id="sourceBanks" multiple="multiple" style="width: 100%;">
+          {% for bank in question_banks %}
+            <option value="{{ bank.id }}">{{ bank.name }} ({{ bank.real_question_count }} câu hỏi)</option>
+          {% endfor %}
+        </select>
+        <div style="font-size: 13px; color: var(--muted); margin-top: 10px; display: flex; align-items: center; gap: 6px;">
+          <i class="fas fa-info-circle" style="color: var(--blue);"></i>
+          <span>Nhập từ khóa để tìm nguồn có sẵn hoặc nhấn <strong>Enter</strong> để thêm tên nguồn mới.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="qm2-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; margin-bottom: 20px;">
+        <div class="qm2-section-title" style="margin:0;">
+          <span class="qm2-step-badge">2</span> Thiết lập ma trận đề
+        </div>
+        <div class="qm2-summary-box">
+          <span>Tổng số câu: <strong id="totalQuestions">30</strong></span>
+          <span style="color: #cbd5e1;">|</span>
+          <span>Tổng điểm: <strong id="totalScore">67.5</strong></span>
+        </div>
+      </div>
+
+      <table class="qm2-table">
+        <thead>
+          <tr>
+            <th>Mức độ câu hỏi</th>
+            <th style="text-align: center;">Số lượng xuất hiện</th>
+            <th style="width: 250px;">Điểm số / Câu</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="qm2-pill qm2-pill-green"><i class="fas fa-circle"></i> DỄ</span></td>
+            <td style="text-align: center;">
+              <div class="qm2-stepper">
+                <button type="button" class="qm2-stepper-btn" onclick="stepValue('easyCount', -1)"><i class="fas fa-minus"></i></button>
+                <span id="easyCountText" class="qm2-stepper-val">10</span>
+                <button type="button" class="qm2-stepper-btn" onclick="stepValue('easyCount', 1)"><i class="fas fa-plus"></i></button>
+              </div>
+              <input type="hidden" id="easyCount" value="10">
+            </td>
+            <td><input id="easyScore" class="qm2-input" type="number" step="0.5" value="2.0" style="max-width: 120px;"></td>
+          </tr>
+          <tr>
+            <td><span class="qm2-pill qm2-pill-amber"><i class="fas fa-circle"></i> TRUNG BÌNH</span></td>
+            <td style="text-align: center;">
+              <div class="qm2-stepper">
+                <button type="button" class="qm2-stepper-btn" onclick="stepValue('mediumCount', -1)"><i class="fas fa-minus"></i></button>
+                <span id="mediumCountText" class="qm2-stepper-val">15</span>
+                <button type="button" class="qm2-stepper-btn" onclick="stepValue('mediumCount', 1)"><i class="fas fa-plus"></i></button>
+              </div>
+              <input type="hidden" id="mediumCount" value="15">
+            </td>
+            <td><input id="mediumScore" class="qm2-input" type="number" step="0.5" value="2.5" style="max-width: 120px;"></td>
+          </tr>
+          <tr>
+            <td><span class="qm2-pill qm2-pill-red"><i class="fas fa-circle"></i> KHÓ</span></td>
+            <td style="text-align: center;">
+              <div class="qm2-stepper">
+                <button type="button" class="qm2-stepper-btn" onclick="stepValue('hardCount', -1)"><i class="fas fa-minus"></i></button>
+                <span id="hardCountText" class="qm2-stepper-val">5</span>
+                <button type="button" class="qm2-stepper-btn" onclick="stepValue('hardCount', 1)"><i class="fas fa-plus"></i></button>
+              </div>
+              <input type="hidden" id="hardCount" value="5">
+            </td>
+            <td><input id="hardScore" class="qm2-input" type="number" step="0.5" value="3.0" style="max-width: 120px;"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="qm2-card">
+      <div class="qm2-section-title"><span class="qm2-step-badge">3</span> Tùy chọn sinh đề</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;">
+        <div class="qm2-form-group">
+          <label class="qm2-label">Số lượng mã đề cần tạo <span style="color:var(--red)">*</span></label>
+          <input id="numberOfVersions" class="qm2-input" type="number" min="1" value="12">
+        </div>
+        <div>
+          <label class="qm2-label">Cài đặt nâng cao</label>
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 4px;">
+            <label class="qm2-check-item"><input id="shuffleQuestionOrder" type="checkbox" checked> Tự động xáo trộn thứ tự câu hỏi</label>
+            <label class="qm2-check-item"><input id="allowDuplicateQuestions" type="checkbox"> Cho phép lấy lặp câu hỏi</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+      <div style="font-size: 13px; color: var(--muted); font-style: italic;">
+        <i class="fas fa-exclamation-triangle" style="color: var(--amber);"></i> Vui lòng kiểm tra kỹ ma trận trước khi bấm sinh đề.
+      </div>
+      <button type="button" id="btnSubmit" class="qm2-btn qm2-btn-primary" onclick="submitCreateExamSet()" style="height: 46px; padding: 0 32px; border-radius: 12px; font-size: 15px;">
+        <i class="fas fa-bolt"></i> Tiến hành tạo đề thi
+      </button>
+    </div>
+
+  </div>
 </div>
 
-<!-- Modal Exam Group Details -->
-<div id="examGroupDetailsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[80vh] overflow-y-auto">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold text-gray-800">Chi tiết Ca thi</h3>
-            <button onclick="closeExamGroupModal()" class="text-gray-500 hover:text-gray-700">
-                <i class="fas fa-times text-xl"></i>
-            </button>
-        </div>
-        <div id="examGroupDetailsContent"></div>
-    </div>
+<div class="qm2-state-toast" id="stateToast">
+  <div style="display: flex; gap: 10px; align-items: center;">
+    <i class="fas fa-check-circle" id="stateToastIcon" style="font-size: 18px; color: var(--green);"></i>
+    <div id="stateToastMessage" style="font-size: 14px; font-weight: 600; color: var(--text);">Thành công</div>
+  </div>
+  <button class="qm2-state-toast-close" type="button" onclick="hideToast()">×</button>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script>
-let selectedExamCodes = [];
-let selectedRooms = [];
+  $(document).ready(function() {
+      $('#sourceBanks').select2({
+          tags: true,
+          placeholder: "Chọn nguồn hoặc gõ tên nguồn mới...",
+          width: '100%',
+          closeOnSelect: false,
+          language: {
+              noResults: function () {
+                  return "Nhấn Enter để thêm mới";
+              }
+          }
+      });
+  });
 
-function toggleExamCode(codeId) {
-    const checkbox = document.getElementById('code_' + codeId);
-    const card = checkbox.closest('.exam-code-card');
-    const checkIcon = document.getElementById('check_' + codeId);
-    
-    if (checkbox.checked) {
-        selectedExamCodes.push(codeId);
-        card.classList.add('selected');
-        checkIcon.classList.remove('hidden');
+  function getCookie(name) {
+    const cookies = document.cookie ? document.cookie.split(';') : [];
+    for (const cookie of cookies) {
+      const trimmed = cookie.trim();
+      if (trimmed.startsWith(name + '=')) {
+        return decodeURIComponent(trimmed.slice(name.length + 1));
+      }
+    }
+    return '';
+  }
+
+  function showToast(message, isError=false) {
+    const toast = document.getElementById('stateToast');
+    const icon = document.getElementById('stateToastIcon');
+    document.getElementById('stateToastMessage').textContent = message;
+    toast.classList.remove('error');
+    if (isError) {
+        toast.classList.add('error');
+        icon.className = 'fas fa-exclamation-circle';
+        icon.style.color = 'var(--red)';
     } else {
-        selectedExamCodes = selectedExamCodes.filter(id => id !== codeId);
-        card.classList.remove('selected');
-        checkIcon.classList.add('hidden');
+        icon.className = 'fas fa-check-circle';
+        icon.style.color = 'var(--green)';
     }
-}
+    toast.classList.add('show');
+    window.clearTimeout(window.__qm2ToastTimer);
+    window.__qm2ToastTimer = window.setTimeout(hideToast, 4000);
+  }
 
-function toggleRoom(roomId) {
-    const checkbox = document.getElementById('room_' + roomId);
-    const card = checkbox.closest('.border');
-    
-    if (checkbox.checked) {
-        selectedRooms.push(roomId);
-        card.classList.add('bg-blue-50');
-    } else {
-        selectedRooms = selectedRooms.filter(id => id !== roomId);
-        card.classList.remove('bg-blue-50');
-    }
-}
+  function hideToast() {
+    const toast = document.getElementById('stateToast');
+    if (toast) toast.classList.remove('show');
+  }
 
-function createExamGroup() {
-    const groupName = document.getElementById('groupName').value;
-    const examDate = document.getElementById('examDate').value;
-    const duration = document.getElementById('duration').value;
-    const examPassword = document.getElementById('examPassword').value;
-    
-    if (!groupName || !examDate) {
-        alert('Vui lòng nhập tên ca thi và ngày giờ thi!');
-        return;
-    }
-    
-    if (selectedExamCodes.length === 0) {
-        alert('Vui lòng chọn ít nhất một mã đề thi!');
-        return;
-    }
-    
-    if (selectedRooms.length === 0) {
-        alert('Vui lòng chọn ít nhất một phòng thi!');
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('subject_id', document.getElementById('selectedSubjectId').value);
-    formData.append('group_name', groupName);
-    formData.append('exam_date', examDate);
-    formData.append('duration_minutes', duration);
-    formData.append('exam_password', examPassword);
-    selectedExamCodes.forEach(id => formData.append('exam_code_ids', id));
-    selectedRooms.forEach(id => formData.append('room_ids', id));
-    
-    fetch("{% url 'qna:lecturer_create_exam_group_screen' %}", {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
-        },
-        body: formData,
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Đã tạo ca thi thành công!');
-            location.reload();
+  function reloadBySubject(subjectId) {
+    const target = new URL(window.location.href);
+    if (subjectId) target.searchParams.set('subject_id', subjectId);
+    else target.searchParams.delete('subject_id');
+    window.location.href = target.toString();
+  }
+
+  function setSemester(button) {
+    document.querySelectorAll('.qm2-semester-switch button').forEach(item => item.classList.remove('active'));
+    button.classList.add('active');
+    document.getElementById('semester').value = button.dataset.value;
+  }
+
+  function stepValue(id, delta) {
+    const input = document.getElementById(id);
+    const text = document.getElementById(id + 'Text');
+    let value = parseInt(input.value || '0', 10) + delta;
+    if (value < 0) value = 0;
+    input.value = value;
+    text.textContent = value;
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const easyCount = parseInt(document.getElementById('easyCount').value || '0', 10);
+    const mediumCount = parseInt(document.getElementById('mediumCount').value || '0', 10);
+    const hardCount = parseInt(document.getElementById('hardCount').value || '0', 10);
+    const easyScore = parseFloat(document.getElementById('easyScore').value || '0');
+    const mediumScore = parseFloat(document.getElementById('mediumScore').value || '0');
+    const hardScore = parseFloat(document.getElementById('hardScore').value || '0');
+    document.getElementById('totalQuestions').textContent = easyCount + mediumCount + hardCount;
+    document.getElementById('totalScore').textContent = ((easyCount * easyScore) + (mediumCount * mediumScore) + (hardCount * hardScore)).toFixed(2);
+  }
+
+  document.getElementById('easyScore').addEventListener('input', updateSummary);
+  document.getElementById('mediumScore').addEventListener('input', updateSummary);
+  document.getElementById('hardScore').addEventListener('input', updateSummary);
+  updateSummary();
+
+  async function submitCreateExamSet() {
+    const sourceBanks = $('#sourceBanks').val() || [];
+    const btn = document.getElementById('btnSubmit');
+    if (sourceBanks.length === 0) { showToast("Vui lòng chọn hoặc nhập ít nhất một nguồn câu hỏi!", true); return; }
+    if (!document.getElementById('subjectId').value) { showToast("Vui lòng chọn môn học!", true); return; }
+
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang xử lý...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('{% url "qna:lecturer_create_exam_set" %}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+          body: JSON.stringify({
+            subject_id: document.getElementById('subjectId').value,
+            academic_year: document.getElementById('academicYear').value.trim(),
+            semester: document.getElementById('semester').value,
+            source_bank_ids: sourceBanks,
+            easy_count: document.getElementById('easyCount').value,
+            medium_count: document.getElementById('mediumCount').value,
+            hard_count: document.getElementById('hardCount').value,
+            easy_score: document.getElementById('easyScore').value,
+            medium_score: document.getElementById('mediumScore').value,
+            hard_score: document.getElementById('hardScore').value,
+            number_of_versions: document.getElementById('numberOfVersions').value,
+            shuffle_question_order: document.getElementById('shuffleQuestionOrder').checked,
+            allow_duplicate_questions: document.getElementById('allowDuplicateQuestions').checked,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 'SUCCESS') {
+          showToast(data.message || 'Tạo đề thi thất bại', true);
+          btn.innerHTML = originalText;
+          btn.disabled = false;
         } else {
-            alert('Lỗi: ' + data.error);
+          showToast(data.message || 'Tạo đề thi thành công!');
+          setTimeout(() => { window.location.href = data.detail_url; }, 1000);
         }
-    });
-}
-
-function viewExamGroupDetails(examGroupId) {
-    // Fetch exam group details and show in modal
-    // This would require an additional API endpoint
-    alert('Tính năng chi tiết ca thi đang được phát triển!');
-}
-
-function editExamGroup(examGroupId) {
-    // Open edit form for exam group
-    alert('Tính năng chỉnh sửa ca thi đang được phát triển!');
-}
-
-function closeExamGroupModal() {
-    document.getElementById('examGroupDetailsModal').classList.add('hidden');
-}
-
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
+    } catch (error) {
+        showToast('Lỗi kết nối máy chủ!', true);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
-    return cookieValue;
-}
+  }
 </script>
 {% endblock %}

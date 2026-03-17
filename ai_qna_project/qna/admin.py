@@ -9,7 +9,6 @@ from .models import (
     ExamResult,
     SupplementaryResult,
     UserProfile,
-    ExamCode,
     LectureMaterial,
     ExamRoom,
     ExamSessionGroup,
@@ -51,19 +50,6 @@ class QuestionAdmin(admin.ModelAdmin):
     search_fields = ("question_text", "subject__name", "question_id_in_barem")
 
 
-@admin.register(ExamCode)
-class ExamCodeAdmin(admin.ModelAdmin):
-    list_display = (
-        "code_name",
-        "subject",
-        "question_easy",
-        "question_medium",
-        "question_hard",
-        "is_approved",
-        "created_at",
-    )
-    list_filter = ("subject", "is_approved")
-    search_fields = ("code_name", "subject__name", "source_material")
 
 
 @admin.register(LectureMaterial)

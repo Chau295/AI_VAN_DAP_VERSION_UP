@@ -90,12 +90,20 @@ urlpatterns = [
 
     # 3.5 Quản lý Mã đề thi
     path("lecturer/exam-codes/", views.lecturer_exam_codes_screen, name="lecturer_exam_codes_screen"),
+    path("lecturer/exam-codes/create/", views.lecturer_generate_codes_screen, name="lecturer_generate_codes_screen"),
+    path("lecturer/exam-codes/<int:exam_set_id>/", views.lecturer_exam_set_detail_screen, name="lecturer_exam_set_detail_screen"),
+    path("lecturer/api/exam-sets/create/", views.lecturer_create_exam_set, name="lecturer_create_exam_set"),
+    path("lecturer/api/exam-sets/<int:exam_set_id>/publish/", views.lecturer_publish_exam_set, name="lecturer_publish_exam_set"),
+    path("lecturer/api/exam-sets/<int:exam_set_id>/save-draft/", views.lecturer_save_exam_set_draft, name="lecturer_save_exam_set_draft"),
+    path("lecturer/api/exam-sets/<int:exam_set_id>/delete/", views.lecturer_delete_exam_set, name="lecturer_delete_exam_set"),
 
-    # 4. Sinh mã đề bằng AI
-    path("lecturer/generate-codes/", views.lecturer_generate_codes_screen, name="lecturer_generate_codes_screen"),
+    # 4. Sinh mã đề bằng AI / Quản lý chi tiết bộ đề
+    path("lecturer/generate-codes/", views.lecturer_generate_codes_screen, name="lecturer_generate_codes_screen_legacy"),
     path("lecturer/api/material/upload/", views.lecturer_upload_material_screen, name="lecturer_upload_material_screen"),
     path("lecturer/api/generate-codes-ai/", views.lecturer_generate_codes_with_ai, name="lecturer_generate_codes_with_ai"),
     path("lecturer/api/exam-code/<int:exam_code_id>/approve/", views.lecturer_approve_exam_code, name="lecturer_approve_exam_code"),
+    path("lecturer/api/exam-code/<int:exam_code_id>/save/", views.lecturer_update_exam_code_content, name="lecturer_update_exam_code_content"),
+    path("lecturer/api/exam-code/<int:exam_code_id>/regenerate/", views.lecturer_regenerate_exam_code, name="lecturer_regenerate_exam_code"),
     path("lecturer/api/exam-code/<int:exam_code_id>/edit-question/", views.lecturer_edit_exam_code_question, name="lecturer_edit_exam_code_question"),
     path("lecturer/api/exam-code/<int:exam_code_id>/update/", views.lecturer_update_exam_code_question, name="lecturer_update_exam_code_question"),
     path("lecturer/api/exam-code/<int:exam_code_id>/delete/", views.lecturer_delete_exam_code, name="lecturer_delete_exam_code"),
@@ -124,7 +132,6 @@ urlpatterns = [
     path("lecturer/api/room/<int:room_id>/delete/", views.lecturer_delete_room, name="lecturer_delete_room"),
 
     #10. Profile giảng viên
-    # === BẠN PHẢI CHẮC CHẮN ĐÃ THÊM DÒNG NÀY ===
     path("lecturer/profile/", views.lecturer_profile_view, name="lecturer_profile"),
 
     #11. Export word

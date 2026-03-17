@@ -1,383 +1,494 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Sinh Mã đề thi bằng AI - {{ selected_subject.name }}{% endblock %}
+{% block title %}Tạo đề thi{% endblock %}
 
 {% block content %}
 <style>
-    .difficulty-easy { border-left: 4px solid #10b981; }
-    .difficulty-medium { border-left: 4px solid #f59e0b; }
-    .difficulty-hard { border-left: 4px solid #ef4444; }
-    .loading-spinner {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #3498db;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --page-bg: #f4f7fb;
+    --panel: #ffffff;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --muted: #64748b;
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --green: #16a34a;
+    --green-bg: #dcfce7;
+    --amber: #d97706;
+    --amber-bg: #fef3c7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow: 0 10px 25px -3px rgba(15, 23, 42, 0.06);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+  }
+
+  .builder-page { background: var(--page-bg); min-height: calc(100vh - 80px); padding: 32px 22px; }
+  .builder-shell { max-width: 1120px; margin: 0 auto; }
+
+  .builder-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:24px; }
+  .builder-head h1 { margin:0; font-size:26px; font-weight:800; color:var(--text); letter-spacing: -0.5px; }
+  .builder-head p { margin:8px 0 0; color:var(--muted); font-size: 15px; }
+
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 20px; border-radius:12px; border:1px solid transparent; font-size: 14px; font-weight:600; cursor:pointer; text-decoration:none; transition: all 0.2s ease; }
+  .btn-primary { background:var(--blue); color:#fff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+  .btn-primary:hover { background:var(--blue-dark); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25); }
+  .btn-secondary { background:#fff; color:#475569; border-color: #cbd5e1; box-shadow: var(--shadow-sm); }
+  .btn-secondary:hover { background:#f8fafc; color: var(--text); }
+
+  .panel { background:#fff; border:1px solid var(--border); border-radius:20px; box-shadow:var(--shadow); margin-bottom:24px; overflow: hidden; }
+  .panel-body { padding: 28px; }
+
+  .section-title { display:flex; align-items:center; gap:12px; font-size:18px; font-weight:700; color:var(--text); margin-bottom:20px; }
+  .step { width:28px; height:28px; border-radius:999px; background:var(--blue); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:14px; font-weight: 700; }
+
+  .grid-3 { display:grid; grid-template-columns: 1.2fr .8fr 1fr; gap:24px; }
+  .field label { display:block; font-size:13px; font-weight:600; color:#334155; margin-bottom:8px; }
+  .field input, .field select { width:100%; height:46px; border:1px solid #cbd5e1; border-radius:12px; padding:0 16px; outline:none; font-family: inherit; font-size: 14px; color: var(--text); transition: all 0.2s; }
+  .field input:focus, .field select:focus { border-color:var(--blue); box-shadow:0 0 0 4px rgba(37, 99, 235, 0.1); }
+
+  .semester-switch { display:flex; background:#f1f5f9; border-radius:12px; padding:4px; }
+  .semester-switch button { flex:1; height:38px; border:0; background:transparent; border-radius:10px; font-weight:600; color:#64748b; cursor:pointer; font-size: 13px; transition: 0.2s; }
+  .semester-switch button:hover { color: var(--text); }
+  .semester-switch button.active { background:#fff; color:var(--blue); box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+
+  .matrix-summary { display:flex; justify-content:flex-end; }
+  .summary-box { background:#f8fafc; border: 1px solid var(--border); border-radius:12px; padding:12px 20px; font-weight:600; color:#334155; font-size: 14px; display: flex; align-items: center; gap: 16px; }
+  .summary-box strong { font-size: 16px; color: var(--blue); }
+
+  table { width:100%; border-collapse: collapse; overflow:hidden; }
+  .matrix-table { border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+  .matrix-table th { padding:14px 20px; font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; background: #f8fafc; border-bottom: 1px solid var(--border); text-align:left; }
+  .matrix-table td { padding:16px 20px; border-bottom:1px solid var(--border); text-align:left; vertical-align: middle; }
+  .matrix-table tr:last-child td { border-bottom:0; }
+  .matrix-table tr:hover td { background: #fbfcfd; }
+
+  .matrix-pill { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; font-size:13px; font-weight:700; }
+  .pill-easy { background:var(--green-bg); color:var(--green); }
+  .pill-medium { background:var(--amber-bg); color:var(--amber); }
+  .pill-hard { background:var(--red-bg); color:var(--red); }
+
+  .stepper { display:inline-flex; align-items:center; gap:12px; background: #f8fafc; padding: 4px; border-radius: 12px; border: 1px solid var(--border); }
+  .stepper button { width:32px; height:32px; border:none; background:#fff; border-radius:8px; cursor:pointer; color: #64748b; font-size: 16px; display:flex; align-items:center; justify-content:center; box-shadow: var(--shadow-sm); transition: 0.2s; }
+  .stepper button:hover { background: var(--blue); color: #fff; }
+  .stepper strong { min-width:28px; text-align:center; display:inline-block; font-size: 15px; color: var(--text); }
+
+  .options { display:grid; grid-template-columns: 1.2fr .8fr; gap:32px; align-items:start; }
+  .check-list { display:flex; flex-direction:column; gap:14px; }
+  .check-item { display:flex; align-items:center; gap:12px; color:#334155; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .check-item input { width:18px; height:18px; accent-color: var(--blue); cursor: pointer; }
+
+  .helper { color:#94a3b8; font-size:13px; margin-top:8px; line-height: 1.5; }
+  .foot-bar { display:flex; justify-content:space-between; align-items:center; padding-top:16px; margin-bottom: 40px; }
+  .foot-note { color:var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .foot-note i { color: var(--amber); }
+
+  .toast-stack { position:fixed; top:24px; right:28px; z-index:90; display:flex; flex-direction:column; gap:10px; }
+  .toast { min-width:280px; max-width:420px; background:#fff; border-left:4px solid #ef4444; border-radius:12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); padding:16px; display:flex; justify-content:space-between; gap:16px; align-items: center; font-weight: 500; font-size: 14px; animation: slideIn 0.3s ease forwards; }
+  .toast.success { border-left-color:var(--green); }
+  .toast button { border:0; background:transparent; color:#94a3b8; cursor:pointer; font-size: 16px; padding: 4px; border-radius: 6px; transition: 0.2s; }
+  .toast button:hover { background: #f1f5f9; color: var(--text); }
+
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ========================================================= */
+  /* Giao diện cao cấp cho Select2 Multiple                      */
+  /* ========================================================= */
+  .select2-container--default .select2-selection--multiple {
+    min-height: 48px;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 12px !important;
+    padding: 4px 12px;
+    outline: none;
+    background-color: #fff;
+    transition: all 0.2s ease;
+  }
+  .select2-container--default.select2-container--focus .select2-selection--multiple {
+    border-color: var(--blue) !important;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px; /* Bo tròn hoàn toàn tạo dạng pill */
+    padding: 4px 12px 4px 8px;
+    color: var(--blue-dark);
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: row-reverse; /* Đưa nút X sang phải */
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice:hover {
+    background-color: #dbeafe;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: #60a5fa;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-size: 18px;
+    line-height: 1;
+    font-weight: 400;
+    transition: color 0.2s;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: var(--red);
+    background: transparent;
+  }
+  .select2-container .select2-search--inline .select2-search__field {
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text) !important;
+  }
+  .select2-container .select2-search--inline .select2-search__field::placeholder {
+    color: #94a3b8;
+  }
+  .select2-dropdown {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 25px -3px rgba(0,0,0,0.1) !important;
+    overflow: hidden;
+    margin-top: 6px;
+    font-family: 'Inter', sans-serif;
+  }
+  .select2-container--default .select2-results__option {
+    padding: 10px 16px;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: var(--blue) !important;
+    color: white !important;
+  }
+  .select2-container--default .select2-results__option[aria-selected=true] {
+    background-color: #f8fafc;
+    color: #94a3b8;
+  }
+
+  @media (max-width: 980px) { .grid-3, .options { grid-template-columns:1fr; } .builder-head { flex-direction: column; } }
 </style>
 
-<div class="bg-gray-50 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800">Sinh Mã đề thi bằng AI</h1>
-                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
-            </div>
-            <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
-                <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
-            </a>
-        </div>
-
-        <!-- Subject Selector -->
-        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-            <div class="flex items-center gap-4">
-                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
-                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {% for subj in subjects %}
-                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-
-        <!-- Hidden field for subject_id -->
-        <input type="hidden" id="selectedSubjectId" value="{{ selected_subject.id }}">
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Upload Material & Generate Codes -->
-            <div class="space-y-6">
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
-                        <i class="fas fa-upload mr-2 text-blue-500"></i>Upload Tài liệu bài giảng
-                    </h2>
-                    <form id="uploadMaterialForm" class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tiêu đề tài liệu</label>
-                            <input type="text" id="materialTitle" name="title" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" placeholder="VD: Chương 1 - Giới thiệu" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">File tài liệu (PDF, Word, PPT)</label>
-                            <input type="file" id="materialFile" name="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
-                        </div>
-                        <button type="submit" class="w-full bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
-                            <i class="fas fa-upload mr-2"></i>Upload Tài liệu
-                        </button>
-                    </form>
-                </div>
-
-                <div class="bg-white rounded-xl shadow-md p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
-                        <i class="fas fa-magic mr-2 text-green-500"></i>Sinh Mã đề thi bằng AI
-                    </h2>
-                    <form id="generateCodesForm" class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Chọn tài liệu</label>
-                            <select id="materialSelect" name="material_id" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 px-3 py-2" required>
-                                <option value="">-- Chọn tài liệu --</option>
-                                {% for material in materials %}
-                                    <option value="{{ material.id }}">{{ material.title }} ({{ material.uploaded_at|date:"d/m/Y" }})</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Số lượng mã đề (4, 8, 16)</label>
-                            <input type="number" id="numCodes" name="num_codes" min="1" max="16" step="1" value="4" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 px-3 py-2" required>
-                            <p class="text-xs text-gray-500 mt-1">Mỗi mã đề gồm 3 câu hỏi theo 3 mức độ: Dễ, Trung bình, Khó</p>
-                        </div>
-                        <button type="submit" id="generateBtn" class="w-full bg-green-500 text-white font-semibold py-3 px-4 rounded-lg hover:bg-green-600 transition-colors">
-                            <i class="fas fa-cogs mr-2"></i>Sinh Mã đề thi
-                        </button>
-                    </form>
-                    <div id="loadingIndicator" class="hidden text-center py-4">
-                        <div class="loading-spinner mx-auto mb-3"></div>
-                        <p class="text-gray-600">Đang sinh mã đề thi bằng AI...</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Pending Exam Codes -->
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-clock mr-2 text-yellow-500"></i>Mã đề chờ duyệt
-                </h2>
-                <p class="text-gray-600 text-sm mb-4">Xem và duyệt các mã đề thi được sinh bởi AI</p>
-                
-                <div id="pendingCodesContainer" class="space-y-4 max-h-[600px] overflow-y-auto">
-                    {% if pending_exam_codes %}
-                        {% for exam_code in pending_exam_codes %}
-                            <div id="examCode_{{ exam_code.id }}" class="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                                <div class="flex justify-between items-start mb-3">
-                                    <h3 class="font-bold text-lg text-gray-800">{{ exam_code.code_name }}</h3>
-                                    <div class="flex gap-2">
-                                        <button onclick="approveExamCode({{ exam_code.id }})" class="text-green-500 hover:text-green-700" title="Duyệt">
-                                            <i class="fas fa-check-circle"></i>
-                                        </button>
-                                        <button onclick="deleteExamCode({{ exam_code.id }})" class="text-red-500 hover:text-red-700" title="Xoá">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="space-y-3">
-                                    <div class="difficulty-easy bg-green-50 p-3 rounded">
-                                        <div class="flex justify-between items-start">
-                                            <span class="text-xs font-semibold text-green-700 uppercase">Dễ</span>
-                                            <button onclick="editQuestion({{ exam_code.id }}, 'EASY')" class="text-blue-500 hover:text-blue-700 text-sm">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </div>
-                                        <p class="text-sm text-gray-700 mt-1" id="easy_text_{{ exam_code.id }}">{{ exam_code.question_easy.question_text }}</p>
-                                    </div>
-                                    <div class="difficulty-medium bg-yellow-50 p-3 rounded">
-                                        <div class="flex justify-between items-start">
-                                            <span class="text-xs font-semibold text-yellow-700 uppercase">Trung bình</span>
-                                            <button onclick="editQuestion({{ exam_code.id }}, 'MEDIUM')" class="text-blue-500 hover:text-blue-700 text-sm">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </div>
-                                        <p class="text-sm text-gray-700 mt-1" id="medium_text_{{ exam_code.id }}">{{ exam_code.question_medium.question_text }}</p>
-                                    </div>
-                                    <div class="difficulty-hard bg-red-50 p-3 rounded">
-                                        <div class="flex justify-between items-start">
-                                            <span class="text-xs font-semibold text-red-700 uppercase">Khó</span>
-                                            <button onclick="editQuestion({{ exam_code.id }}, 'HARD')" class="text-blue-500 hover:text-blue-700 text-sm">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </div>
-                                        <p class="text-sm text-gray-700 mt-1" id="hard_text_{{ exam_code.id }}">{{ exam_code.question_hard.question_text }}</p>
-                                    </div>
-                                </div>
-                                {% if exam_code.source_material %}
-                                    <p class="text-xs text-gray-500 mt-3">
-                                        <i class="fas fa-book mr-1"></i>Nguồn: {{ exam_code.source_material }}
-                                    </p>
-                                {% endif %}
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="text-center py-8 text-gray-500">
-                            <i class="fas fa-inbox text-4xl mb-3"></i>
-                            <p>Chưa có mã đề thi nào chờ duyệt.</p>
-                            <p class="text-sm mt-2">Upload tài liệu và sinh mã đề bằng AI để bắt đầu.</p>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+<div class="builder-page">
+  <div class="builder-shell">
+    <div class="builder-head">
+      <div>
+        <h1>Tạo đề thi mới</h1>
+        <p>Thiết lập các tham số để tạo đề thi chất lượng cao từ ngân hàng câu hỏi của bạn.</p>
+      </div>
+      <a href="{% url 'qna:lecturer_exam_codes_screen' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Quay lại danh sách
+      </a>
     </div>
-</div>
 
-<!-- Modal Edit Question -->
-<div id="editQuestionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold text-gray-800">Chỉnh sửa Câu hỏi</h3>
-            <button onclick="closeEditQuestionModal()" class="text-gray-500 hover:text-gray-700">
-                <i class="fas fa-times text-xl"></i>
-            </button>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="section-title"><span class="step">1</span> Lựa chọn môn học & Nguồn</div>
+        <div class="grid-3">
+          <div class="field">
+            <label>Chọn môn học <span style="color:var(--red)">*</span></label>
+            <select id="subjectId" onchange="reloadBySubject(this.value)">
+              <option value="">-- Chọn môn học --</option>
+              {% for subject in subjects %}
+                <option value="{{ subject.id }}" {% if selected_subject and subject.id == selected_subject.id %}selected{% endif %}>{{ subject.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>Năm học <span style="color:var(--red)">*</span></label>
+            <input id="academicYear" type="text" value="{{ default_year }}" placeholder="VD: 2024-2025">
+          </div>
+          <div class="field">
+            <label>Kì học <span style="color:var(--red)">*</span></label>
+            <input type="hidden" id="semester" value="HK1">
+            <div class="semester-switch">
+              <button type="button" class="active" data-value="HK1" onclick="setSemester(this)">Học kỳ 1</button>
+              <button type="button" data-value="HK2" onclick="setSemester(this)">Học kỳ 2</button>
+              <button type="button" data-value="SUMMER" onclick="setSemester(this)">HK hè</button>
+            </div>
+          </div>
         </div>
-        <form id="editQuestionForm" class="space-y-4">
-            <input type="hidden" id="editExamCodeId" name="exam_code_id">
-            <input type="hidden" id="editDifficulty" name="difficulty">
-            <div>
-                <label id="difficultyLabel" class="block text-sm font-medium text-gray-700 mb-1">Câu hỏi</label>
-                <textarea id="editQuestionText" name="new_text" rows="4" class="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required></textarea>
-            </div>
-            <div class="flex justify-end gap-3 pt-4">
-                <button type="button" onclick="closeEditQuestionModal()" class="bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
-                    Hủy
-                </button>
-                <button type="submit" class="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
-                    <i class="fas fa-save mr-2"></i>Lưu thay đổi
-                </button>
-            </div>
-        </form>
+
+        <div style="margin-top:24px;">
+          <label style="display:block; font-size:13px; font-weight:600; color:#334155; margin-bottom:10px;">
+            Nguồn câu hỏi <span style="color:var(--red)">*</span>
+          </label>
+
+          <select id="sourceBanks" class="source-dropdown" multiple="multiple" style="width: 100%;">
+            {% for bank in question_banks %}
+              <option value="{{ bank.id }}">{{ bank.name }} ({{ bank.real_question_count }} câu hỏi)</option>
+            {% endfor %}
+          </select>
+          {% if not question_banks %}
+            <div class="helper"><i class="fas fa-info-circle" style="color: var(--blue);"></i> Môn học này chưa có ngân hàng câu hỏi, bạn có thể gõ tên để tự tạo nguồn mới.</div>
+          {% endif %}
+
+        </div>
+      </div>
     </div>
+
+    <div class="panel">
+      <div class="panel-body">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; flex-wrap: wrap;">
+          <div class="section-title" style="margin:0"><span class="step">2</span> Thiết lập ma trận đề</div>
+          <div class="matrix-summary">
+            <div class="summary-box">
+              <span>Tổng số câu: <strong id="totalQuestions">30</strong></span>
+              <span style="color: #cbd5e1;">|</span>
+              <span>Tổng điểm: <strong id="totalScore">67.5</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="matrix-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Mức độ câu hỏi</th>
+                <th>Số lượng xuất hiện</th>
+                <th>Điểm số / Câu</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="matrix-pill pill-easy"><i class="fas fa-circle" style="font-size: 8px;"></i> Dễ</span></td>
+                <td>
+                  <div class="stepper">
+                    <button type="button" onclick="stepValue('easyCount', -1)"><i class="fas fa-minus" style="font-size: 12px;"></i></button>
+                    <strong id="easyCountText">10</strong>
+                    <button type="button" onclick="stepValue('easyCount', 1)"><i class="fas fa-plus" style="font-size: 12px;"></i></button>
+                  </div>
+                  <input type="hidden" id="easyCount" value="10">
+                </td>
+                <td style="width: 200px;">
+                    <div class="field" style="margin: 0;"><input id="easyScore" type="number" step="0.5" value="2.0" style="height: 40px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="matrix-pill pill-medium"><i class="fas fa-circle" style="font-size: 8px;"></i> Trung bình</span></td>
+                <td>
+                  <div class="stepper">
+                    <button type="button" onclick="stepValue('mediumCount', -1)"><i class="fas fa-minus" style="font-size: 12px;"></i></button>
+                    <strong id="mediumCountText">15</strong>
+                    <button type="button" onclick="stepValue('mediumCount', 1)"><i class="fas fa-plus" style="font-size: 12px;"></i></button>
+                  </div>
+                  <input type="hidden" id="mediumCount" value="15">
+                </td>
+                <td>
+                    <div class="field" style="margin: 0;"><input id="mediumScore" type="number" step="0.5" value="2.5" style="height: 40px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="matrix-pill pill-hard"><i class="fas fa-circle" style="font-size: 8px;"></i> Khó</span></td>
+                <td>
+                  <div class="stepper">
+                    <button type="button" onclick="stepValue('hardCount', -1)"><i class="fas fa-minus" style="font-size: 12px;"></i></button>
+                    <strong id="hardCountText">5</strong>
+                    <button type="button" onclick="stepValue('hardCount', 1)"><i class="fas fa-plus" style="font-size: 12px;"></i></button>
+                  </div>
+                  <input type="hidden" id="hardCount" value="5">
+                </td>
+                <td>
+                    <div class="field" style="margin: 0;"><input id="hardScore" type="number" step="0.5" value="3.0" style="height: 40px;"></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-body">
+        <div class="section-title"><span class="step">3</span> Tùy chọn sinh đề</div>
+        <div class="options">
+          <div class="field">
+            <label>Số lượng mã đề cần tạo <span style="color:var(--red)">*</span></label>
+            <input id="numberOfVersions" type="number" min="1" value="12">
+            <div class="helper">Hệ thống sẽ tự động hoán vị câu hỏi và đáp án để tạo ra các mã đề khác nhau.</div>
+          </div>
+          <div>
+            <label style="display:block; font-size:13px; font-weight:600; color:#334155; margin-bottom:12px;">Cài đặt nâng cao</label>
+            <div class="check-list">
+              <label class="check-item"><input id="shuffleQuestionOrder" type="checkbox" checked> Tự động xáo trộn thứ tự câu hỏi</label>
+              <label class="check-item"><input id="allowDuplicateQuestions" type="checkbox"> Cho phép lấy lặp câu hỏi (nếu ngân hàng ít câu)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot-bar">
+      <div class="foot-note"><i class="fas fa-exclamation-triangle"></i> Vui lòng kiểm tra kỹ ma trận đề trước khi sinh. Quá trình có thể mất từ 10 - 30 giây.</div>
+      <button type="button" id="btnSubmit" class="btn btn-primary" onclick="submitCreateExamSet()">
+        <i class="fas fa-bolt"></i> Tiến hành tạo đề thi
+      </button>
+    </div>
+  </div>
 </div>
+<div class="toast-stack" id="toastStack"></div>
+{% endblock %}
+
+{% block extra_js %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script>
-// Upload Material
-document.getElementById('uploadMaterialForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
-    formData.append('subject_id', document.getElementById('selectedSubjectId').value);
-    
-    fetch("{% url 'qna:lecturer_upload_material_screen' %}", {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
-        },
-        body: formData,
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Đã upload tài liệu thành công!');
-            location.reload();
-        } else {
-            alert('Lỗi: ' + data.error);
-        }
-    });
-});
+  $(document).ready(function() {
+      // Khởi tạo Select2 với giao diện xịn xò
+      $('#sourceBanks').select2({
+          tags: true,
+          placeholder: "Gõ để tìm kiếm nguồn có sẵn hoặc nhấn Enter để tạo mới...",
+          allowClear: true,
+          width: '100%',
+          language: {
+              noResults: function () {
+                  return "Không tìm thấy. Bấm Enter để thêm mới.";
+              }
+          }
+      });
+  });
 
-// Generate Exam Codes
-document.getElementById('generateCodesForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
-    const generateBtn = document.getElementById('generateBtn');
-    const loadingIndicator = document.getElementById('loadingIndicator');
-    
-    generateBtn.disabled = true;
-    loadingIndicator.classList.remove('hidden');
-    formData.append('subject_id', document.getElementById('selectedSubjectId').value);
-    
-    fetch("{% url 'qna:lecturer_generate_codes_with_ai_screen' %}", {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
-        },
-        body: formData,
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Đã sinh thành công ' + data.created_count + ' mã đề thi!');
-            location.reload();
-        } else {
-            alert('Lỗi: ' + data.error);
-        }
-    })
-    .finally(() => {
-        generateBtn.disabled = false;
-        loadingIndicator.classList.add('hidden');
-    });
-});
-
-function approveExamCode(examCodeId) {
-    if (confirm('Bạn có chắc chắn muốn duyệt mã đề thi này? Sau khi duyệt, mã đề có thể được sử dụng cho ca thi.')) {
-        const formData = new FormData();
-        fetch("{% url 'qna:lecturer_approve_exam_code' 0 %}".replace('0', examCodeId), {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-            },
-            body: formData,
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                document.getElementById('examCode_' + examCodeId).remove();
-                alert('Đã duyệt mã đề thi thành công!');
-            } else {
-                alert('Lỗi: ' + data.error);
-            }
-        });
+  function getCookie(name) {
+    const cookies = document.cookie ? document.cookie.split(';') : [];
+    for (const cookie of cookies) {
+      const trimmed = cookie.trim();
+      if (trimmed.startsWith(name + '=')) {
+        return decodeURIComponent(trimmed.slice(name.length + 1));
+      }
     }
-}
+    return '';
+  }
 
-function deleteExamCode(examCodeId) {
-    if (confirm('Bạn có chắc chắn muốn xoá mã đề thi này?')) {
-        fetch("{% url 'qna:lecturer_delete_exam_code' 0 %}".replace('0', examCodeId), {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                document.getElementById('examCode_' + examCodeId).remove();
-                alert('Đã xoá mã đề thi thành công!');
-            } else {
-                alert('Lỗi: ' + data.error);
-            }
-        });
-    }
-}
+  function showToast(message, success=false) {
+    const stack = document.getElementById('toastStack');
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (success ? ' success' : '');
+    toast.innerHTML = `
+      <div style="display:flex; align-items:center; gap:12px;">
+        <i class="fas ${success ? 'fa-check-circle' : 'fa-exclamation-circle'}" style="font-size:20px; color: ${success ? 'var(--green)' : 'var(--red)'}"></i>
+        ${message}
+      </div>
+      <button type="button"><i class="fas fa-times"></i></button>`;
+    toast.querySelector('button').onclick = () => toast.remove();
+    stack.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
 
-function editQuestion(examCodeId, difficulty) {
-    document.getElementById('editExamCodeId').value = examCodeId;
-    document.getElementById('editDifficulty').value = difficulty;
-    
-    // Get current question text
-    let textElement;
-    let labelText;
-    if (difficulty === 'EASY') {
-        textElement = document.getElementById('easy_text_' + examCodeId);
-        labelText = 'Câu hỏi Dễ';
-    } else if (difficulty === 'MEDIUM') {
-        textElement = document.getElementById('medium_text_' + examCodeId);
-        labelText = 'Câu hỏi Trung bình';
+  function reloadBySubject(subjectId) {
+    const target = new URL(window.location.href);
+    if (subjectId) {
+      target.searchParams.set('subject_id', subjectId);
     } else {
-        textElement = document.getElementById('hard_text_' + examCodeId);
-        labelText = 'Câu hỏi Khó';
+      target.searchParams.delete('subject_id');
     }
-    
-    document.getElementById('difficultyLabel').textContent = labelText;
-    document.getElementById('editQuestionText').value = textElement.textContent.trim();
-    document.getElementById('editQuestionModal').classList.remove('hidden');
-}
+    window.location.href = target.toString();
+  }
 
-function closeEditQuestionModal() {
-    document.getElementById('editQuestionModal').classList.add('hidden');
-}
+  function setSemester(button) {
+    document.querySelectorAll('.semester-switch button').forEach(item => item.classList.remove('active'));
+    button.classList.add('active');
+    document.getElementById('semester').value = button.dataset.value;
+  }
 
-document.getElementById('editQuestionForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const examCodeId = document.getElementById('editExamCodeId').value;
-    const difficulty = document.getElementById('editDifficulty').value;
-    const newText = document.getElementById('editQuestionText').value;
-    
-    const formData = new FormData();
-    formData.append('difficulty', difficulty);
-    formData.append('new_text', newText);
-    
-    fetch("{% url 'qna:lecturer_edit_exam_code_question' 0 %}".replace('0', examCodeId), {
-        method: 'POST',
-        headers: {
+  function stepValue(id, delta) {
+    const input = document.getElementById(id);
+    const text = document.getElementById(id + 'Text');
+    let value = parseInt(input.value || '0', 10) + delta;
+    if (value < 0) value = 0; // Đổi min = 0 để người dùng có thể chọn ma trận không có câu hỏi khó
+    input.value = value;
+    text.textContent = value;
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const easyCount = parseInt(document.getElementById('easyCount').value || '0', 10);
+    const mediumCount = parseInt(document.getElementById('mediumCount').value || '0', 10);
+    const hardCount = parseInt(document.getElementById('hardCount').value || '0', 10);
+    const easyScore = parseFloat(document.getElementById('easyScore').value || '0');
+    const mediumScore = parseFloat(document.getElementById('mediumScore').value || '0');
+    const hardScore = parseFloat(document.getElementById('hardScore').value || '0');
+
+    document.getElementById('totalQuestions').textContent = easyCount + mediumCount + hardCount;
+    document.getElementById('totalScore').textContent = ((easyCount * easyScore) + (mediumCount * mediumScore) + (hardCount * hardScore)).toFixed(2);
+  }
+
+  document.getElementById('easyScore').addEventListener('input', updateSummary);
+  document.getElementById('mediumScore').addEventListener('input', updateSummary);
+  document.getElementById('hardScore').addEventListener('input', updateSummary);
+  updateSummary();
+
+  async function submitCreateExamSet() {
+    const sourceBanks = $('#sourceBanks').val() || [];
+    const btn = document.getElementById('btnSubmit');
+
+    if (sourceBanks.length === 0) {
+      showToast("Vui lòng chọn hoặc nhập ít nhất một nguồn câu hỏi!");
+      return;
+    }
+
+    if (!document.getElementById('subjectId').value) {
+      showToast("Vui lòng chọn môn học!");
+      return;
+    }
+
+    const payload = {
+      subject_id: document.getElementById('subjectId').value,
+      academic_year: document.getElementById('academicYear').value.trim(),
+      semester: document.getElementById('semester').value,
+      source_bank_ids: sourceBanks,
+      easy_count: document.getElementById('easyCount').value,
+      medium_count: document.getElementById('mediumCount').value,
+      hard_count: document.getElementById('hardCount').value,
+      easy_score: document.getElementById('easyScore').value,
+      medium_score: document.getElementById('mediumScore').value,
+      hard_score: document.getElementById('hardScore').value,
+      number_of_versions: document.getElementById('numberOfVersions').value,
+      shuffle_question_order: document.getElementById('shuffleQuestionOrder').checked,
+      allow_duplicate_questions: document.getElementById('allowDuplicateQuestions').checked,
+    };
+
+    // UI Loading state
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang xử lý...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('{% url "qna:lecturer_create_exam_set" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
             'X-CSRFToken': getCookie('csrftoken'),
-        },
-        body: formData,
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // Update the displayed text
-            let textElement;
-            if (difficulty === 'EASY') {
-                textElement = document.getElementById('easy_text_' + examCodeId);
-            } else if (difficulty === 'MEDIUM') {
-                textElement = document.getElementById('medium_text_' + examCodeId);
-            } else {
-                textElement = document.getElementById('hard_text_' + examCodeId);
-            }
-            textElement.textContent = newText;
-            closeEditQuestionModal();
-            alert('Đã chỉnh sửa câu hỏi thành công!');
-        } else {
-            alert('Lỗi: ' + data.error);
-        }
-    });
-});
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
 
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
+        if (!response.ok || data.status !== 'SUCCESS') {
+          showToast(data.message || 'Tạo đề thi thất bại');
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+          return;
         }
+        showToast(data.message || 'Tạo đề thi thành công', true);
+        setTimeout(() => {
+            window.location.href = data.detail_url;
+        }, 1000);
+    } catch (error) {
+        showToast('Lỗi kết nối máy chủ!');
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
-    return cookieValue;
-}
+  }
 </script>
 {% endblock %}
