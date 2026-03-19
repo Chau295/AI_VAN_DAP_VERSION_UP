@@ -1,0 +1,771 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Danh sách Lớp - Lịch sử import{% endblock %}
+
+{% block content %}
+<style>
+  :root {
+    --qm-bg: #f5f7fb;
+    --qm-panel: #ffffff;
+    --qm-border: #e5ebf3;
+    --qm-text: #132238;
+    --qm-muted: #7b8798;
+    --qm-blue: #2346a6;
+    --qm-blue-dark: #173887;
+    --qm-blue-soft: #dbeafe;
+    --qm-blue-text: #2563eb;
+    --qm-gray-soft: #e2e8f0;
+    --qm-gray-text: #64748b;
+    --qm-green-soft: #eaf8ef;
+    --qm-green: #16a34a;
+    --qm-red: #ef4444;
+    --qm-red-dark: #dc2626;
+    --qm-red-soft: #fef2f2;
+    --qm-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+    --qm-shadow-btn: 0 10px 20px rgba(35, 70, 166, 0.18);
+    --qm-radius-xl: 28px;
+    --qm-radius-lg: 22px;
+    --qm-radius-md: 16px;
+    --qm-radius-sm: 12px;
+  }
+
+  * { box-sizing: border-box; }
+
+  .qm2-page {
+    background: #fff;
+    min-height: calc(100vh - 80px);
+  }
+
+  .qm2-breadcrumb-bar {
+    padding: 20px 30px;
+    border-bottom: 1px solid var(--qm-border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    color: var(--qm-muted);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .qm2-breadcrumb-bar a {
+    color: var(--qm-text);
+    text-decoration: none;
+    transition: .18s ease;
+  }
+
+  .qm2-breadcrumb-bar a:hover {
+    color: var(--qm-blue);
+  }
+
+  .qm2-breadcrumb-current {
+    color: var(--qm-text);
+    font-weight: 700;
+  }
+
+  .qm2-shell {
+    max-width: 1380px;
+    margin: 0 auto;
+    padding: 28px 30px 34px;
+  }
+
+  .qm2-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+
+  .qm2-title h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.2;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--qm-text);
+  }
+
+  .qm2-title p {
+    margin: 8px 0 0;
+    font-size: 14px;
+    color: var(--qm-muted);
+  }
+
+  .qm2-btn {
+    border: 0;
+    outline: 0;
+    text-decoration: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 46px;
+    padding: 0 22px;
+    border-radius: 18px;
+    font-size: 14px;
+    font-weight: 700;
+    transition: .18s ease;
+    white-space: nowrap;
+  }
+
+  .qm2-btn:hover {
+    transform: translateY(-1px);
+    text-decoration: none;
+  }
+
+  .qm2-btn-primary {
+    background: var(--qm-blue);
+    color: #fff;
+    box-shadow: var(--qm-shadow-btn);
+  }
+
+  .qm2-btn-primary:hover {
+    background: var(--qm-blue-dark);
+    color: #fff;
+  }
+
+  .qm2-btn-secondary {
+    background: #fff;
+    color: #475569;
+    border: 1px solid var(--qm-border);
+  }
+
+  .qm2-btn-secondary:hover {
+    background: #f8fafc;
+    color: var(--qm-text);
+  }
+
+  .qm2-btn-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: 2px solid rgba(255,255,255,.75);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    flex: 0 0 22px;
+  }
+
+  .qm2-card {
+    background: var(--qm-panel);
+    border: 1px solid var(--qm-border);
+    border-radius: var(--qm-radius-xl);
+    overflow: hidden;
+    box-shadow: var(--qm-shadow);
+  }
+
+  .qm2-filters {
+    padding: 22px 24px 18px;
+    display: grid;
+    grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(170px, .78fr));
+    gap: 16px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .qm2-search {
+    position: relative;
+  }
+
+  .qm2-search i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 14px;
+  }
+
+  .qm2-input,
+  .qm2-select {
+    width: 100%;
+    height: 44px;
+    border: 1px solid #dbe3ee;
+    border-radius: 14px;
+    background: #fff;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 600;
+    outline: none;
+    transition: .18s ease;
+  }
+
+  .qm2-input {
+    padding: 0 16px 0 44px;
+    background: #f5f7fb;
+    border-color: #f0f4f9;
+  }
+
+  .qm2-select {
+    padding: 0 14px;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, #94a3b8 50%),
+      linear-gradient(135deg, #94a3b8 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) calc(50% - 3px),
+      calc(100% - 12px) calc(50% - 3px);
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+  }
+
+  .qm2-input:focus,
+  .qm2-select:focus {
+    border-color: #b7c8ea;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, .08);
+  }
+
+  .qm2-table-wrap {
+    overflow-x: auto;
+  }
+
+  .qm2-table {
+    width: 100%;
+    min-width: 1080px;
+    border-collapse: collapse;
+  }
+
+  .qm2-table thead th {
+    padding: 16px 22px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 14px;
+    font-weight: 800;
+    text-align: left;
+    border-bottom: 1px solid var(--qm-border);
+  }
+
+  .qm2-table tbody td {
+    padding: 20px 22px;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 600;
+    border-bottom: 1px solid #eef2f7;
+    vertical-align: middle;
+  }
+
+  .qm2-table tbody tr:hover {
+    background: #fbfdff;
+  }
+
+  .qm2-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .qm2-center {
+    text-align: center;
+  }
+
+  .qm2-file-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: #0f172a;
+    text-decoration: none;
+    font-weight: 800;
+    transition: .18s ease;
+    max-width: 100%;
+  }
+
+  .qm2-file-link:hover {
+    color: var(--qm-blue);
+    text-decoration: none;
+  }
+
+  .qm2-file-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: var(--qm-green-soft);
+    color: var(--qm-green);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 36px;
+    font-size: 17px;
+  }
+
+  .qm2-file-name {
+    display: inline-block;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .qm2-pill {
+    min-width: 92px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .01em;
+  }
+
+  .qm2-pill-created {
+    background: var(--qm-blue-soft);
+    color: var(--qm-blue-text);
+  }
+
+  .qm2-pill-pending {
+    background: var(--qm-gray-soft);
+    color: var(--qm-gray-text);
+  }
+
+  .qm2-action-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 0;
+    background: transparent;
+    color: var(--qm-red);
+    cursor: pointer;
+    transition: .18s ease;
+  }
+
+  .qm2-action-btn:hover {
+    background: var(--qm-red-soft);
+    color: var(--qm-red-dark);
+  }
+
+  .qm2-empty {
+    padding: 54px 20px !important;
+    text-align: center;
+    color: #94a3b8 !important;
+    font-weight: 700;
+  }
+
+  .qm2-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 22px;
+    background: #f8fafc;
+    border-top: 1px solid #eef2f7;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+    flex-wrap: wrap;
+  }
+
+  .qm2-pager {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .qm2-page-btn,
+  .qm2-page-current {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    font-weight: 800;
+    border: 1px solid #e2e8f0;
+  }
+
+  .qm2-page-btn {
+    background: #fff;
+    color: #64748b;
+  }
+
+  .qm2-page-btn:hover {
+    background: #f1f5f9;
+    text-decoration: none;
+  }
+
+  .qm2-page-current {
+    background: #fff;
+    color: var(--qm-blue);
+    border-color: #cbd5e1;
+  }
+
+  .qm2-page-disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .qm2-toast {
+    position: fixed;
+    top: 22px;
+    right: 22px;
+    z-index: 1200;
+    min-width: 300px;
+    max-width: 420px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 18px 36px rgba(15, 23, 42, .14);
+    border-left: 4px solid #22c55e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .qm2-toast.error { border-left-color: var(--qm-red); }
+  .qm2-toast button {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 16px;
+  }
+
+  .qm2-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, .42);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1300;
+  }
+
+  .qm2-modal.show {
+    display: flex;
+  }
+
+  .qm2-dialog {
+    width: 100%;
+    max-width: 520px;
+    background: #fff;
+    border-radius: 22px;
+    box-shadow: 0 30px 60px rgba(15, 23, 42, .24);
+    padding: 32px 28px 26px;
+    text-align: center;
+  }
+
+  .qm2-dialog h3 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.3;
+    font-weight: 800;
+    color: #374151;
+  }
+
+  .qm2-dialog p {
+    margin: 16px 0 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #94a3b8;
+    font-weight: 600;
+  }
+
+  .qm2-dialog-file {
+    color: var(--qm-red);
+  }
+
+  .qm2-dialog-actions {
+    margin-top: 28px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .qm2-btn-outline {
+    height: 44px;
+    padding: 0 22px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #dbe3ee;
+    color: #475569;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .qm2-btn-danger {
+    height: 44px;
+    padding: 0 22px;
+    border-radius: 14px;
+    background: var(--qm-red);
+    border: 1px solid var(--qm-red);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  @media (max-width: 1100px) {
+    .qm2-filters {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .qm2-breadcrumb-bar,
+    .qm2-shell {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    .qm2-topbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .qm2-filters {
+      grid-template-columns: 1fr;
+      padding: 18px 16px 16px;
+    }
+
+    .qm2-footer {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .qm2-btn-primary, .qm2-btn-secondary {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .qm2-dialog {
+      padding: 24px 18px 20px;
+    }
+
+    .qm2-dialog h3 {
+      font-size: 20px;
+    }
+  }
+</style>
+
+<div class="qm2-page">
+  <div class="qm2-breadcrumb-bar">
+    <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}">{{ subject.name }}</a>
+    <i class="fas fa-chevron-right" style="font-size:12px;"></i>
+    <span class="qm2-breadcrumb-current">Quản lý danh sách lớp</span>
+  </div>
+
+  <div class="qm2-shell">
+    <div class="qm2-topbar">
+      <div class="qm2-title">
+        <h1>Danh sách lớp đã tải lên</h1>
+        <p>Quản lý và cập nhật danh sách sinh viên theo từng lớp.</p>
+      </div>
+
+      <!-- Đã thêm nút quay lại vào trong Flex Group -->
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" class="qm2-btn qm2-btn-secondary">
+          <i class="fas fa-arrow-left"></i>
+          Quay lại
+        </a>
+        <a href="{% url 'qna:lecturer_student_list_upload' subject.subject_code %}" class="qm2-btn qm2-btn-primary">
+          <span class="qm2-btn-icon"><i class="fas fa-plus"></i></span>
+          Tải danh sách mới
+        </a>
+      </div>
+    </div>
+
+    <div class="qm2-card">
+      <form method="get" class="qm2-filters">
+        <div class="qm2-search">
+          <i class="fas fa-search"></i>
+          <input type="text" name="q" value="{{ filters.q }}" class="qm2-input" placeholder="Tìm kiếm file...">
+        </div>
+
+        <select name="academic_year" class="qm2-select" onchange="this.form.submit()">
+          <option value="">Năm học: Tất cả</option>
+          {% for year in academic_year_options %}
+            <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>
+              Năm học: {{ year }}
+            </option>
+          {% endfor %}
+        </select>
+
+        <select name="semester" class="qm2-select" onchange="this.form.submit()">
+          <option value="">Học kỳ: Tất cả</option>
+          {% for value, label in semester_options %}
+            <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>
+              Học kỳ: {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+
+        <select name="status" class="qm2-select" onchange="this.form.submit()">
+          <option value="">Trạng thái: Tất cả</option>
+          {% for value, label in status_options %}
+            <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
+              Trạng thái: {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      </form>
+
+      <div class="qm2-table-wrap">
+        <table class="qm2-table">
+          <thead>
+            <tr>
+              <th>Tên file</th>
+              <th class="qm2-center">Số lượng SV</th>
+              <th class="qm2-center">Năm học</th>
+              <th class="qm2-center">Học kì</th>
+              <th class="qm2-center">Thời gian tải lên</th>
+              <th class="qm2-center">Trạng thái</th>
+              <th class="qm2-center">Hành động</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for roster in page_obj %}
+              <tr>
+                <td>
+                  <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}" class="qm2-file-link">
+                    <span class="qm2-file-icon">
+                      <i class="far fa-file-excel"></i>
+                    </span>
+                    <span class="qm2-file-name">{{ roster.original_file_name }}</span>
+                  </a>
+                </td>
+                <td class="qm2-center">{{ roster.total_students }} sinh viên</td>
+                <td class="qm2-center">{{ roster.academic_year }}</td>
+                <td class="qm2-center">{{ roster.get_semester_display }}</td>
+                <td class="qm2-center">{{ roster.created_at|date:"d/m/Y" }}</td>
+                <td class="qm2-center">
+                  {% if roster.status == 'CREATED' %}
+                    <span class="qm2-pill qm2-pill-created">ĐÃ TẠO</span>
+                  {% else %}
+                    <span class="qm2-pill qm2-pill-pending">CHƯA TẠO</span>
+                  {% endif %}
+                </td>
+                <td class="qm2-center">
+                  <button
+                    type="button"
+                    class="qm2-action-btn js-open-delete"
+                    data-delete-url="{% url 'qna:lecturer_student_list_delete' roster.id %}"
+                    data-file-name="{{ roster.original_file_name }}"
+                    title="Xóa file"
+                  >
+                    <i class="far fa-trash-alt"></i>
+                  </button>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="7" class="qm2-empty">
+                  Chưa có danh sách lớp nào được tải lên.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="qm2-footer">
+        <div>
+          Hiển thị {{ page_obj.start_index|default:0 }}-{{ page_obj.end_index|default:0 }} trong số {{ page_obj.paginator.count }} tệp
+        </div>
+
+        <div class="qm2-pager">
+          {% if page_obj.has_previous %}
+            <a class="qm2-page-btn" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&academic_year={{ filters.academic_year }}&semester={{ filters.semester }}&status={{ filters.status }}">
+              <i class="fas fa-chevron-left"></i>
+            </a>
+          {% else %}
+            <span class="qm2-page-btn qm2-page-disabled">
+              <i class="fas fa-chevron-left"></i>
+            </span>
+          {% endif %}
+
+          <span class="qm2-page-current">{{ page_obj.number }}</span>
+
+          {% if page_obj.has_next %}
+            <a class="qm2-page-btn" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&academic_year={{ filters.academic_year }}&semester={{ filters.semester }}&status={{ filters.status }}">
+              <i class="fas fa-chevron-right"></i>
+            </a>
+          {% else %}
+            <span class="qm2-page-btn qm2-page-disabled">
+              <i class="fas fa-chevron-right"></i>
+            </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+    {% if forloop.first %}
+      <div id="stateToast" class="qm2-toast {% if message.tags == 'error' %}error{% endif %}">
+        <div>{{ message }}</div>
+        <button type="button" onclick="hideToast()"><i class="fas fa-times"></i></button>
+      </div>
+    {% endif %}
+  {% endfor %}
+{% else %}
+  <div id="stateToast" class="qm2-toast" style="display:none;">
+    <div id="stateToastMessage"></div>
+    <button type="button" onclick="hideToast()"><i class="fas fa-times"></i></button>
+  </div>
+{% endif %}
+
+<div id="deleteModal" class="qm2-modal">
+  <div class="qm2-dialog">
+    <h3>
+      Bạn có chắc chắn muốn xóa file<br>
+      <span id="deleteFileName" class="qm2-dialog-file"></span>?
+    </h3>
+    <p>Danh sách lớp được xóa sẽ không thể khôi phục lại.</p>
+
+    <form id="deleteForm" method="post" class="qm2-dialog-actions">
+      {% csrf_token %}
+      <button type="button" class="qm2-btn-outline" id="closeDeleteModal">Hủy bỏ</button>
+      <button type="submit" class="qm2-btn-danger">Xóa</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.getElementById('deleteModal');
+    const closeBtn = document.getElementById('closeDeleteModal');
+    const deleteForm = document.getElementById('deleteForm');
+    const deleteFileName = document.getElementById('deleteFileName');
+
+    document.querySelectorAll('.js-open-delete').forEach(btn => {
+      btn.addEventListener('click', function () {
+        deleteForm.action = this.dataset.deleteUrl;
+        deleteFileName.textContent = this.dataset.fileName;
+        modal.classList.add('show');
+      });
+    });
+
+    closeBtn.addEventListener('click', () => modal.classList.remove('show'));
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('show');
+      }
+    });
+
+    const toast = document.getElementById('stateToast');
+    if (toast && toast.style.display !== 'none') {
+      setTimeout(() => {
+        hideToast();
+      }, 2800);
+    }
+  });
+
+  function hideToast() {
+    const toast = document.getElementById('stateToast');
+    if (toast) {
+      toast.style.display = 'none';
+    }
+  }
+</script>
+{% endblock %}

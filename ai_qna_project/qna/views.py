@@ -1,19 +1,26 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import csv
 import json
 import random
 import base64
 import io
 import os
 import logging
+import re
 from base64 import b64encode
+from datetime import datetime, date
 from typing import List, Dict, Any
 from uuid import uuid4
 
 # --- THƯ VIỆN MỚI THÊM CHO AI & ĐỌC FILE ---
 from pathlib import Path
+import unicodedata
 from PyPDF2 import PdfReader
+from django.core.files.base import ContentFile
+from django.core.paginator import Paginator
+from django.db import transaction
 from openai import OpenAI
 
 # -------------------------------------------
@@ -27,7 +34,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import Sum, Avg, Count
+from django.db.models import Sum, Avg, Count, Q
 from django.http import (
     JsonResponse,
     HttpRequest,
@@ -49,6 +56,9 @@ from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
+from openpyxl import load_workbook
+from openpyxl import Workbook as OpenpyxlWorkbook
+
 from .forms import (
     LecturerManualQuestionForm,
     LecturerMaterialUploadForm,
@@ -66,7 +76,8 @@ from .models import (
     ExamSessionGroup,
     ExamSessionRoom,
     DifficultyLevel,
-    QuestionBank,  # THÊM MODEL MỚI VÀO ĐÂY
+    QuestionBank, StudentRosterUpload, SemesterChoices, StudentListUploadStatus,
+    StudentRosterStudent,
 )
 
 User = get_user_model()
@@ -149,9 +160,14 @@ def lecturer_subject_workspace(request, subject_code):
         subject_code=subject_code
     )
 
+    # Lấy dữ liệu các lượt thi
     sessions_in_subject = ExamSession.objects.filter(subject=subject)
     total_exams = sessions_in_subject.count()
     completed_exams = sessions_in_subject.filter(is_completed=True).count()
+
+    # Lấy số lượng sinh viên đã thi và các lượt thi gần đây
+    total_students = sessions_in_subject.values('user').distinct().count()
+    recent_exams = sessions_in_subject.select_related('user', 'user__userprofile').order_by('-created_at')[:10]
 
     upcoming_groups = ExamSessionGroup.objects.filter(
         subject=subject,
@@ -164,6 +180,8 @@ def lecturer_subject_workspace(request, subject_code):
         'subject': subject,
         'total_exams': total_exams,
         'completed_exams': completed_exams,
+        'total_students': total_students,
+        'recent_exams': recent_exams,
         'upcoming_groups': upcoming_groups,
         'approved_codes': approved_codes,
     }
@@ -2582,3 +2600,494 @@ from .exam_management import (
     lecturer_save_exam_set_draft,
     lecturer_delete_exam_set,
 )
+
+# ===========================
+# STUDENT LIST MANAGEMENT
+# ===========================
+STUDENT_LIST_ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".csv"}
+STUDENT_LIST_MAX_FILE_SIZE = 10 * 1024 * 1024
+STUDENT_LIST_REQUIRED_COLUMNS = {
+    "student_code": {"mssv", "ma_so_sinh_vien", "student_id", "student_code", "username", "msv"},
+    "full_name": {"ho_va_ten", "ho_ten", "full_name", "name", "ten_sinh_vien"},
+}
+STUDENT_LIST_OPTIONAL_COLUMNS = {
+    "gender": {"gioi_tinh", "gender", "sex"},
+    "date_of_birth": {"ngay_sinh", "date_of_birth", "dob", "birth_date"},
+    "class_name": {"lop", "class", "class_name", "ten_lop"},
+    "email": {"email", "mail"},
+}
+
+
+def _student_default_academic_year():
+    now = timezone.localtime()
+    start_year = now.year if now.month >= 8 else now.year - 1
+    return f"{start_year}-{start_year + 1}"
+
+
+def _student_normalize_header(value):
+    value = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^a-zA-Z0-9]+", "_", value.lower()).strip("_")
+    return value
+
+
+def _student_clean_cell(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _student_parse_birth(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    for fmt in ["%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y"]:
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _student_normalize_gender(value):
+    text = _student_clean_cell(value).lower()
+    if text in {"nam", "male", "m"}:
+        return "Nam"
+    if text in {"nu", "nữ", "female", "f"}:
+        return "Nữ"
+    return _student_clean_cell(value)
+
+
+def _student_find_user(student_code):
+    student_code = (student_code or "").strip()
+    if not student_code:
+        return None
+
+    user = User.objects.filter(username=student_code).first()
+    if user:
+        return user
+
+    profile = UserProfile.objects.filter(student_id=student_code).select_related("user").first()
+    return profile.user if profile else None
+
+
+def _student_validate_file(uploaded_file):
+    extension = os.path.splitext(uploaded_file.name or "")[1].lower()
+    if extension not in STUDENT_LIST_ALLOWED_EXTENSIONS:
+        raise ValidationError("Hệ thống chỉ chấp nhận file Excel (.xlsx, .xls) hoặc CSV.")
+    if uploaded_file.size > STUDENT_LIST_MAX_FILE_SIZE:
+        raise ValidationError("Dung lượng file vượt quá 10MB. Vui lòng kiểm tra lại.")
+
+
+def _student_resolve_columns(headers):
+    mapping = {}
+    normalized = [_student_normalize_header(item) for item in headers]
+
+    for target, aliases in STUDENT_LIST_REQUIRED_COLUMNS.items():
+        for index, header in enumerate(normalized):
+            if header in aliases:
+                mapping[target] = index
+                break
+        if target not in mapping:
+            raise ValidationError(f"Thiếu cột bắt buộc cho danh sách sinh viên: {target}.")
+
+    for target, aliases in STUDENT_LIST_OPTIONAL_COLUMNS.items():
+        for index, header in enumerate(normalized):
+            if header in aliases:
+                mapping[target] = index
+                break
+
+    return mapping
+
+
+def _student_parse_csv_rows(file_bytes):
+    text = file_bytes.decode("utf-8-sig", errors="ignore")
+    reader = csv.reader(io.StringIO(text))
+    return [row for row in reader if any(str(cell).strip() for cell in row)]
+
+
+def _student_parse_xlsx_rows(file_bytes):
+    workbook = load_workbook(io.BytesIO(file_bytes), data_only=True)
+    worksheet = workbook.active
+    rows = []
+    for row in worksheet.iter_rows(values_only=True):
+        values = ["" if value is None else value for value in row]
+        if any(str(cell).strip() for cell in values):
+            rows.append(values)
+    return rows
+
+
+def _student_parse_xls_rows(file_bytes):
+    try:
+        import pandas as pd
+    except Exception as exc:
+        raise ValidationError("Muốn đọc file .xls, vui lòng cài thêm xlrd==2.0.1 và pandas.") from exc
+
+    try:
+        dataframe = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
+    except Exception as exc:
+        raise ValidationError(f"Không thể đọc file .xls: {exc}") from exc
+
+    rows = [list(dataframe.columns)]
+    rows.extend(dataframe.fillna("").values.tolist())
+    return rows
+
+
+def _student_parse_records(file_name, file_bytes):
+    extension = os.path.splitext(file_name or "")[1].lower()
+    if extension == ".csv":
+        rows = _student_parse_csv_rows(file_bytes)
+    elif extension == ".xlsx":
+        rows = _student_parse_xlsx_rows(file_bytes)
+    elif extension == ".xls":
+        rows = _student_parse_xls_rows(file_bytes)
+    else:
+        raise ValidationError("Định dạng file không hợp lệ.")
+
+    if len(rows) < 2:
+        raise ValidationError("File được chọn không có dữ liệu.")
+
+    headers = rows[0]
+    column_map = _student_resolve_columns(headers)
+
+    records = []
+    seen_codes = set()
+
+    for row in rows[1:]:
+        student_code = _student_clean_cell(
+            row[column_map["student_code"]] if column_map["student_code"] < len(row) else ""
+        )
+        full_name = _student_clean_cell(
+            row[column_map["full_name"]] if column_map["full_name"] < len(row) else ""
+        )
+
+        if not student_code or not full_name:
+            continue
+
+        if student_code in seen_codes:
+            continue
+        seen_codes.add(student_code)
+
+        gender = _student_normalize_gender(
+            row[column_map["gender"]]
+            if column_map.get("gender") is not None and column_map["gender"] < len(row)
+            else ""
+        )
+        date_of_birth = _student_parse_birth(
+            row[column_map["date_of_birth"]]
+            if column_map.get("date_of_birth") is not None and column_map["date_of_birth"] < len(row)
+            else ""
+        )
+        class_name = _student_clean_cell(
+            row[column_map["class_name"]]
+            if column_map.get("class_name") is not None and column_map["class_name"] < len(row)
+            else ""
+        )
+        email = _student_clean_cell(
+            row[column_map["email"]]
+            if column_map.get("email") is not None and column_map["email"] < len(row)
+            else ""
+        )
+
+        records.append(
+            {
+                "student_code": student_code,
+                "full_name": full_name,
+                "gender": gender,
+                "date_of_birth": date_of_birth,
+                "class_name": class_name,
+                "email": email,
+            }
+        )
+
+    if not records:
+        raise ValidationError("Không tìm thấy sinh viên hợp lệ trong file tải lên.")
+
+    return records
+
+
+def _student_create_roster(subject, created_by, academic_year, semester, uploaded_file):
+    _student_validate_file(uploaded_file)
+    file_bytes = uploaded_file.read()
+    if not file_bytes:
+        raise ValidationError("File được chọn không có dữ liệu.")
+
+    records = _student_parse_records(uploaded_file.name, file_bytes)
+
+    roster = StudentRosterUpload(
+        subject=subject,
+        academic_year=academic_year,
+        semester=semester,
+        title=os.path.splitext(uploaded_file.name)[0],
+        original_file_name=uploaded_file.name,
+        total_students=len(records),
+        created_by=created_by,
+        status=StudentListUploadStatus.PENDING,
+    )
+    roster.uploaded_file.save(
+        f"{uuid4().hex}_{uploaded_file.name}",
+        ContentFile(file_bytes),
+        save=False,
+    )
+    roster.save()
+
+    students = []
+    for index, item in enumerate(records, start=1):
+        linked_user = _student_find_user(item["student_code"])
+        students.append(
+            StudentRosterStudent(
+                roster=roster,
+                row_number=index,
+                student_code=item["student_code"],
+                full_name=item["full_name"],
+                gender=item["gender"],
+                date_of_birth=item["date_of_birth"],
+                class_name=item["class_name"],
+                email=item["email"],
+                linked_user=linked_user,
+                account_created=bool(linked_user),
+            )
+        )
+
+    StudentRosterStudent.objects.bulk_create(students)
+    roster.refresh_status()
+    return roster
+
+
+def _student_sync_profile(user, student_row):
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.is_lecturer = False
+    profile.full_name = student_row.full_name
+    profile.class_name = student_row.class_name
+    profile.student_id = student_row.student_code
+    profile.save()
+    return profile
+
+
+@login_required
+def lecturer_student_list_management(request, subject_code):
+    _ensure_lecturer(request)
+    subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
+
+    rosters = StudentRosterUpload.objects.filter(subject=subject).prefetch_related("students")
+    keyword = (request.GET.get("q") or "").strip()
+    academic_year = (request.GET.get("academic_year") or "").strip()
+    semester = (request.GET.get("semester") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+
+    if keyword:
+        rosters = rosters.filter(
+            Q(title__icontains=keyword)
+            | Q(original_file_name__icontains=keyword)
+            | Q(students__student_code__icontains=keyword)
+        ).distinct()
+    if academic_year:
+        rosters = rosters.filter(academic_year=academic_year)
+    if semester:
+        rosters = rosters.filter(semester=semester)
+    if status:
+        rosters = rosters.filter(status=status)
+
+    paginator = Paginator(rosters.order_by("-created_at"), 10)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    context = {
+        "subject": subject,
+        "page_obj": page_obj,
+        "filters": {
+            "q": keyword,
+            "academic_year": academic_year,
+            "semester": semester,
+            "status": status,
+        },
+        "academic_year_options": StudentRosterUpload.objects.filter(subject=subject)
+        .values_list("academic_year", flat=True)
+        .distinct()
+        .order_by("-academic_year"),
+        "semester_options": SemesterChoices.choices,
+        "status_options": StudentListUploadStatus.choices,
+    }
+    return render(request, "qna/lecturer/lecturer_student_list_management.html", context)
+
+
+@login_required
+def lecturer_student_list_upload(request, subject_code):
+    _ensure_lecturer(request)
+    subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
+
+    if request.method == "POST":
+        academic_year = (request.POST.get("academic_year") or "").strip() or _student_default_academic_year()
+        semester = (request.POST.get("semester") or SemesterChoices.HK1).strip()
+        files = request.FILES.getlist("files")
+
+        if not files:
+            messages.error(request, "Vui lòng chọn ít nhất 1 file danh sách sinh viên.")
+            return redirect("qna:lecturer_student_list_upload", subject_code=subject.subject_code)
+
+        success_names = []
+        errors = []
+
+        for uploaded_file in files:
+            try:
+                with transaction.atomic():
+                    roster = _student_create_roster(
+                        subject=subject,
+                        created_by=request.user,
+                        academic_year=academic_year,
+                        semester=semester,
+                        uploaded_file=uploaded_file,
+                    )
+                success_names.append(roster.original_file_name)
+            except Exception as exc:
+                errors.append(f"{uploaded_file.name}: {exc}")
+
+        if success_names:
+            messages.success(
+                request,
+                f"Tải lên thành công {len(success_names)} file danh sách sinh viên.",
+            )
+
+        for error in errors:
+            messages.error(request, error)
+
+        if success_names:
+            return redirect("qna:lecturer_student_list_management", subject_code=subject.subject_code)
+
+    context = {
+        "subject": subject,
+        "default_academic_year": _student_default_academic_year(),
+        "semester_options": SemesterChoices.choices,
+        "max_upload_mb": STUDENT_LIST_MAX_FILE_SIZE // (1024 * 1024),
+    }
+    return render(request, "qna/lecturer/lecturer_student_list_upload.html", context)
+
+
+@login_required
+def lecturer_student_list_template(request, subject_code):
+    _ensure_lecturer(request)
+    subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
+
+    workbook = OpenpyxlWorkbook()
+    worksheet = workbook.active
+    worksheet.title = "Danh sách sinh viên"
+    worksheet.append(["Mã số sinh viên", "Họ và tên", "Giới tính", "Ngày sinh", "Lớp", "Email"])
+    worksheet.append(["SV2024001", "Nguyễn Văn An", "Nam", "12/05/2003", "CNT01", "sv2024001@example.com"])
+    worksheet.append(["SV2024002", "Trần Thị Bích", "Nữ", "24/08/2003", "CNT01", "sv2024002@example.com"])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="Template_Danh_Sach_SV_{subject.subject_code}.xlsx"'
+    )
+    workbook.save(response)
+    return response
+
+
+@login_required
+def lecturer_student_list_detail(request, roster_id):
+    _ensure_lecturer(request)
+    roster = get_object_or_404(
+        StudentRosterUpload.objects.select_related("subject", "created_by"),
+        pk=roster_id,
+    )
+    if roster.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền truy cập danh sách này.")
+
+    keyword = (request.GET.get("q") or "").strip()
+    students_qs = roster.students.order_by("row_number")
+
+    if keyword:
+        students_qs = students_qs.filter(
+            Q(student_code__icontains=keyword)
+            | Q(full_name__icontains=keyword)
+            | Q(class_name__icontains=keyword)
+        )
+
+    paginator = Paginator(students_qs, 8)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    roster.refresh_status()
+
+    context = {
+        "roster": roster,
+        "subject": roster.subject,
+        "page_obj": page_obj,
+        "search_query": keyword,
+        "pending_accounts_count": roster.pending_accounts_count,
+        "created_accounts_count": roster.created_accounts_count,
+    }
+    return render(request, "qna/lecturer/lecturer_student_list_detail.html", context)
+
+
+@login_required
+@require_POST
+def lecturer_student_list_create_accounts(request, roster_id):
+    _ensure_lecturer(request)
+    roster = get_object_or_404(
+        StudentRosterUpload.objects.select_related("subject"),
+        pk=roster_id,
+    )
+    if roster.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền thao tác danh sách này.")
+
+    default_password = (request.POST.get("default_password") or "").strip()
+    confirm_password = (request.POST.get("confirm_password") or "").strip()
+
+    if not default_password:
+        messages.error(request, "Vui lòng nhập mật khẩu")
+        return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+    if default_password != confirm_password:
+        messages.error(request, "Mật khẩu xác nhận không khớp")
+        return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+    if roster.pending_accounts_count == 0:
+        messages.warning(request, "Danh sách này đã được tạo tài khoản")
+        return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+    created_count = 0
+    linked_count = 0
+
+    with transaction.atomic():
+        for student_row in roster.students.select_related("linked_user"):
+            user = student_row.linked_user or _student_find_user(student_row.student_code)
+
+            if user is None:
+                user = User.objects.create_user(
+                    username=student_row.student_code,
+                    password=default_password,
+                    email=student_row.email or "",
+                )
+                created_count += 1
+            else:
+                linked_count += 1
+
+            _student_sync_profile(user, student_row)
+            student_row.linked_user = user
+            student_row.account_created = True
+            student_row.save(update_fields=["linked_user", "account_created"])
+
+        roster.refresh_status()
+
+    messages.success(request, "Tạo tài khoản thành công")
+    return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+
+@login_required
+@require_POST
+def lecturer_student_list_delete(request, roster_id):
+    _ensure_lecturer(request)
+    roster = get_object_or_404(StudentRosterUpload.objects.select_related("subject"), pk=roster_id)
+    if roster.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền xóa danh sách này.")
+
+    subject_code = roster.subject.subject_code
+    if roster.uploaded_file:
+        roster.uploaded_file.delete(save=False)
+    roster.delete()
+    messages.success(request, "Xóa danh sách lớp thành công")
+    return redirect("qna:lecturer_student_list_management", subject_code=subject_code)

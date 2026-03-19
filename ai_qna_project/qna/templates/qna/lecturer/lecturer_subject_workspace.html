@@ -81,6 +81,18 @@
     <div class="bg-white rounded-xl shadow-md p-6 mb-8">
         <h3 class="text-xl font-bold text-gray-800 mb-4">Hành động nhanh</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}"
+               class="flex items-center p-4 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-200">
+                <div class="flex-shrink-0 mr-4">
+                    <div class="w-12 h-12 bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-file-import text-white text-xl"></i>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-900">Quản lý danh sách sinh viên</p>
+                    <p class="text-sm text-gray-500">Tải lên, xem và cấp tài khoản</p>
+                </div>
+            </a>
             <a href="{% url 'qna:lecturer_generate_codes_screen' %}?subject_id={{ subject.id }}" 
                class="flex items-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200">
                 <div class="flex-shrink-0 mr-4">
@@ -132,20 +144,7 @@
                     <p class="text-sm text-gray-500">Đánh giá kết quả thi</p>
                 </div>
             </a>
-
-            <a href="{% url 'qna:lecturer_export_reports_screen' %}?subject_id={{ subject.id }}" 
-               class="flex items-center p-4 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-200">
-                <div class="flex-shrink-0 mr-4">
-                    <div class="w-12 h-12 bg-indigo-500 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-file-export text-white text-xl"></i>
-                    </div>
-                </div>
-                <div>
-                    <p class="font-semibold text-gray-900">Xuất báo cáo</p>
-                    <p class="text-sm text-gray-500">Tải xuống kết quả</p>
-                </div>
-            </a>
-
+            
             <a href="{% url 'qna:lecturer_manage_rooms' %}" 
                class="flex items-center p-4 bg-pink-50 rounded-lg hover:bg-pink-100 transition-colors border border-pink-200">
                 <div class="flex-shrink-0 mr-4">

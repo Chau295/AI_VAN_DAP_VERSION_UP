@@ -423,3 +423,127 @@ class SupplementaryResult(models.Model):
 
     def __str__(self):
         return f"Supplementary result for {self.session.user.username} - Score: {self.score}/{self.max_score}"
+
+
+class SemesterChoices(models.TextChoices):
+    HK1 = "HK1", "Học kỳ 1"
+    HK2 = "HK2", "Học kỳ 2"
+    SUMMER = "SUMMER", "Học kỳ hè"
+
+class StudentListUploadStatus(models.TextChoices):
+    PENDING = "PENDING", "Chưa tạo"
+    CREATED = "CREATED", "Đã tạo"
+
+class StudentRosterUpload(models.Model):
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name="student_roster_uploads",
+        verbose_name="Môn học",
+    )
+    academic_year = models.CharField(max_length=20, verbose_name="Năm học")
+    semester = models.CharField(
+        max_length=10,
+        choices=SemesterChoices.choices,
+        default=SemesterChoices.HK1,
+        verbose_name="Học kỳ",
+    )
+    title = models.CharField(max_length=255, verbose_name="Tên hiển thị")
+    original_file_name = models.CharField(max_length=255, verbose_name="Tên file gốc")
+    uploaded_file = models.FileField(
+        upload_to="student_lists/%Y/%m/",
+        null=True,
+        blank=True,
+        verbose_name="Tệp danh sách",
+    )
+    total_students = models.PositiveIntegerField(default=0, verbose_name="Số lượng sinh viên")
+    status = models.CharField(
+        max_length=20,
+        choices=StudentListUploadStatus.choices,
+        default=StudentListUploadStatus.PENDING,
+        verbose_name="Trạng thái",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="student_roster_uploads",
+        verbose_name="Người tải lên",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tải lên")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+    account_created_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ngày tạo tài khoản",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Danh sách lớp tải lên"
+        verbose_name_plural = "Danh sách lớp tải lên"
+
+    def __str__(self):
+        return f"{self.title} - {self.subject.subject_code}"
+
+    @property
+    def created_accounts_count(self):
+        return self.students.filter(account_created=True).count()
+
+    @property
+    def pending_accounts_count(self):
+        return max(0, self.total_students - self.created_accounts_count)
+
+    def refresh_status(self, save=True):
+        total = self.students.count()
+        created = self.students.filter(account_created=True).count()
+        self.total_students = total
+        self.status = (
+            StudentListUploadStatus.CREATED
+            if total and created == total
+            else StudentListUploadStatus.PENDING
+        )
+        self.account_created_at = timezone.now() if self.status == StudentListUploadStatus.CREATED else None
+        if save:
+            self.save(update_fields=["total_students", "status", "account_created_at", "updated_at"])
+
+
+class StudentRosterStudent(models.Model):
+    roster = models.ForeignKey(
+        StudentRosterUpload,
+        on_delete=models.CASCADE,
+        related_name="students",
+        verbose_name="Tệp danh sách",
+    )
+    row_number = models.PositiveIntegerField(default=1, verbose_name="STT")
+    student_code = models.CharField(max_length=50, db_index=True, verbose_name="Mã số sinh viên")
+    full_name = models.CharField(max_length=255, verbose_name="Họ và tên")
+    gender = models.CharField(max_length=20, blank=True, default="", verbose_name="Giới tính")
+    date_of_birth = models.DateField(null=True, blank=True, verbose_name="Ngày sinh")
+    class_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Lớp")
+    email = models.EmailField(blank=True, default="", verbose_name="Email")
+    linked_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="student_list_rows",
+        verbose_name="Tài khoản liên kết",
+    )
+    account_created = models.BooleanField(default=False, verbose_name="Đã có tài khoản")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+
+    class Meta:
+        ordering = ["row_number", "id"]
+        verbose_name = "Sinh viên trong danh sách"
+        verbose_name_plural = "Sinh viên trong danh sách"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["roster", "student_code"],
+                name="unique_student_code_per_roster",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.student_code} - {self.full_name}"

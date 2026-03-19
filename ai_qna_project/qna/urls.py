@@ -41,10 +41,19 @@ urlpatterns = [
     # 1. Dashboard
     path("lecturer/dashboard/", views.lecturer_dashboard, name="lecturer_dashboard"),
 
-    # 2. Môn học
+    # 2. Môn học & Quản lý danh sách sinh viên
     path("lecturer/subjects/", views.lecturer_subject_list, name="lecturer_subject_list"),
     path("lecturer/subjects/<str:subject_code>/", views.lecturer_subject_workspace, name="lecturer_subject_workspace"),
     path("lecturer/subjects/<str:subject_code>/dashboard/", views.lecturer_subject_dashboard, name="lecturer_subject_dashboard"),
+
+    # --- ROUTES MỚI CHO QUẢN LÝ DANH SÁCH SINH VIÊN ---
+    path("lecturer/subjects/<str:subject_code>/student-lists/", views.lecturer_student_list_management, name="lecturer_student_list_management"),
+    path("lecturer/subjects/<str:subject_code>/student-lists/upload/", views.lecturer_student_list_upload, name="lecturer_student_list_upload"),
+    path("lecturer/subjects/<str:subject_code>/student-lists/template/", views.lecturer_student_list_template, name="lecturer_student_list_template"),
+    path("lecturer/student-lists/<int:roster_id>/", views.lecturer_student_list_detail, name="lecturer_student_list_detail"),
+    path("lecturer/student-lists/<int:roster_id>/create-accounts/", views.lecturer_student_list_create_accounts, name="lecturer_student_list_create_accounts"),
+    path("lecturer/student-lists/<int:roster_id>/delete/", views.lecturer_student_list_delete, name="lecturer_student_list_delete"),
+    # ---------------------------------------------------
 
     path("lecturer/subjects/<str:subject_code>/questions/", views.lecturer_question_management, name="lecturer_question_management"),
     path("lecturer/subjects/<str:subject_code>/generate-codes/", views.lecturer_generate_exam_codes, name="lecturer_generate_exam_codes"),
@@ -54,8 +63,6 @@ urlpatterns = [
 
     # 3. Quản lý câu hỏi
     path("lecturer/questions/", views.lecturer_questions_screen, name="lecturer_questions_screen"),
-
-    # Route phụ cho màn mới nhưng dùng chung logic
     path("lecturer/question-management/", views.question_bank_list_screen, name="question_bank_list_screen"),
     path("lecturer/question-management/detail/", views.question_bank_detail_screen, name="question_bank_detail_screen"),
 
