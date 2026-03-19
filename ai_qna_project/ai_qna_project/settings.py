@@ -145,4 +145,3 @@ CACHES = {
     }
 }
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
