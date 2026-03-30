@@ -4,7 +4,15 @@
 {% block title %}Danh sách môn học{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+<script>
+if (window.history.length > 1) {
+    window.history.back();
+} else {
+    window.location.replace("{% url 'qna:lecturer_dashboard' %}");
+}
+</script>
+
+<div class="container mx-auto px-4 py-8" style="display: none;">
     <div class="flex justify-between items-center mb-8">
         <div>
             <h2 class="text-3xl font-bold text-gray-800 mb-2">Danh sách môn học</h2>

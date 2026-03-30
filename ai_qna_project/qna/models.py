@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import User
@@ -305,10 +307,19 @@ class ExamSessionGroup(models.Model):
         verbose_name="Môn học",
     )
     group_name = models.CharField(max_length=200, verbose_name="Tên ca thi")
+    academic_year = models.CharField(max_length=20, blank=True, default="", verbose_name="Năm học")
+    semester = models.CharField(
+        max_length=10,
+        choices=SemesterChoices.choices,
+        default=SemesterChoices.HK1,
+        verbose_name="Học kỳ",
+    )
+    description = models.TextField(blank=True, default="", verbose_name="Mô tả kỳ thi")
 
     exam_date = models.DateTimeField(verbose_name="Ngày giờ thi")
     duration_minutes = models.PositiveIntegerField(default=60, verbose_name="Thời gian làm bài (phút)")
     exam_password = models.CharField(max_length=100, blank=True, null=True, verbose_name="Mật khẩu bài thi")
+    configuration_data = models.JSONField(default=dict, blank=True, verbose_name="Cấu hình ca thi")
 
     exam_codes = models.ManyToManyField(ExamCode, related_name="exam_session_groups", verbose_name="Mã đề thi")
     rooms = models.ManyToManyField(ExamRoom, through="ExamSessionRoom", verbose_name="Phòng thi")
@@ -332,7 +343,78 @@ class ExamSessionGroup(models.Model):
     def __str__(self):
         return f"{self.group_name} - {self.subject.name} ({self.exam_date.strftime('%d/%m/%Y %H:%M')})"
 
+    @property
+    def start_at(self):
+        return self.exam_date
+
+    @property
+    def end_at(self):
+        return self.exam_date + timedelta(minutes=self.duration_minutes or 0)
+
+    @property
+    def computed_status(self):
+        if self.status == "CANCELLED":
+            return "CANCELLED"
+        if self.status == "DRAFT":
+            return "DRAFT"
+
+        now = timezone.now()
+        if now < self.start_at:
+            return "SCHEDULED"
+        if self.start_at <= now < self.end_at:
+            return "ONGOING"
+        return "COMPLETED"
+
+    @property
+    def status_label(self):
+        status_map = {
+            "DRAFT": "Lưu nháp",
+            "SCHEDULED": "Sắp diễn ra",
+            "ONGOING": "Đang diễn ra",
+            "COMPLETED": "Đã kết thúc",
+            "CANCELLED": "Đã hủy",
+        }
+        return status_map.get(self.computed_status, self.get_status_display())
+
+    @property
+    def room_configs(self):
+        config = self.configuration_data or {}
+        rooms = config.get("rooms") or []
+        return rooms if isinstance(rooms, list) else []
+
+    @property
+    def roster_source_configs(self):
+        config = self.configuration_data or {}
+        rosters = config.get("rosters") or []
+        return rosters if isinstance(rosters, list) else []
+
+    @property
+    def room_count(self):
+        if self.room_configs:
+            return len(self.room_configs)
+        return self.session_rooms.count()
+
+    @property
+    def total_students_count(self):
+        if self.room_configs:
+            return sum(len((room.get("assignments") or [])) for room in self.room_configs)
+        return self.get_total_students()
+
+    @property
+    def is_locked(self):
+        if self.exam_sessions.exists() or self.status == "CANCELLED":
+            return True
+        if self.status != "DRAFT" and timezone.now() >= self.start_at:
+            return True
+        return False
+
+    @property
+    def can_modify(self):
+        return not self.is_locked
+
     def get_total_students(self):
+        if self.room_configs:
+            return self.total_students_count
         return ExamSessionRoom.objects.filter(exam_group=self).aggregate(
             total=models.Count("students")
         )["total"] or 0
@@ -347,15 +429,33 @@ class ExamSessionGroup(models.Model):
 class ExamSessionRoom(models.Model):
     """Liên kết giữa Ca thi và Phòng thi"""
     exam_group = models.ForeignKey(ExamSessionGroup, on_delete=models.CASCADE, related_name="session_rooms")
-    room = models.ForeignKey(ExamRoom, on_delete=models.CASCADE, related_name="session_rooms")
-    students = models.ManyToManyField(User, related_name="exam_rooms", verbose_name="Sinh viên")
+    room = models.ForeignKey(ExamRoom, on_delete=models.SET_NULL, null=True, blank=True, related_name="session_rooms")
+    room_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Tên phòng hiển thị")
+    expected_students = models.PositiveIntegerField(default=0, verbose_name="Số lượng sinh viên dự kiến")
+    room_password = models.CharField(max_length=100, blank=True, default="", verbose_name="Mật khẩu phòng")
+    exam_set = models.ForeignKey(
+        ExamSet,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="session_rooms",
+        verbose_name="Bộ đề gắn cho phòng",
+    )
+    exam_codes = models.ManyToManyField(ExamCode, blank=True, related_name="session_rooms", verbose_name="Mã đề gắn cho phòng")
+    display_order = models.PositiveIntegerField(default=1, verbose_name="Thứ tự hiển thị")
+    students = models.ManyToManyField(User, related_name="exam_rooms", blank=True, verbose_name="Sinh viên")
 
     class Meta:
+        ordering = ["display_order", "id"]
         verbose_name = "Phòng thi trong ca thi"
         verbose_name_plural = "Phòng thi trong ca thi"
 
     def __str__(self):
-        return f"{self.exam_group.group_name} - {self.room.room_name}"
+        return f"{self.exam_group.group_name} - {self.display_room_name}"
+
+    @property
+    def display_room_name(self):
+        return self.room_name or (self.room.room_name if self.room_id else "")
 
 
 class ExamSession(models.Model):
@@ -434,6 +534,13 @@ class StudentListUploadStatus(models.TextChoices):
     PENDING = "PENDING", "Chưa tạo"
     CREATED = "CREATED", "Đã tạo"
 
+
+class StudentRosterAccountStatus(models.TextChoices):
+    PENDING = "PENDING", "Chưa có"
+    EXISTING = "EXISTING", "Đã có sẵn"
+    CREATED = "CREATED", "Mới tạo"
+
+
 class StudentRosterUpload(models.Model):
     subject = models.ForeignKey(
         Subject,
@@ -495,6 +602,14 @@ class StudentRosterUpload(models.Model):
     def pending_accounts_count(self):
         return max(0, self.total_students - self.created_accounts_count)
 
+    @property
+    def existing_accounts_count(self):
+        return self.students.filter(account_status=StudentRosterAccountStatus.EXISTING).count()
+
+    @property
+    def new_accounts_count(self):
+        return self.students.filter(account_status=StudentRosterAccountStatus.CREATED).count()
+
     def refresh_status(self, save=True):
         total = self.students.count()
         created = self.students.filter(account_created=True).count()
@@ -532,6 +647,12 @@ class StudentRosterStudent(models.Model):
         verbose_name="Tài khoản liên kết",
     )
     account_created = models.BooleanField(default=False, verbose_name="Đã có tài khoản")
+    account_status = models.CharField(
+        max_length=20,
+        choices=StudentRosterAccountStatus.choices,
+        default=StudentRosterAccountStatus.PENDING,
+        verbose_name="Nguồn trạng thái tài khoản",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
 
     class Meta:

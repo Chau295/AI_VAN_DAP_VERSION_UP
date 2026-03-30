@@ -207,6 +207,23 @@
     color: var(--blue);
   }
 
+  .icon-btn:disabled,
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .locked-note {
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    color: #9a3412;
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
   .card-body {
     padding: 0 16px 16px;
     display: flex;
@@ -508,8 +525,9 @@
   <div class="detail-shell">
     <div class="detail-head">
       <div>
-        <h1>Môn học: {{ exam_set.subject.name }}</h1>
+        <h1>Bộ đề {{ exam_set_code }} - {{ exam_set.subject.name }}</h1>
         <div class="meta">
+          <span><i class="fas fa-hashtag"></i> Mã bộ đề: {{ exam_set_code }}</span>
           <span><i class="fas fa-calendar-alt"></i> Năm học: {{ exam_set.academic_year }}</span>
           <span><i class="fas fa-cube"></i> Học kỳ: {{ exam_set.get_semester_display }}</span>
           {% if exam_set.status == 'APPROVED' %}
@@ -518,13 +536,23 @@
             <span class="pill pill-draft">{{ exam_set.status_label|upper }}</span>
           {% endif %}
         </div>
+        {% if exam_set_is_linked %}
+          <div class="locked-note" style="margin-top: 12px;">
+            Bộ đề này đã được sử dụng trong ca thi. Hệ thống chỉ cho phép xem, không cho phép sửa, duyệt lại hoặc xóa.
+          </div>
+        {% endif %}
       </div>
 
       <div class="top-actions">
         <a href="{% url 'qna:lecturer_exam_codes_screen' %}" class="btn btn-secondary">
           <i class="fas fa-arrow-left"></i> Quay lại
         </a>
-        <button type="button" class="btn btn-primary" onclick="publishExamSet()" {% if publish_disabled %}disabled{% endif %}>
+        <button
+          type="button"
+          class="btn btn-primary"
+          onclick="publishExamSet()"
+          {% if publish_disabled or exam_set_is_linked %}disabled{% endif %}
+        >
           Lưu bộ đề
         </button>
       </div>
@@ -552,14 +580,14 @@
     </div>
 
     <div class="drawer-foot">
-      <button type="button" class="btn btn-danger" onclick="confirmDeleteCode()">
+      <button type="button" id="btnDeleteCode" class="btn btn-danger" onclick="confirmDeleteCode()">
         <i class="fas fa-trash"></i> Xóa mã đề
       </button>
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button type="button" class="btn btn-secondary" onclick="saveCurrentCode()">
+        <button type="button" id="btnSaveCode" class="btn btn-secondary" onclick="saveCurrentCode()">
           <i class="fas fa-save"></i> Lưu thay đổi
         </button>
-        <button type="button" class="btn btn-success" onclick="approveCurrentCode()">
+        <button type="button" id="btnApproveCode" class="btn btn-success" onclick="approveCurrentCode()">
           <i class="fas fa-circle-check"></i> Xác nhận duyệt mã đề
         </button>
       </div>
@@ -590,6 +618,7 @@
 {% block extra_js %}
 <script>
   const examSetId = {{ exam_set.id }};
+  const examSetIsLinked = {{ exam_set_is_linked|yesno:"true,false" }};
   let examCodes = {{ exam_codes_json|safe }};
   let currentCodeId = null;
   let pendingAction = null;
@@ -635,6 +664,18 @@
     if (slug === 'medium') return 'level-medium';
     if (slug === 'hard') return 'level-hard';
     return '';
+  }
+
+  function isLockedCode(code) {
+    return Boolean(code && code.is_linked);
+  }
+
+  function syncDrawerActions(code) {
+    const isLocked = isLockedCode(code);
+    document.getElementById('btnDeleteCode').disabled = isLocked;
+    document.getElementById('btnSaveCode').disabled = isLocked;
+    document.getElementById('btnApproveCode').disabled = isLocked;
+    document.getElementById('btnApproveCode').style.display = isLocked ? 'none' : 'inline-flex';
   }
 
   // Hàm xếp thứ tự chung cho cả Tóm tắt ngoài (Preview) và trong Ngăn Kéo (Drawer)
@@ -686,13 +727,10 @@
             <div class="card-title">${escapeHtml(code.code_name)}</div>
           </div>
           <div class="card-actions">
-            <button type="button" class="icon-btn" title="Xem / chỉnh sửa" onclick="openDrawer(${code.id})">
+            <button type="button" class="icon-btn" title="${code.is_linked ? 'Xem chi tiết' : 'Xem / chỉnh sửa'}" onclick="openDrawer(${code.id})">
               <i class="fas fa-eye"></i>
             </button>
-            <button type="button" class="icon-btn" title="Sinh lại" onclick="regenerateCode(${code.id})">
-              <i class="fas fa-rotate-right"></i>
-            </button>
-            <button type="button" class="icon-btn" title="Xóa" onclick="openDeleteCodeModal(${code.id})">
+            <button type="button" class="icon-btn" title="Xóa" onclick="openDeleteCodeModal(${code.id})" ${code.is_linked ? 'disabled' : ''}>
               <i class="fas fa-trash"></i>
             </button>
           </div>
@@ -712,7 +750,10 @@
     const code = examCodes.find(item => item.id === codeId);
     if (!code) return;
 
-    document.getElementById('drawerTitle').textContent = `Biên tập Mã đề: ${code.code_name}`;
+    document.getElementById('drawerTitle').textContent = code.is_linked
+      ? `Xem Mã đề: ${code.code_name}`
+      : `Biên tập Mã đề: ${code.code_name}`;
+    syncDrawerActions(code);
 
     const container = document.getElementById('questionEditorList');
     container.innerHTML = '';
@@ -725,6 +766,13 @@
 
     // Sắp xếp bằng hàm đã định nghĩa
     let sortedItems = sortExamItems(code.items);
+
+    if (code.is_linked) {
+      const note = document.createElement('div');
+      note.className = 'locked-note';
+      note.textContent = 'Mã đề này đã được sử dụng trong ca thi, chỉ có thể xem và không được phép sửa hoặc xóa.';
+      container.appendChild(note);
+    }
 
     sortedItems.forEach((item, index) => {
       const block = document.createElement('div');
@@ -742,6 +790,7 @@
           data-item-id="${item.id}"
           data-difficulty="${escapeHtml(item.difficulty)}"
           data-display-order="${index + 1}"
+          ${code.is_linked ? 'readonly' : ''}
         >${escapeHtml(item.content || '')}</textarea>
       `;
       container.appendChild(block);
@@ -756,6 +805,11 @@
   }
 
   function openDeleteCodeModal(codeId) {
+    const code = examCodes.find(item => item.id === codeId);
+    if (isLockedCode(code)) {
+      showToast('Mã đề đã được sử dụng trong ca thi, không thể xóa.', true);
+      return;
+    }
     currentCodeId = codeId;
     pendingAction = deleteCurrentCode;
     document.getElementById('confirmTitle').textContent = 'Bạn có chắc chắn muốn xóa mã đề này?';
@@ -784,6 +838,11 @@
   // Tách riêng hàm lưu câu hỏi để dùng chung cho cả nút Lưu và Nút Duyệt
   async function saveCurrentCode(showSuccessToast = true) {
     if (!currentCodeId) return false;
+    const code = examCodes.find(item => item.id === currentCodeId);
+    if (isLockedCode(code)) {
+      showToast('Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa.', true);
+      return false;
+    }
 
     const textareas = Array.from(document.querySelectorAll('#questionEditorList textarea'));
     const items = textareas.map((el, index) => ({
@@ -825,6 +884,11 @@
 
   async function approveCurrentCode() {
     if (!currentCodeId) return;
+    const code = examCodes.find(item => item.id === currentCodeId);
+    if (isLockedCode(code)) {
+      showToast('Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa.', true);
+      return;
+    }
 
     // 1. Tự động lưu trước khi duyệt
     const isSaved = await saveCurrentCode(false);
@@ -856,6 +920,11 @@
 
   async function deleteCurrentCode() {
     if (!currentCodeId) return;
+    const code = examCodes.find(item => item.id === currentCodeId);
+    if (isLockedCode(code)) {
+      showToast('Mã đề đã được sử dụng trong ca thi, không thể xóa.', true);
+      return;
+    }
 
     const response = await fetch(`/lecturer/api/exam-code/${currentCodeId}/delete/`, {
       method: 'POST',
@@ -882,30 +951,12 @@
     showToast(data.message || 'Xóa mã đề thành công');
   }
 
-  async function regenerateCode(codeId) {
-    const response = await fetch(`/lecturer/api/exam-code/${codeId}/regenerate/`, {
-      method: 'POST',
-      headers: {
-        'X-CSRFToken': getCookie('csrftoken'),
-      },
-    });
-
-    const data = await response.json();
-    if (!response.ok || data.status !== 'SUCCESS') {
-      showToast(data.message || 'Sinh lại mã đề thất bại', true);
+  async function publishExamSet() {
+    if (examSetIsLinked) {
+      showToast('Bộ đề đã được sử dụng trong ca thi, không thể chỉnh sửa.', true);
       return;
     }
 
-    const idx = examCodes.findIndex(item => item.id === codeId);
-    if (idx >= 0 && data.exam_code) {
-      examCodes[idx] = data.exam_code;
-    }
-
-    renderCards();
-    showToast(data.message || 'Sinh lại mã đề thành công');
-  }
-
-  async function publishExamSet() {
     const response = await fetch(`/lecturer/api/exam-sets/${examSetId}/publish/`, {
       method: 'POST',
       headers: {

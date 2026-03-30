@@ -38,7 +38,7 @@
         #sidebar.collapsed {
             margin-left: -16rem; /* 16rem = w-64 */
         }
-        
+
         /* Mobile menu toggle */
         .mobile-menu-btn {
             display: none;
@@ -119,23 +119,12 @@
                 </div>
                 {% endwith %}
 
-                <div>
-                    <button onclick="toggleSubmenu('examSessionMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
-                        <div class="flex items-center">
-                            <i class="fas fa-calendar-alt w-6 text-gray-300"></i>
-                            <span class="ml-3">Ca thi</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-gray-400 transition-transform" id="examSessionMenuArrow"></i>
-                    </button>
-                    <div id="examSessionMenu" class="submenu ml-6 space-y-1">
-                        <a href="{% url 'qna:lecturer_create_session_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_create_session_screen' %}active{% endif %}">
-                            <i class="fas fa-plus-circle w-5 mr-2"></i>Tạo ca thi
-                        </a>
-                        <a href="{% url 'qna:lecturer_exam_sessions_list' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_exam_sessions_list' %}active{% endif %}">
-                            <i class="fas fa-list-alt w-5 mr-2"></i>Danh sách ca thi
-                        </a>
-                    </div>
-                </div>
+                <a
+                    href="{% url 'qna:lecturer_exam_sessions_list' %}"
+                    class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_exam_sessions_list' or request.resolver_match.url_name == 'lecturer_create_session_screen' or request.resolver_match.url_name == 'lecturer_exam_session_detail_screen' or request.resolver_match.url_name == 'lecturer_exam_session_common_list_screen' %}active{% endif %}">
+                    <i class="fas fa-calendar-alt w-6 text-gray-300"></i>
+                    <span class="ml-3">Ca thi</span>
+                </a>
 
                 <div>
                     <button onclick="toggleSubmenu('resultMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
@@ -154,11 +143,6 @@
                         </a>
                     </div>
                 </div>
-
-                <a href="{% url 'qna:lecturer_manage_rooms' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_manage_rooms' %}active{% endif %}">
-                    <i class="fas fa-door-open w-6 text-gray-300"></i>
-                    <span class="ml-3">Quản lý phòng thi</span>
-                </a>
 
                 {% else %}
                 <a href="{% url 'qna:dashboard' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">

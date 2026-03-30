@@ -42,10 +42,18 @@ def _validate_academic_year(value: str) -> bool:
     return bool(re.match(r"^\d{4}-\d{4}$", (value or "").strip()))
 
 
+def _parse_int_field(raw_value, field_label: str) -> int:
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_label} khÃ´ng há»£p lá»‡.") from exc
+
+
 def _clone_question_for_exam(source_question: Question) -> Question:
     return Question.objects.create(
         subject=source_question.subject,
-        bank=source_question.bank,
+        # Exam clones should not appear in question-bank management screens.
+        bank=None,
         question_text=source_question.question_text,
         question_id_in_barem=f"EC_{uuid4().hex[:8]}",
         difficulty=source_question.difficulty,
@@ -57,6 +65,12 @@ def _clone_question_for_exam(source_question: Question) -> Question:
 def _delete_exam_clone(question: Question | None) -> None:
     if question and question.is_exam_clone:
         question.delete()
+
+
+def _mark_exam_set_draft(exam_set: ExamSet | None) -> None:
+    if exam_set and exam_set.status != ExamSetStatus.DRAFT:
+        exam_set.status = ExamSetStatus.DRAFT
+        exam_set.save(update_fields=["status", "updated_at"])
 
 
 def _difficulty_meta():
@@ -176,10 +190,14 @@ def _calculate_max_versions(
     if allow_duplicates:
         return 999999
 
-    max_easy = len(pools[DifficultyLevel.EASY]) // easy_count if easy_count else 0
-    max_medium = len(pools[DifficultyLevel.MEDIUM]) // medium_count if medium_count else 0
-    max_hard = len(pools[DifficultyLevel.HARD]) // hard_count if hard_count else 0
-    return min(max_easy, max_medium, max_hard)
+    limits = []
+    if easy_count:
+        limits.append(len(pools[DifficultyLevel.EASY]) // easy_count)
+    if medium_count:
+        limits.append(len(pools[DifficultyLevel.MEDIUM]) // medium_count)
+    if hard_count:
+        limits.append(len(pools[DifficultyLevel.HARD]) // hard_count)
+    return min(limits) if limits else 0
 
 
 def _generate_version_blueprints(
@@ -239,7 +257,6 @@ def _generate_version_blueprints(
 def _build_exam_code_items(
     exam_code: ExamCode,
     selected_questions_by_difficulty: dict,
-    shuffle_question_order: bool,
 ):
     items = []
     display_order = 1
@@ -264,9 +281,6 @@ def _build_exam_code_items(
             )
             display_order += 1
 
-    if shuffle_question_order:
-        random.shuffle(flat_rows)
-
     for index, row in enumerate(flat_rows, start=1):
         items.append(
             ExamCodeQuestion(
@@ -289,7 +303,6 @@ def _replace_exam_code_items(code: ExamCode, new_blueprint: dict):
     new_items = _build_exam_code_items(
         exam_code=code,
         selected_questions_by_difficulty=new_blueprint,
-        shuffle_question_order=code.exam_set.shuffle_question_order,
     )
     ExamCodeQuestion.objects.bulk_create(new_items)
 
@@ -298,6 +311,7 @@ def _replace_exam_code_items(code: ExamCode, new_blueprint: dict):
 
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
+    _mark_exam_set_draft(code.exam_set)
 
 
 def _collect_used_original_question_ids(exam_set: ExamSet, exclude_code_id: int | None = None):
@@ -391,7 +405,26 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
     if len(existing_items) != len(payload_items):
         raise ValueError("Số lượng câu hỏi không khớp với mã đề.")
 
-    for existing, incoming in zip(existing_items, payload_items):
+    existing_by_id = {str(item.id): item for item in existing_items}
+    existing_by_order = {str(item.display_order): item for item in existing_items}
+    seen_item_ids = set()
+
+    for incoming in payload_items:
+        existing = None
+
+        incoming_id = str(incoming.get("id") or "").strip()
+        if incoming_id:
+            existing = existing_by_id.get(incoming_id)
+
+        if existing is None:
+            incoming_order = str(incoming.get("display_order") or "").strip()
+            if incoming_order:
+                existing = existing_by_order.get(incoming_order)
+
+        if existing is None or existing.id in seen_item_ids:
+            raise ValueError("Du lieu cau hoi khong hop le.")
+
+        seen_item_ids.add(existing.id)
         content = (incoming.get("content") or "").strip()
         if not content:
             raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
@@ -415,8 +448,12 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
             question.is_exam_clone = True
             question.save(update_fields=["question_text", "difficulty", "is_exam_clone"])
 
+    if len(seen_item_ids) != len(existing_items):
+        raise ValueError("Du lieu cau hoi khong hop le.")
+
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
+    _mark_exam_set_draft(code.exam_set)
 
 
 def _prefetch_exam_sets(qs):
@@ -480,6 +517,7 @@ def lecturer_exam_codes_screen(request):
         rows.append(
             {
                 "id": exam_set.id,
+                "exam_set_code": f"BD-{exam_set.id:04d}",
                 "subject_name": exam_set.subject.name,
                 "subject_code": exam_set.subject.subject_code,
                 "academic_year": exam_set.academic_year,
@@ -555,8 +593,10 @@ def lecturer_exam_set_detail_screen(request, exam_set_id: int):
     exam_codes = [_serialize_exam_code(item) for item in exam_set.exam_codes.all()]
     context = {
         "exam_set": exam_set,
+        "exam_set_code": f"BD-{exam_set.id:04d}",
         "exam_codes_json": json.dumps(exam_codes, ensure_ascii=False),
         "publish_disabled": exam_set.approved_codes_count != exam_set.exam_codes.count(),
+        "exam_set_is_linked": exam_set.is_linked,
     }
     return render(request, "qna/lecturer/lecturer_exam_code_detail.html", context)
 
@@ -573,14 +613,19 @@ def lecturer_create_exam_set(request):
     subject_id = payload.get("subject_id")
     academic_year = (payload.get("academic_year") or "").strip()
     semester = (payload.get("semester") or "").strip() or SemesterChoices.HK1
-    number_of_versions = int(payload.get("number_of_versions") or 0)
-    easy_count = int(payload.get("easy_count") or 0)
-    medium_count = int(payload.get("medium_count") or 0)
-    hard_count = int(payload.get("hard_count") or 0)
+
+    try:
+        number_of_versions = _parse_int_field(payload.get("number_of_versions") or 0, "So luong ma de")
+        easy_count = _parse_int_field(payload.get("easy_count") or 0, "So luong cau de")
+        medium_count = _parse_int_field(payload.get("medium_count") or 0, "So luong cau trung binh")
+        hard_count = _parse_int_field(payload.get("hard_count") or 0, "So luong cau kho")
+    except ValueError as exc:
+        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+
     easy_score = payload.get("easy_score") or 2.0
     medium_score = payload.get("medium_score") or 2.5
     hard_score = payload.get("hard_score") or 3.0
-    shuffle_question_order = str(payload.get("shuffle_question_order", "true")).lower() in {"1", "true", "yes", "on"}
+    shuffle_question_order = False
     allow_duplicate_questions = str(payload.get("allow_duplicate_questions", "false")).lower() in {"1", "true", "yes", "on"}
     source_bank_ids = payload.get("source_bank_ids") or []
 
@@ -595,8 +640,11 @@ def lecturer_create_exam_set(request):
         return JsonResponse({"status": "FAIL", "message": "Năm học không hợp lệ ! Vui lòng nhập lại!"}, status=400)
     if number_of_versions <= 0:
         return JsonResponse({"status": "FAIL", "message": "Vui lòng nhập Số lượng mã đề"}, status=400)
-    if easy_count <= 0 or medium_count <= 0 or hard_count <= 0:
+    if easy_count < 0 or medium_count < 0 or hard_count < 0:
         return JsonResponse({"status": "FAIL", "message": "Số lượng ma trận phải lớn hơn 0."}, status=400)
+
+    if easy_count + medium_count + hard_count <= 0:
+        return JsonResponse({"status": "FAIL", "message": "Can chon it nhat 1 cau hoi cho ma tran de."}, status=400)
 
     subject = get_object_or_404(_lecturer_subjects(request), id=subject_id)
     bank_ids = [int(item) for item in source_bank_ids]
@@ -659,7 +707,6 @@ def lecturer_create_exam_set(request):
                 _build_exam_code_items(
                     exam_code=code,
                     selected_questions_by_difficulty=blueprint,
-                    shuffle_question_order=shuffle_question_order,
                 )
             )
 
@@ -689,6 +736,11 @@ def lecturer_update_exam_code_content(request, exam_code_id: int):
         id=exam_code_id,
         subject__in=_lecturer_subjects(request),
     )
+    if code.is_linked:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
+            status=400,
+        )
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -727,6 +779,11 @@ def lecturer_approve_exam_code(request, exam_code_id: int):
         id=exam_code_id,
         subject__in=_lecturer_subjects(request),
     )
+    if code.is_linked:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
+            status=400,
+        )
 
     items = code.exam_code_questions.select_related("question").all()
     if not items.exists():
@@ -814,7 +871,9 @@ def lecturer_delete_exam_code(request, exam_code_id: int):
                 return JsonResponse(
                     {"status": "SUCCESS", "message": "Xóa mã đề thành công", "deleted_exam_set": True}
                 )
-            exam_set.save(update_fields=["number_of_versions", "updated_at"])
+            if exam_set.status != ExamSetStatus.DRAFT:
+                exam_set.status = ExamSetStatus.DRAFT
+            exam_set.save(update_fields=["number_of_versions", "status", "updated_at"])
 
     return JsonResponse(
         {
@@ -833,6 +892,11 @@ def lecturer_publish_exam_set(request, exam_set_id: int):
         _prefetch_exam_sets(ExamSet.objects.filter(subject__in=_lecturer_subjects(request))),
         id=exam_set_id,
     )
+    if exam_set.is_linked:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Bộ đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
+            status=400,
+        )
     total_count = exam_set.exam_codes.count()
     approved_count = exam_set.approved_codes_count
     if total_count == 0:
@@ -858,6 +922,11 @@ def lecturer_save_exam_set_draft(request, exam_set_id: int):
         ExamSet.objects.filter(subject__in=_lecturer_subjects(request)),
         id=exam_set_id,
     )
+    if exam_set.is_linked:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Bộ đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
+            status=400,
+        )
     exam_set.save(update_fields=["updated_at"])
     return JsonResponse({"status": "SUCCESS", "message": "Lưu nháp thành công."})
 

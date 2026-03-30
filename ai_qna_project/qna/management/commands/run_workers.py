@@ -217,7 +217,6 @@ async def score_student_answer_with_openai(student_answer_raw, question_barem, o
         resp = await asyncio.to_thread(
             openai_client.chat.completions.create,
             model=model_name,
-            response_format={"type": "json_object"},
             temperature=0,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -435,7 +434,7 @@ class Command(BaseCommand):
             final_score = (openai_score * WEIGHT_OPENAI) + (traditional_score * WEIGHT_TRADITIONAL)
             final_score = float(min(max(final_score, 0.0), 10.0))
             logger.info(
-                f"Chấm điểm CÂU HỎI CHÍNH (Q{question_id}): PhoBERT={traditional_score:.2f}, OpenAI={openai_score:.2f} -> Final={final_score:.2f}")
+                f"Chấm điểm CÂU HỎI CHÍNH (Q{question_id}): PhoBERT={traditional_score:.2f}, Gemini={openai_score:.2f} -> Final={final_score:.2f}")
             session = await sync_to_async(ExamSession.objects.get)(pk=session_id)
             question = await sync_to_async(Question.objects.get)(pk=question_id)
             exam_result = await sync_to_async(ExamResult.objects.create)(
@@ -503,7 +502,7 @@ class Command(BaseCommand):
 
             ## THAY ĐỔI: Thêm log chi tiết cho điểm câu hỏi phụ theo yêu cầu.
             logger.info(
-                f"Chấm điểm CÂU HỎI PHỤ (cho Q{main_question_id}): PhoBERT={traditional_score:.2f}, OpenAI={openai_score:.2f} -> Final={final_score:.2f}/{max_score}")
+                f"Chấm điểm CÂU HỎI PHỤ (cho Q{main_question_id}): PhoBERT={traditional_score:.2f}, Gemini={openai_score:.2f} -> Final={final_score:.2f}/{max_score}")
 
             session = await sync_to_async(ExamSession.objects.get)(pk=session_id)
             supp = await sync_to_async(SupplementaryResult.objects.create)(

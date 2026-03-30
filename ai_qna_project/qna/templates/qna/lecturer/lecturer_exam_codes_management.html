@@ -52,6 +52,18 @@
     margin: 0;
   }
 
+  .qm2-page-title {
+    font-size: 26px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+  }
+
+  .qm2-title > h1 {
+    display: none;
+  }
+
   .qm2-title .sub {
     margin-top: 6px;
     font-size: 14px;
@@ -168,21 +180,38 @@
     background: #f8fafc;
   }
 
-  /* Subject Link Styles */
-  .qm2-subject-link {
-    text-decoration: none;
-    display: inline-block;
-    transition: color 0.2s ease;
+  .qm2-clickable-row {
+    cursor: pointer;
   }
-  .qm2-subject-link:hover .qm2-subject-name {
+  .qm2-clickable-row:focus-visible {
+    outline: 3px solid rgba(31, 111, 235, 0.2);
+    outline-offset: -3px;
+  }
+
+  .qm2-subject-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .qm2-set-code {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
     color: var(--blue);
-    text-decoration: underline;
+    text-transform: uppercase;
   }
 
   .qm2-subject-name {
     font-weight: 700;
     color: var(--text);
     font-size: 14px;
+  }
+
+  .qm2-subject-code {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
   }
 
   .qm2-pill {
@@ -309,11 +338,13 @@
   }
 </style>
 
+
 <div class="qm2-page">
   <div class="qm2-shell">
 
     <div class="qm2-topbar">
       <div class="qm2-title">
+        <div class="qm2-page-title">Danh sách đề thi</div>
         <h1>Quản lý đề thi</h1>
         <div class="sub">Quản lý và theo dõi quá trình tạo đề thi của các học phần đang đảm nhiệm.</div>
       </div>
@@ -372,23 +403,28 @@
         <table class="qm2-table">
           <thead>
             <tr>
+              <th style="text-align: center;">Mã bộ đề</th>
               <th>Môn học / Học phần</th>
               <th style="text-align: center;">Năm / Kỳ</th>
               <th style="text-align: center;">Số mã đề</th>
               <th style="text-align: center;">Ngày tạo</th>
               <th style="text-align: center;">Trạng thái</th>
               <th style="text-align: center;">Liên kết</th>
-              <th style="text-align: center;">Thao tác</th>
+              <th style="text-align: center;">Xóa</th>
             </tr>
           </thead>
           <tbody>
             {% if rows %}
               {% for row in rows %}
-                <tr>
+                <tr class="qm2-clickable-row" data-detail-url="{{ row.detail_url }}" tabindex="0" aria-label="Mở {{ row.exam_set_code }}">
+                  <td style="text-align: center;">
+                    <div class="qm2-set-code">{{ row.exam_set_code }}</div>
+                  </td>
                   <td>
-                    <a href="{{ row.detail_url }}" class="qm2-subject-link" title="Xem chi tiết {{ row.subject_name }}">
-                        <div class="qm2-subject-name">{{ row.subject_name }}</div>
-                    </a>
+                    <div class="qm2-subject-cell">
+                      <div class="qm2-subject-name">{{ row.subject_name }}</div>
+                      <div class="qm2-subject-code">{{ row.subject_code }}</div>
+                    </div>
                   </td>
                   <td style="text-align: center; color: var(--muted);">
                     {{ row.academic_year }} / {{ row.semester }}
@@ -415,7 +451,6 @@
                   </td>
                   <td>
                     <div class="qm2-row-actions" style="justify-content: center;">
-                      <a href="{{ row.detail_url }}" title="Chỉnh sửa"><i class="fas fa-pen"></i></a>
                       <button type="button" title="Xóa" onclick="openDeleteSetModal({{ row.id }}, {{ row.can_delete|yesno:'true,false' }})"><i class="far fa-trash-alt"></i></button>
                     </div>
                   </td>
@@ -423,7 +458,7 @@
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="7" style="text-align: center; padding: 60px 20px; color: var(--muted);">
+                <td colspan="8" style="text-align: center; padding: 60px 20px; color: var(--muted);">
                   <i class="far fa-folder-open" style="font-size: 40px; color: #cbd5e1; margin-bottom: 12px; display: block;"></i>
                   Chưa có bộ đề nào phù hợp với bộ lọc hiện tại.
                 </td>
@@ -564,6 +599,29 @@
     if (event.target.id === 'deleteSetModal') {
       closeDeleteSetModal();
     }
+  });
+
+  document.querySelectorAll('.qm2-clickable-row').forEach((row) => {
+    const detailUrl = row.dataset.detailUrl;
+    if (!detailUrl) return;
+
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('.qm2-row-actions')) {
+        return;
+      }
+      window.location.href = detailUrl;
+    });
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      if (event.target.closest('.qm2-row-actions')) {
+        return;
+      }
+      event.preventDefault();
+      window.location.href = detailUrl;
+    });
   });
 </script>
 {% endblock %}

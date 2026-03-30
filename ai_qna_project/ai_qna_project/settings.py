@@ -109,6 +109,9 @@ USE_TZ = True
 LOGIN_URL = 'login'
 LOGOUT_REDIRECT_URL = 'login'
 LOGIN_REDIRECT_URL = 'qna:post_login_redirect'
+AUTHENTICATION_BACKENDS = [
+    'qna.auth_backends.StudentCodeOrUsernameBackend',
+]
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -145,3 +148,4 @@ CACHES = {
     }
 }
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")

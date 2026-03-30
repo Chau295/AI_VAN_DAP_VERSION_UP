@@ -271,9 +271,73 @@
     color: var(--qm-blue-text);
   }
 
+  .qm2-pill-existing {
+    background: var(--qm-green-soft);
+    color: var(--qm-green);
+  }
+
   .qm2-pill-pending {
     background: var(--qm-gray-soft);
     color: var(--qm-gray-text);
+  }
+
+  .qm2-status-note {
+    margin-bottom: 18px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid #dbeafe;
+    background: #f8fbff;
+    color: #1d4ed8;
+    font-size: 14px;
+    line-height: 1.6;
+    font-weight: 700;
+  }
+
+  .qm2-account-breakdown {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 0 0 18px;
+  }
+
+  .qm2-account-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .qm2-account-pill.is-existing {
+    background: var(--qm-green-soft);
+    color: var(--qm-green);
+  }
+
+  .qm2-account-pill.is-created {
+    background: var(--qm-blue-soft);
+    color: var(--qm-blue-text);
+  }
+
+  .qm2-account-pill.is-pending {
+    background: var(--qm-gray-soft);
+    color: var(--qm-gray-text);
+  }
+
+  .qm2-account-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+  }
+
+  .qm2-status-meta-inline {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.45;
   }
 
   .qm2-empty {
@@ -362,7 +426,8 @@
     display: none;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 18px 24px;
+    overflow: hidden;
     z-index: 1300;
   }
   .qm2-modal.show {
@@ -370,27 +435,36 @@
   }
   .mdl-dialog {
     width: 100%;
-    max-width: 820px;
+    max-width: 1100px;
+    max-height: calc(100vh - 36px);
     background: #fff;
-    border-radius: 16px;
+    border-radius: 18px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     overflow: hidden;
     text-align: left;
-    margin: auto;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .mdl-dialog form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   .mdl-header {
-    padding: 24px 32px;
+    padding: 22px 28px 18px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    flex-shrink: 0;
   }
   .mdl-header-left {
     display: flex;
-    gap: 16px;
+    gap: 14px;
   }
   .mdl-icon-box {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     background: #eff6ff;
     color: #3b82f6;
     border-radius: 12px;
@@ -402,13 +476,13 @@
   }
   .mdl-header h3 {
     margin: 0;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
     color: #111827;
   }
   .mdl-header p {
     margin: 4px 0 0;
-    font-size: 14px;
+    font-size: 13px;
     color: #6b7280;
   }
   .mdl-close {
@@ -423,13 +497,16 @@
   .mdl-close:hover { color: #4b5563; }
 
   .mdl-body {
-    padding: 0 32px 32px;
+    padding: 0 28px 24px;
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .mdl-section-title {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     color: #374151;
-    margin-bottom: 16px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -440,15 +517,25 @@
 
   .mdl-info-card {
     background: #f8fafc;
-    border-radius: 12px;
-    padding: 0 24px;
-    margin-bottom: 32px;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 22px;
+    display: block;
+  }
+  .mdl-info-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) repeat(5, minmax(0, 1fr));
+    gap: 16px;
+    align-items: end;
+  }
+  .mdl-info-cell {
+    min-width: 0;
   }
   .mdl-info-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    padding: 20px 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+    padding: 18px 0;
   }
   .mdl-info-row.border-b {
     border-bottom: 1px solid #e2e8f0;
@@ -458,38 +545,52 @@
     font-weight: 700;
     color: #64748b;
     text-transform: uppercase;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     display: block;
   }
   .mdl-info-val {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     color: #1e293b;
+    line-height: 1.35;
   }
   .mdl-info-val.blue { color: #3b82f6; }
-  .mdl-info-val.black { font-size: 24px; color: #0f172a; }
-  .mdl-info-val.orange { font-size: 24px; color: #f97316; }
-  .mdl-info-val.green { font-size: 24px; color: #10b981; }
+  .mdl-info-card .mdl-info-row:first-child > div:first-child .mdl-info-val {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mdl-info-val.file {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mdl-info-val.black { font-size: 20px; color: #0f172a; }
+  .mdl-info-val.orange { font-size: 20px; color: #f97316; }
+  .mdl-info-val.green { font-size: 20px; color: #10b981; }
 
   .mdl-grid-2 {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 24px;
+    align-items: start;
   }
   .mdl-rule-card {
     background: #f0f9ff;
     border: 1px solid #e0f2fe;
-    border-radius: 12px;
-    padding: 20px;
+    border-radius: 14px;
+    padding: 18px;
     height: 100%;
   }
   .mdl-rule-item {
     display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
-    font-size: 13px;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 12px;
     color: #334155;
-    line-height: 1.5;
+    line-height: 1.35;
   }
   .mdl-rule-item:last-child { margin-bottom: 0; }
   .mdl-rule-item i {
@@ -508,11 +609,11 @@
     font-size: 13px;
     font-weight: 700;
     color: #374151;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   .mdl-form-group input {
     width: 100%;
-    height: 42px;
+    height: 40px;
     border: 1px solid #d1d5db;
     border-radius: 8px;
     padding: 0 14px;
@@ -524,17 +625,78 @@
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
+  .mdl-password-field {
+    position: relative;
+  }
+  .mdl-password-field input {
+    padding-right: 46px;
+  }
+  .mdl-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 15px;
+    padding: 0;
+  }
+  .mdl-password-toggle:hover {
+    color: #1d4ed8;
+  }
+  .mdl-inline-alert {
+    display: none;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  .mdl-inline-alert.show {
+    display: flex;
+  }
+  .mdl-inline-alert i {
+    margin-top: 2px;
+  }
+  .mdl-password-rules {
+    margin-bottom: 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid #dbeafe;
+    background: #f8fbff;
+  }
+  .mdl-password-rules-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e3a8a;
+    margin-bottom: 8px;
+  }
+  .mdl-password-rule-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.55;
+  }
 
   .mdl-footer {
-    padding: 20px 32px;
+    padding: 16px 28px;
     background: #fff;
     border-top: 1px solid #f1f5f9;
     display: flex;
     justify-content: flex-end;
     gap: 12px;
+    flex-shrink: 0;
   }
   .mdl-btn-cancel {
-    padding: 10px 20px;
+    padding: 9px 18px;
     border-radius: 8px;
     border: 1px solid #d1d5db;
     background: #fff;
@@ -545,7 +707,7 @@
   }
   .mdl-btn-cancel:hover { background: #f8fafc; }
   .mdl-btn-submit {
-    padding: 10px 20px;
+    padding: 9px 18px;
     border-radius: 8px;
     border: none;
     background: #3b82f6;
@@ -564,10 +726,13 @@
   }
 
   @media (max-width: 768px) {
+    .qm2-modal { align-items: flex-start; overflow-y: auto; }
     .mdl-info-row { grid-template-columns: 1fr; gap: 12px; padding: 16px 0; }
+    .mdl-info-grid { grid-template-columns: 1fr; gap: 12px; }
     .mdl-grid-2 { grid-template-columns: 1fr; gap: 24px; }
     .mdl-form-row { grid-template-columns: 1fr; }
     .qm2-topbar { flex-direction: column; align-items: stretch; }
+    .qm2-filters { flex-direction: column; align-items: stretch; }
     .qm2-btn { width: 100%; justify-content: center; }
   }
 </style>
@@ -596,13 +761,33 @@
       </div>
 
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" class="qm2-btn qm2-btn-secondary">
+        <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
           <i class="fas fa-arrow-left"></i> Quay lại
         </a>
         <button type="button" id="openCreateModal" class="qm2-btn qm2-btn-primary" {% if pending_accounts_count == 0 %}disabled{% endif %}>
-          <i class="fas fa-users"></i> Tạo tài khoản
+          <i class="fas fa-users"></i>
+          {% if pending_accounts_count == 0 %}
+            Đã tạo xong
+          {% else %}
+            Tạo tài khoản
+          {% endif %}
         </button>
       </div>
+    </div>
+
+    <div class="qm2-status-note">
+      {% if pending_accounts_count == 0 %}
+        Danh sách này đã hoàn tất tạo hoặc liên kết tài khoản cho {{ created_accounts_count }}/{{ roster.total_students }} sinh viên.
+        {% if roster.account_created_at %}Thời điểm hoàn tất: {{ roster.account_created_at|date:"H:i d/m/Y" }}.{% endif %}
+      {% else %}
+        Hiện đã có {{ created_accounts_count }}/{{ roster.total_students }} sinh viên có tài khoản, gồm {{ existing_accounts_count }} tài khoản có sẵn và {{ new_accounts_count }} tài khoản mới tạo. Còn {{ pending_accounts_count }} sinh viên chưa được tạo hoặc liên kết tài khoản.
+      {% endif %}
+    </div>
+
+    <div class="qm2-account-breakdown">
+      <span class="qm2-account-pill is-existing">Đã có sẵn: {{ existing_accounts_count }}</span>
+      <span class="qm2-account-pill is-created">Mới tạo: {{ new_accounts_count }}</span>
+      <span class="qm2-account-pill is-pending">Chưa có: {{ uncreated_accounts_count }}</span>
     </div>
 
     <div class="qm2-card">
@@ -611,6 +796,10 @@
           <i class="fas fa-search"></i>
           <input type="text" name="q" class="qm2-input" value="{{ search_query }}" placeholder="Tìm kiếm sinh viên trong danh sách...">
         </div>
+        <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}" class="qm2-btn qm2-btn-secondary">
+          <i class="fas fa-rotate-left"></i>
+          Xóa bộ lọc
+        </a>
       </form>
 
       <div class="qm2-table-wrap">
@@ -623,6 +812,7 @@
               <th>Giới tính</th>
               <th>Ngày sinh</th>
               <th>Lớp</th>
+              <th>Trạng thái tài khoản</th>
             </tr>
           </thead>
           <tbody>
@@ -634,10 +824,26 @@
                 <td>{{ student.gender|default:"-" }}</td>
                 <td>{% if student.date_of_birth %}{{ student.date_of_birth|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                 <td>{{ student.class_name|default:"-" }}</td>
+                <td>
+                  <div class="qm2-account-cell">
+                    {% if student.account_status == 'EXISTING' %}
+                      <span class="qm2-pill qm2-pill-existing">ĐÃ CÓ SẴN</span>
+                      <div class="qm2-status-meta-inline">
+                        {% if student.linked_user %}Tài khoản liên kết: {{ student.linked_user.username }}{% else %}Đã có tài khoản từ trước{% endif %}
+                      </div>
+                    {% elif student.account_status == 'CREATED' %}
+                      <span class="qm2-pill qm2-pill-created">MỚI TẠO</span>
+                      <div class="qm2-status-meta-inline">Đăng nhập bằng MSSV và mật khẩu vừa cấp</div>
+                    {% else %}
+                      <span class="qm2-pill qm2-pill-pending">CHƯA CÓ</span>
+                      <div class="qm2-status-meta-inline">Chưa được tạo hoặc liên kết tài khoản</div>
+                    {% endif %}
+                  </div>
+                </td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="6" class="qm2-empty">
+                <td colspan="7" class="qm2-empty">
                   Không có sinh viên phù hợp.
                 </td>
               </tr>
@@ -695,7 +901,7 @@
       </button>
     </div>
 
-    <form method="post" action="{% url 'qna:lecturer_student_list_create_accounts' roster.id %}">
+    <form method="post" action="{% url 'qna:lecturer_student_list_create_accounts' roster.id %}" novalidate>
       {% csrf_token %}
       <div class="mdl-body">
 
@@ -734,34 +940,65 @@
         </div>
 
         <div class="mdl-grid-2">
-          <div>
-            <div class="mdl-section-title">
-              <i class="fas fa-list-check"></i> Quy tắc tạo tài khoản
-            </div>
-            <div class="mdl-rule-card">
-              <div class="mdl-rule-item">
-                <i class="far fa-check-circle"></i>
-                <div><strong>Tên đăng nhập:</strong> Sử dụng Mã số sinh viên (MSSV) được cung cấp trong tệp tin.</div>
-              </div>
-              <div class="mdl-rule-item">
-                <i class="far fa-check-circle"></i>
-                <div><strong>Mật khẩu mặc định:</strong> Áp dụng chung cho tất cả các tài khoản mới tạo.</div>
-              </div>
-            </div>
+            <div>
+                <div class="mdl-section-title">
+                  <i class="fas fa-list-check"></i> Quy tắc tạo tài khoản
+                </div>
+                <div class="mdl-rule-card">
+                  <div class="mdl-rule-item">
+                    <i class="far fa-check-circle"></i>
+                    <div><strong>Tên đăng nhập:</strong> Sử dụng Mã số sinh viên (MSSV) được cung cấp trong tệp tin.</div>
+                  </div>
+                  <div class="mdl-rule-item">
+                    <i class="far fa-check-circle"></i>
+                    <div><strong>Mật khẩu mặc định:</strong> Áp dụng chung cho tất cả các tài khoản mới tạo.</div>
+                  </div>
+                  <div class="mdl-rule-item">
+                    <i class="far fa-check-circle"></i>
+                    <div><strong>Sinh viên đã có tài khoản:</strong> Hệ thống chỉ liên kết lại, không tạo trùng và giữ nguyên mật khẩu hiện có của tài khoản đã tồn tại.</div>
+                  </div>
+                </div>
           </div>
 
           <div>
             <div class="mdl-section-title">
               <i class="fas fa-cog"></i> Cấu hình bảo mật
             </div>
+            <div id="passwordValidationMessage" class="mdl-inline-alert{% if create_account_modal.error %} show{% endif %}">
+              <i class="fas fa-circle-exclamation"></i>
+              <span id="passwordValidationText">{{ create_account_modal.error }}</span>
+            </div>
+            <div class="mdl-password-rules">
+              <div class="mdl-password-rules-title">Quy tắc đặt mật khẩu</div>
+              {% comment %}<ol class="mdl-password-rule-list">
+                <li>Tối thiểu 8 ký tự.</li>
+                <li>Không được chỉ gồm toàn chữ số.</li>
+                <li>Hai ô mật khẩu phải trùng khớp trước khi tạo tài khoản.</li>
+              </ol>{% endcomment %}
+              <ol class="mdl-password-rule-list">
+                {% for rule in password_rules|slice:":2" %}
+                  <li>{{ rule }}</li>
+                {% endfor %}
+              </ol>
+            </div>
             <div class="mdl-form-row" style="margin-top: 10px;">
               <div class="mdl-form-group">
                 <label>Mật khẩu mặc định <span style="color:#ef4444">*</span></label>
-                <input type="password" name="default_password" placeholder="Nhập mật khẩu" required>
+                <div class="mdl-password-field">
+                  <input id="defaultPasswordInput" type="password" name="default_password" placeholder="Nhập mật khẩu" autocomplete="new-password" required>
+                  <button type="button" class="mdl-password-toggle" data-password-toggle="defaultPasswordInput" aria-label="Hiển thị mật khẩu mặc định">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
               </div>
               <div class="mdl-form-group">
                 <label>Nhập lại mật khẩu <span style="color:#ef4444">*</span></label>
-                <input type="password" name="confirm_password" placeholder="Xác nhận mật khẩu" required>
+                <div class="mdl-password-field">
+                  <input id="confirmPasswordInput" type="password" name="confirm_password" placeholder="Xác nhận mật khẩu" autocomplete="new-password" required>
+                  <button type="button" class="mdl-password-toggle" data-password-toggle="confirmPasswordInput" aria-label="Hiển thị mật khẩu xác nhận">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -784,6 +1021,48 @@
 <script>
   const createModal = document.getElementById('createModal');
   const openCreateModal = document.getElementById('openCreateModal');
+  const createForm = createModal?.querySelector('form');
+  const defaultPasswordInput = document.getElementById('defaultPasswordInput');
+  const confirmPasswordInput = document.getElementById('confirmPasswordInput');
+  const passwordValidationMessage = document.getElementById('passwordValidationMessage');
+  const passwordValidationText = document.getElementById('passwordValidationText');
+  const shouldOpenCreateModal = {{ create_account_modal.open|yesno:"true,false" }};
+
+  function setValidationMessage(message) {
+    if (!passwordValidationMessage || !passwordValidationText) return;
+    passwordValidationText.textContent = message || '';
+    passwordValidationMessage.classList.toggle('show', Boolean(message));
+  }
+
+  function validateCreateAccountForm(showMessage = false) {
+    if (!defaultPasswordInput || !confirmPasswordInput) return true;
+
+    const password = defaultPasswordInput.value || '';
+    const confirmPassword = confirmPasswordInput.value || '';
+
+    const hasLength = password.length >= 8;
+    const isNotNumericOnly = password.length > 0 && !/^\d+$/.test(password);
+
+    let errorMessage = '';
+
+    if (!password.trim()) {
+      errorMessage = 'Vui lòng nhập mật khẩu mặc định.';
+    } else if (!hasLength) {
+      errorMessage = 'Mật khẩu phải có ít nhất 8 ký tự.';
+    } else if (!isNotNumericOnly) {
+      errorMessage = 'Mật khẩu không được chỉ gồm toàn chữ số.';
+    } else if (confirmPassword.trim() && password !== confirmPassword) {
+      errorMessage = 'Mật khẩu xác nhận không khớp.';
+    } else if (showMessage && !confirmPassword.trim()) {
+      errorMessage = 'Vui lòng nhập lại mật khẩu để xác nhận.';
+    }
+
+    if (showMessage || password || confirmPassword) {
+      setValidationMessage(errorMessage);
+    }
+
+    return !errorMessage;
+  }
 
   function toggleCreateModal(show) {
     if (show) createModal.classList.add('show');
@@ -797,13 +1076,46 @@
 
   if (openCreateModal && !openCreateModal.disabled) {
     openCreateModal.addEventListener('click', function () {
+      setValidationMessage('');
       toggleCreateModal(true);
     });
   }
 
+  document.querySelectorAll('[data-password-toggle]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const target = document.getElementById(button.dataset.passwordToggle);
+      if (!target) return;
+
+      const shouldShow = target.type === 'password';
+      target.type = shouldShow ? 'text' : 'password';
+
+      const icon = button.querySelector('i');
+      if (icon) {
+        icon.className = shouldShow ? 'fas fa-eye-slash' : 'fas fa-eye';
+      }
+    });
+  });
+
+  [defaultPasswordInput, confirmPasswordInput].forEach(function (input) {
+    input?.addEventListener('input', function () {
+      validateCreateAccountForm(true);
+    });
+  });
+
+  createForm?.addEventListener('submit', function (event) {
+    if (!validateCreateAccountForm(true)) {
+      event.preventDefault();
+      toggleCreateModal(true);
+    }
+  });
+
   createModal?.addEventListener('click', function (e) {
     if (e.target === createModal) toggleCreateModal(false);
   });
+
+  if (shouldOpenCreateModal) {
+    toggleCreateModal(true);
+  }
 
   setTimeout(() => {
     const toast = document.getElementById('stateToast');

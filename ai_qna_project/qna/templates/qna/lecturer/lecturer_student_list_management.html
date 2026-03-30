@@ -161,9 +161,21 @@
   .qm2-filters {
     padding: 22px 24px 18px;
     display: grid;
-    grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(170px, .78fr));
+    grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(170px, .78fr)) auto;
     gap: 16px;
     border-bottom: 1px solid #eef2f7;
+  }
+
+  .qm2-filter-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .qm2-filter-clear {
+    height: 44px;
+    padding: 0 18px;
+    border-radius: 14px;
   }
 
   .qm2-search {
@@ -318,6 +330,20 @@
   .qm2-pill-pending {
     background: var(--qm-gray-soft);
     color: var(--qm-gray-text);
+  }
+
+  .qm2-status-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .qm2-status-meta {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 700;
   }
 
   .qm2-action-btn {
@@ -559,7 +585,7 @@
 
       <!-- Đã thêm nút quay lại vào trong Flex Group -->
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" class="qm2-btn qm2-btn-secondary">
+        <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
           <i class="fas fa-arrow-left"></i>
           Quay lại
         </a>
@@ -569,6 +595,69 @@
         </a>
       </div>
     </div>
+
+    {% comment %}
+    <div class="qm2-summary">
+      <div class="qm2-summary-card">
+        <span class="qm2-summary-label">Tệp danh sách</span>
+        <div class="qm2-summary-value">{{ roster_summary.total_files|default:0 }}</div>
+        <div class="qm2-summary-note">Số lớp đã tải lên cho môn này</div>
+      </div>
+      <div class="qm2-summary-card">
+        <span class="qm2-summary-label">Lớp đã tạo xong</span>
+        <div class="qm2-summary-value">{{ roster_summary.completed_files|default:0 }}</div>
+        <div class="qm2-summary-note">Danh sách đã hoàn tất tạo hoặc liên kết tài khoản</div>
+      </div>
+      <div class="qm2-summary-card">
+        <span class="qm2-summary-label">Tổng sinh viên</span>
+        <div class="qm2-summary-value">{{ roster_summary.total_students|default:0 }}</div>
+        <div class="qm2-summary-note">Tổng số sinh viên trong các danh sách</div>
+      </div>
+      <div class="qm2-summary-card">
+        <span class="qm2-summary-label">Đã có tài khoản</span>
+        <div class="qm2-summary-value">{{ roster_summary.total_created_accounts|default:0 }}</div>
+        <div class="qm2-summary-note">Số sinh viên đã có thể dùng tài khoản hệ thống</div>
+      </div>
+    </div>
+    {% endcomment %}
+
+    {% if False %}
+    {% comment %}
+        {% if roster_summary.total_files %}
+      <div class="qm2-progress-banner {% if roster_summary.all_files_completed %}is-complete{% endif %}">
+        <div class="qm2-progress-copy">
+                    <strong>
+            {% if roster_summary.all_files_completed %}
+              Tất cả {{ roster_summary.completed_files }}/{{ roster_summary.total_files }} danh sách lớp đã hoàn tất tạo tài khoản.
+            {% else %}
+              Đã hoàn tất {{ roster_summary.completed_files }}/{{ roster_summary.total_files }} danh sách lớp.
+            {% endif %}
+          </strong>
+          <span>
+            {% if roster_summary.all_files_completed %}
+              Toàn bộ {{ roster_summary.total_created_accounts }}/{{ roster_summary.total_students }} sinh viên trong các danh sách đang hiển thị đã sẵn sàng đăng nhập.
+            {% else %}
+              Còn {{ roster_summary.pending_files }} danh sách và {{ roster_summary.pending_accounts }} sinh viên chưa được cấp đủ tài khoản.
+            {% endif %}
+          </span>
+        </div>
+
+        {% if completed_rosters_preview %}
+          <div class="qm2-progress-links">
+            {% for roster in completed_rosters_preview %}
+              <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}" class="qm2-progress-link">
+                  <span>{{ roster.original_file_name }}</span>
+                  {% if roster.account_created_at %}
+                    <small>Hoàn tất lúc {{ roster.account_created_at|date:"H:i d/m/Y" }}</small>
+                  {% endif %}
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% endcomment %}
+    {% endif %}
 
     <div class="qm2-card">
       <form method="get" class="qm2-filters">
@@ -603,6 +692,13 @@
             </option>
           {% endfor %}
         </select>
+
+        <div class="qm2-filter-actions">
+          <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" class="qm2-btn qm2-btn-secondary qm2-filter-clear">
+            <i class="fas fa-rotate-left"></i>
+            Xóa bộ lọc
+          </a>
+        </div>
       </form>
 
       <div class="qm2-table-wrap">
@@ -634,11 +730,24 @@
                 <td class="qm2-center">{{ roster.get_semester_display }}</td>
                 <td class="qm2-center">{{ roster.created_at|date:"d/m/Y" }}</td>
                 <td class="qm2-center">
-                  {% if roster.status == 'CREATED' %}
-                    <span class="qm2-pill qm2-pill-created">ĐÃ TẠO</span>
-                  {% else %}
-                    <span class="qm2-pill qm2-pill-pending">CHƯA TẠO</span>
-                  {% endif %}
+                  <div class="qm2-status-cell">
+                    {% if roster.status == 'CREATED' %}
+                      <span class="qm2-pill qm2-pill-created">ĐÃ TẠO</span>
+                    {% else %}
+                      <span class="qm2-pill qm2-pill-pending">CHƯA TẠO</span>
+                    {% endif %}
+                    <div class="qm2-status-meta">
+                      {{ roster.created_accounts_total|default:0 }}/{{ roster.student_count|default:roster.total_students }} sinh viên đã có tài khoản
+                    </div>
+                    <div class="qm2-status-meta">
+                      {{ roster.existing_accounts_total|default:0 }} có sẵn • {{ roster.new_accounts_total|default:0 }} mới tạo
+                    </div>
+                    {% if roster.status == 'CREATED' and roster.account_created_at %}
+                      <div class="qm2-status-meta">
+                        Hoàn tất lúc {{ roster.account_created_at|date:"H:i d/m/Y" }}
+                      </div>
+                    {% endif %}
+                  </div>
                 </td>
                 <td class="qm2-center">
                   <button

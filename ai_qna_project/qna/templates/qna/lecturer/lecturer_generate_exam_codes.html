@@ -77,7 +77,8 @@
   .stepper { display:inline-flex; align-items:center; gap:12px; background: #f8fafc; padding: 4px; border-radius: 12px; border: 1px solid var(--border); }
   .stepper button { width:32px; height:32px; border:none; background:#fff; border-radius:8px; cursor:pointer; color: #64748b; font-size: 16px; display:flex; align-items:center; justify-content:center; box-shadow: var(--shadow-sm); transition: 0.2s; }
   .stepper button:hover { background: var(--blue); color: #fff; }
-  .stepper strong { min-width:28px; text-align:center; display:inline-block; font-size: 15px; color: var(--text); }
+  .stepper-input { width:72px; height:32px; border:1px solid #cbd5e1; border-radius:8px; text-align:center; font-size:15px; font-weight:700; color: var(--text); background:#fff; outline:none; padding:0 8px; font-family: inherit; }
+  .stepper-input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(37, 99, 235, 0.12); }
 
   .options { display:grid; grid-template-columns: 1.2fr .8fr; gap:32px; align-items:start; }
   .check-list { display:flex; flex-direction:column; gap:14px; }
@@ -185,7 +186,7 @@
         <h1>Tạo đề thi mới</h1>
         <p>Thiết lập các tham số để tạo đề thi chất lượng cao từ ngân hàng câu hỏi của bạn.</p>
       </div>
-      <a href="{% url 'qna:lecturer_exam_codes_screen' %}" class="btn btn-secondary">
+      <a href="{% url 'qna:lecturer_exam_codes_screen' %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="btn btn-secondary">
         <i class="fas fa-arrow-left"></i> Quay lại danh sách
       </a>
     </div>
@@ -264,10 +265,9 @@
                 <td>
                   <div class="stepper">
                     <button type="button" onclick="stepValue('easyCount', -1)"><i class="fas fa-minus" style="font-size: 12px;"></i></button>
-                    <strong id="easyCountText">10</strong>
+                    <input id="easyCount" class="stepper-input" type="number" min="0" step="1" value="10" inputmode="numeric">
                     <button type="button" onclick="stepValue('easyCount', 1)"><i class="fas fa-plus" style="font-size: 12px;"></i></button>
                   </div>
-                  <input type="hidden" id="easyCount" value="10">
                 </td>
                 <td style="width: 200px;">
                     <div class="field" style="margin: 0;"><input id="easyScore" type="number" step="0.5" value="2.0" style="height: 40px;"></div>
@@ -278,10 +278,9 @@
                 <td>
                   <div class="stepper">
                     <button type="button" onclick="stepValue('mediumCount', -1)"><i class="fas fa-minus" style="font-size: 12px;"></i></button>
-                    <strong id="mediumCountText">15</strong>
+                    <input id="mediumCount" class="stepper-input" type="number" min="0" step="1" value="15" inputmode="numeric">
                     <button type="button" onclick="stepValue('mediumCount', 1)"><i class="fas fa-plus" style="font-size: 12px;"></i></button>
                   </div>
-                  <input type="hidden" id="mediumCount" value="15">
                 </td>
                 <td>
                     <div class="field" style="margin: 0;"><input id="mediumScore" type="number" step="0.5" value="2.5" style="height: 40px;"></div>
@@ -292,10 +291,9 @@
                 <td>
                   <div class="stepper">
                     <button type="button" onclick="stepValue('hardCount', -1)"><i class="fas fa-minus" style="font-size: 12px;"></i></button>
-                    <strong id="hardCountText">5</strong>
+                    <input id="hardCount" class="stepper-input" type="number" min="0" step="1" value="5" inputmode="numeric">
                     <button type="button" onclick="stepValue('hardCount', 1)"><i class="fas fa-plus" style="font-size: 12px;"></i></button>
                   </div>
-                  <input type="hidden" id="hardCount" value="5">
                 </td>
                 <td>
                     <div class="field" style="margin: 0;"><input id="hardScore" type="number" step="0.5" value="3.0" style="height: 40px;"></div>
@@ -314,12 +312,11 @@
           <div class="field">
             <label>Số lượng mã đề cần tạo <span style="color:var(--red)">*</span></label>
             <input id="numberOfVersions" type="number" min="1" value="12">
-            <div class="helper">Hệ thống sẽ tự động hoán vị câu hỏi và đáp án để tạo ra các mã đề khác nhau.</div>
+            <div class="helper">Hệ thống sẽ sinh ra nhiều mã đề theo đúng ma trận và nguồn câu hỏi bạn đã chọn.</div>
           </div>
           <div>
             <label style="display:block; font-size:13px; font-weight:600; color:#334155; margin-bottom:12px;">Cài đặt nâng cao</label>
             <div class="check-list">
-              <label class="check-item"><input id="shuffleQuestionOrder" type="checkbox" checked> Tự động xáo trộn thứ tự câu hỏi</label>
               <label class="check-item"><input id="allowDuplicateQuestions" type="checkbox"> Cho phép lấy lặp câu hỏi (nếu ngân hàng ít câu)</label>
             </div>
           </div>
@@ -403,11 +400,27 @@
 
   function stepValue(id, delta) {
     const input = document.getElementById(id);
-    const text = document.getElementById(id + 'Text');
-    let value = parseInt(input.value || '0', 10) + delta;
+    let value = parseInt(input.value || '0', 10);
+    if (Number.isNaN(value) || value < 0) value = 0;
+    value += delta;
     if (value < 0) value = 0; // Đổi min = 0 để người dùng có thể chọn ma trận không có câu hỏi khó
     input.value = value;
-    text.textContent = value;
+    updateSummary();
+  }
+
+  function normalizeCountInput(id, forceNormalize=false) {
+    const input = document.getElementById(id);
+    const raw = (input.value || '').trim();
+
+    if (!raw) {
+      if (forceNormalize) input.value = '0';
+      updateSummary();
+      return;
+    }
+
+    let value = parseInt(raw, 10);
+    if (Number.isNaN(value) || value < 0) value = 0;
+    input.value = value;
     updateSummary();
   }
 
@@ -426,6 +439,10 @@
   document.getElementById('easyScore').addEventListener('input', updateSummary);
   document.getElementById('mediumScore').addEventListener('input', updateSummary);
   document.getElementById('hardScore').addEventListener('input', updateSummary);
+  ['easyCount', 'mediumCount', 'hardCount'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', () => normalizeCountInput(id));
+    document.getElementById(id).addEventListener('blur', () => normalizeCountInput(id, true));
+  });
   updateSummary();
 
   async function submitCreateExamSet() {
@@ -454,7 +471,6 @@
       medium_score: document.getElementById('mediumScore').value,
       hard_score: document.getElementById('hardScore').value,
       number_of_versions: document.getElementById('numberOfVersions').value,
-      shuffle_question_order: document.getElementById('shuffleQuestionOrder').checked,
       allow_duplicate_questions: document.getElementById('allowDuplicateQuestions').checked,
     };
 
