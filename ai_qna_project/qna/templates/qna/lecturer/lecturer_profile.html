@@ -56,7 +56,6 @@ document.getElementById('avatar-upload').addEventListener('change', function(eve
     }
 
     const formData = new FormData();
-    // Ở file views.py hàm update_profile_image mong đợi biến tên 'profile_image'
     formData.append('profile_image', file);
 
     const statusEl = document.getElementById('upload-status');
@@ -72,24 +71,24 @@ document.getElementById('avatar-upload').addEventListener('change', function(eve
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Thay đổi URL của ảnh hiển thị
             document.getElementById('avatar-img').src = data.image_data_url;
 
-            // Nếu trên navbar có ảnh đại diện nhỏ, cập nhật luôn
             const navbarAvatar = document.getElementById('navbar-avatar');
             if (navbarAvatar) {
                 navbarAvatar.src = data.image_data_url;
             }
 
             statusEl.textContent = 'Cập nhật thành công!';
-            setTimeout(() => { statusEl.textContent = ''; }, 3000);
+            setTimeout(() => { statusEl.textContent = ''; }, 5000);
         } else {
             statusEl.textContent = 'Lỗi: ' + data.error;
+            setTimeout(() => { statusEl.textContent = ''; }, 5000);
         }
     })
     .catch(error => {
         console.error('Error:', error);
         statusEl.textContent = 'Lỗi khi tải lên.';
+        setTimeout(() => { statusEl.textContent = ''; }, 5000);
     });
 });
 </script>

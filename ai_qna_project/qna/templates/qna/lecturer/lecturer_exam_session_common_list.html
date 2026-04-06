@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+
+{% block title %}Xem danh sách chung{% endblock %}
+
+{% block content %}
+<style>
+  :root {
+    --common-bg: #f5f7fb;
+    --common-text: #17233a;
+    --common-muted: #72839d;
+    --common-border: #e4ebf5;
+    --common-blue: #2649a6;
+    --common-blue-dark: #1d3d90;
+    --common-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  }
+
+  .common-page {
+    min-height: calc(100vh - 5rem);
+    margin: -2.5rem;
+    background: var(--common-bg);
+  }
+
+  .common-shell {
+    max-width: 1320px;
+    margin: 0 auto;
+    min-height: calc(100vh - 5rem);
+    background: #fff;
+    border-left: 1px solid var(--common-border);
+    border-right: 1px solid var(--common-border);
+  }
+
+  .common-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1.45rem 2rem;
+    border-bottom: 1px solid var(--common-border);
+    color: #1f2937;
+    font-size: 0.96rem;
+    font-weight: 600;
+  }
+
+  .common-body {
+    padding: 1.75rem 2rem 2.8rem;
+  }
+
+  .common-topbar,
+  .common-header,
+  .common-filter-row,
+  .common-footer {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .common-topbar {
+    margin-bottom: 1.1rem;
+  }
+
+  .common-back-link,
+  .common-outline-btn,
+  .common-export-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    min-height: 48px;
+    padding: 0 1.25rem;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    transition: 0.18s ease;
+  }
+
+  .common-back-link {
+    background: #6b7280;
+    color: #fff;
+  }
+
+  .common-back-link:hover {
+    background: #5d6574;
+    color: #fff;
+  }
+
+  .common-title {
+    margin: 0;
+    color: var(--common-text);
+    font-size: 2.05rem;
+    font-weight: 900;
+  }
+
+  .common-summary-list {
+    margin-top: 0.85rem;
+    color: var(--common-muted);
+    font-size: 0.98rem;
+    line-height: 1.95;
+  }
+
+  .common-outline-btn {
+    border: 1px solid #d5dfeb;
+    background: #fff;
+    color: #425466;
+  }
+
+  .common-outline-btn:hover {
+    border-color: #c4d0e0;
+    color: #1e293b;
+  }
+
+  .common-filter-form {
+    margin-top: 1.45rem;
+  }
+
+  .common-search {
+    position: relative;
+    width: min(100%, 460px);
+  }
+
+  .common-search i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a0aec0;
+  }
+
+  .common-search input,
+  .common-room-filter {
+    height: 44px;
+    border: 1px solid #dce5f1;
+    border-radius: 14px;
+    background: #fff;
+    color: var(--common-text);
+    font-size: 0.95rem;
+    outline: none;
+  }
+
+  .common-search input {
+    width: 100%;
+    padding: 0 1rem 0 2.35rem;
+  }
+
+  .common-room-filter {
+    min-width: 220px;
+    padding: 0 1rem;
+    font-weight: 600;
+  }
+
+  .common-filter-submit {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .common-table-wrap {
+    margin-top: 1.35rem;
+    border: 1px solid var(--common-border);
+    border-radius: 20px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: var(--common-shadow);
+  }
+
+  .common-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .common-table th {
+    padding: 1.05rem 0.95rem;
+    background: #f8fbff;
+    border-bottom: 1px solid var(--common-border);
+    color: #71829d;
+    font-size: 0.82rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    text-align: left;
+  }
+
+  .common-table td {
+    padding: 1rem 0.95rem;
+    border-top: 1px solid #eef3f8;
+    color: #475569;
+    font-size: 0.97rem;
+    vertical-align: middle;
+  }
+
+  .common-table tbody tr:first-child td {
+    border-top: 0;
+  }
+
+  .common-student-code {
+    color: #2348a5;
+    font-weight: 800;
+  }
+
+  .common-room-chip,
+  .common-code-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 0.75rem;
+    border-radius: 10px;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .common-room-chip {
+    background: #eef2f7;
+    color: #5b6574;
+  }
+
+  .common-code-chip {
+    background: #d9ebff;
+    color: #295dba;
+  }
+
+  .common-empty {
+    padding: 2.8rem 1.5rem;
+    text-align: center;
+    color: var(--common-muted);
+  }
+
+  .pagination {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .pagination a,
+  .pagination span {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #d8e0eb;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    color: #5b6574;
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  .pagination .active {
+    background: var(--common-blue);
+    border-color: var(--common-blue);
+    color: #fff;
+  }
+
+  .common-export-wrap {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.4rem;
+  }
+
+  .common-export-btn {
+    min-width: 230px;
+    border: 2px solid var(--common-blue);
+    background: #fff;
+    color: var(--common-blue);
+    box-shadow: var(--common-shadow);
+  }
+
+  .common-export-btn:hover {
+    background: #f8fbff;
+    color: var(--common-blue-dark);
+  }
+
+  @media (max-width: 1100px) {
+    .common-page { margin: -1.5rem; }
+    .common-shell {
+      border-left: 0;
+      border-right: 0;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .common-breadcrumb,
+    .common-body {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    .common-topbar,
+    .common-header,
+    .common-filter-row,
+    .common-footer {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .common-search,
+    .common-room-filter,
+    .common-back-link,
+    .common-outline-btn,
+    .common-export-btn {
+      width: 100%;
+      min-width: 0;
+    }
+  }
+</style>
+
+<div class="common-page">
+  <div class="common-shell">
+    <div class="common-breadcrumb">
+      <span>{{ exam_group.subject.name }}</span>
+      <i class="fas fa-chevron-right" style="font-size: 0.82rem; color: #94a3b8;"></i>
+      <span>Quản lý ca thi</span>
+    </div>
+
+    <div class="common-body">
+      <div class="common-topbar">
+        <div></div>
+        <a class="common-back-link" href="{{ list_url }}">
+          <i class="fas fa-arrow-left"></i>
+          Quay lại danh sách ca thi
+        </a>
+      </div>
+
+      <div class="common-header">
+        <div>
+          <h1 class="common-title">Xem danh sách chung</h1>
+          <div class="common-summary-list">
+            <div>Tên kỳ thi: {{ exam_group.group_name }}</div>
+            <div>Môn học: {{ exam_group.subject.name }}</div>
+            <div>Năm học: {{ exam_group.academic_year|default:"-" }} &nbsp;&nbsp;&nbsp; Học kỳ: {{ exam_group.get_semester_display }}</div>
+            <div>Ngày thi: {{ exam_group.exam_date|date:"d/m/Y" }}</div>
+            <div>Kiểm tra lại thông tin sinh viên trước khi xuất danh sách chính thức.</div>
+          </div>
+        </div>
+        <a class="common-outline-btn" href="{{ detail_url }}">
+          <i class="fas fa-arrow-left"></i>
+          Quay lại
+        </a>
+      </div>
+
+      <form method="get" class="common-filter-form">
+        <input type="hidden" name="page" value="1">
+        <button type="submit" class="common-filter-submit">Lọc</button>
+        <div class="common-filter-row">
+          <label class="common-search">
+            <i class="fas fa-search"></i>
+            <input type="search" name="q" value="{{ filters.q }}" placeholder="Tìm kiếm tên ...">
+          </label>
+
+          <select class="common-room-filter" name="room" onchange="this.form.submit()">
+            <option value="">Phòng: Tất cả</option>
+            {% for room_name in room_options %}
+              <option value="{{ room_name }}" {% if filters.room == room_name %}selected{% endif %}>Phòng: {{ room_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+
+      <div class="common-table-wrap">
+        {% if page_obj.object_list %}
+          <table class="common-table">
+            <thead>
+              <tr>
+                <th>STT</th>
+                <th>Mã sinh viên</th>
+                <th>Tên</th>
+                <th>Lớp</th>
+                <th>Ngày sinh</th>
+                <th>Phòng thi</th>
+                <th>Thời gian thi</th>
+                <th>Mã đề</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in page_obj.object_list %}
+                <tr>
+                  <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
+                  <td><span class="common-student-code">{{ row.student_code }}</span></td>
+                  <td>{{ row.full_name }}</td>
+                  <td>{{ row.class_name|default:"-" }}</td>
+                  <td>{{ row.date_of_birth|default:"-" }}</td>
+                  <td><span class="common-room-chip">{{ row.room_name }}</span></td>
+                  <td>{{ row.time_label }}</td>
+                  <td><span class="common-code-chip">{{ row.exam_code_name|default:"-" }}</span></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="common-empty">
+            Chưa có sinh viên nào trong danh sách chung của ca thi này.
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="common-footer" style="margin-top: 1rem;">
+        <div>
+          Hiển thị
+          {% if page_obj.paginator.count %}
+            <strong>{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+          {% else %}
+            <strong>0</strong>
+          {% endif %}
+          của <strong>{{ page_obj.paginator.count }}</strong> sinh viên
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+          <div class="pagination">
+            {% if page_obj.has_previous %}
+              <a href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.previous_page_number }}">
+                <i class="fas fa-chevron-left"></i>
+              </a>
+            {% else %}
+              <span><i class="fas fa-chevron-left"></i></span>
+            {% endif %}
+
+            {% for page_number in page_obj.paginator.page_range %}
+              {% if page_number == page_obj.number %}
+                <span class="active">{{ page_number }}</span>
+              {% elif page_number >= page_obj.number|add:-1 and page_number <= page_obj.number|add:1 %}
+                <a href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_number }}">{{ page_number }}</a>
+              {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+              <a href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.next_page_number }}">
+                <i class="fas fa-chevron-right"></i>
+              </a>
+            {% else %}
+              <span><i class="fas fa-chevron-right"></i></span>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="common-export-wrap">
+        <a class="common-export-btn" href="{{ export_url }}?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}">
+          <i class="fas fa-table"></i>
+          Xuất file Excel
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

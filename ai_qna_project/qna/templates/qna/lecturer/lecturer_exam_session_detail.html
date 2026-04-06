@@ -1,0 +1,711 @@
+{% extends "base.html" %}
+
+{% block title %}Chi tiết ca thi{% endblock %}
+
+{% block content %}
+<style>
+  :root {
+    --detail-bg: #f5f7fb;
+    --detail-card: #ffffff;
+    --detail-text: #17233a;
+    --detail-muted: #72839d;
+    --detail-border: #e4ebf5;
+    --detail-blue: #2649a6;
+    --detail-blue-dark: #1d3d90;
+    --detail-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  }
+
+  .detail-page {
+    min-height: calc(100vh - 5rem);
+    margin: -2.5rem;
+    background: var(--detail-bg);
+  }
+
+  .detail-shell {
+    max-width: 1320px;
+    margin: 0 auto;
+    min-height: calc(100vh - 5rem);
+    background: #fff;
+    border-left: 1px solid var(--detail-border);
+    border-right: 1px solid var(--detail-border);
+  }
+
+  .detail-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1.45rem 2rem;
+    border-bottom: 1px solid var(--detail-border);
+    color: #1f2937;
+    font-size: 0.96rem;
+    font-weight: 600;
+  }
+
+  .detail-body {
+    padding: 1.75rem 2rem 2.75rem;
+  }
+
+  .detail-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.6rem;
+  }
+
+  .detail-back-link,
+  .detail-primary-btn,
+  .detail-outline-btn,
+  .detail-danger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    min-height: 48px;
+    padding: 0 1.2rem;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    transition: 0.18s ease;
+  }
+
+  .detail-back-link {
+    background: #6b7280;
+    color: #fff;
+  }
+
+  .detail-back-link:hover {
+    background: #5d6574;
+    color: #fff;
+  }
+
+  .detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .detail-title {
+    margin: 0;
+    color: var(--detail-text);
+    font-size: 2.25rem;
+    font-weight: 800;
+  }
+
+  .detail-subtitle {
+    margin-top: 0.5rem;
+    color: var(--detail-muted);
+    font-size: 0.98rem;
+  }
+
+  .detail-primary-btn {
+    min-width: 300px;
+    background: var(--detail-blue);
+    color: #fff;
+    box-shadow: 0 14px 28px rgba(38, 73, 166, 0.2);
+  }
+
+  .detail-primary-btn:hover {
+    background: var(--detail-blue-dark);
+    color: #fff;
+  }
+
+  .detail-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 1rem;
+    border-radius: 999px;
+    font-size: 0.92rem;
+    font-weight: 800;
+    margin-bottom: 1.35rem;
+  }
+
+  .detail-status::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .detail-status.ongoing {
+    background: #dbf8e5;
+    color: #16a34a;
+  }
+
+  .detail-status.scheduled {
+    background: #feeddc;
+    color: #ef6c1e;
+  }
+
+  .detail-status.completed,
+  .detail-status.draft {
+    background: #edf1f5;
+    color: #4b5563;
+  }
+
+  .detail-status.cancelled {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .detail-panel {
+    border: 1px solid var(--detail-border);
+    border-radius: 22px;
+    background: var(--detail-card);
+    box-shadow: var(--detail-shadow);
+    overflow: hidden;
+  }
+
+  .detail-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-info-cell {
+    padding: 1.45rem 1.45rem 1.35rem;
+    border-right: 1px solid #ecf1f7;
+    border-bottom: 1px solid #ecf1f7;
+  }
+
+  .detail-info-cell:nth-child(3) {
+    display: none;
+  }
+
+  .detail-info-cell:nth-child(2),
+  .detail-info-cell:nth-child(5),
+  .detail-info-cell:nth-child(6) {
+    border-right: 0;
+  }
+
+  .detail-info-cell:nth-child(6) {
+    grid-column: span 2;
+    border-bottom: 0;
+  }
+
+  .detail-info-label {
+    color: #71829d;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .detail-info-value {
+    margin-top: 0.55rem;
+    color: var(--detail-text);
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.55;
+  }
+
+  .detail-info-value.mono {
+    font-family: Consolas, monospace;
+    font-weight: 600;
+  }
+
+  .detail-info-value i {
+    color: var(--detail-blue);
+    margin-right: 0.45rem;
+  }
+
+  .detail-description-block {
+    padding: 1.45rem;
+    border-top: 1px solid #ecf1f7;
+  }
+
+  .detail-description-box {
+    margin-top: 0.85rem;
+    padding: 1.15rem 1.2rem;
+    border: 1px solid #dfe7f3;
+    border-radius: 14px;
+    background: #f5f7fc;
+    color: #475569;
+    line-height: 1.75;
+  }
+
+  .detail-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.3rem;
+    margin: 1.75rem 0 1.9rem;
+  }
+
+  .detail-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.55rem 1.4rem;
+    border: 1px solid var(--detail-border);
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: var(--detail-shadow);
+  }
+
+  .detail-stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: #eef5ff;
+    color: #1592e6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.45rem;
+  }
+
+  .detail-stat-card strong {
+    display: block;
+    color: #0f2648;
+    font-size: 2rem;
+    line-height: 1;
+  }
+
+  .detail-stat-card span {
+    display: block;
+    margin-top: 0.35rem;
+    color: #9aa8bd;
+    font-size: 0.88rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .detail-section-title {
+    margin: 0 0 1.15rem;
+    color: #102544;
+    font-size: 1.2rem;
+    font-weight: 800;
+  }
+
+  .detail-table-wrap {
+    border: 1px solid var(--detail-border);
+    border-radius: 26px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: var(--detail-shadow);
+  }
+
+  .detail-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .detail-table th {
+    padding: 1.1rem 1rem;
+    background: #fbfcff;
+    color: #9aa8bd;
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+
+  .detail-table td {
+    padding: 1.45rem 1rem;
+    border-top: 1px solid #edf2f8;
+    color: #475569;
+    font-size: 1rem;
+    vertical-align: middle;
+  }
+
+  .detail-room-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: #1e293b;
+    font-size: 1rem;
+    font-weight: 800;
+  }
+
+  .detail-room-name i {
+    color: #c0cad8;
+    font-size: 0.85rem;
+  }
+
+  .detail-password-chip,
+  .detail-code-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 0.75rem;
+    border-radius: 8px;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+
+  .detail-password-chip {
+    border: 1px solid #d6e0ee;
+    background: #fff;
+    color: #2b61c9;
+  }
+
+  .detail-code-list {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
+  .detail-code-chip {
+    background: #edf2fb;
+    color: #6b7f9b;
+  }
+
+  .detail-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1.9rem;
+    flex-wrap: wrap;
+  }
+
+  .detail-outline-btn {
+    border: 1px solid #d5dfeb;
+    background: #fff;
+    color: #425466;
+  }
+
+  .detail-outline-btn:hover {
+    color: #1e293b;
+    border-color: #c3d0e1;
+  }
+
+  .detail-danger-btn {
+    border: 1px solid #fecaca;
+    background: #fff5f5;
+    color: #dc2626;
+  }
+
+  .detail-danger-btn:hover {
+    color: #b91c1c;
+    border-color: #fca5a5;
+  }
+
+  .detail-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(15, 23, 42, 0.42);
+    z-index: 80;
+  }
+
+  .detail-modal-backdrop.open { display: flex; }
+
+  .detail-modal {
+    width: min(860px, 100%);
+    padding: 3rem 2rem 2.2rem;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+    text-align: center;
+  }
+
+  .detail-modal-title {
+    margin: 0;
+    color: #666b73;
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .detail-modal-description {
+    margin-top: 1rem;
+    color: #9aa2af;
+    font-size: 1rem;
+  }
+
+  .detail-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .detail-confirm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 170px;
+    min-height: 56px;
+    border: 0;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #5f2bd8 0%, #4720b7 100%);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 800;
+    box-shadow: 0 14px 28px rgba(79, 33, 191, 0.24);
+  }
+
+  @media (max-width: 1100px) {
+    .detail-page { margin: -1.5rem; }
+    .detail-shell {
+      border-left: 0;
+      border-right: 0;
+    }
+    .detail-stats,
+    .detail-info-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
+    .detail-breadcrumb,
+    .detail-body {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    .detail-topbar,
+    .detail-header,
+    .detail-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .detail-primary-btn,
+    .detail-back-link,
+    .detail-outline-btn,
+    .detail-danger-btn {
+      width: 100%;
+    }
+
+    .detail-stats,
+    .detail-info-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .detail-info-cell { border-right: 0; }
+  }
+</style>
+
+<div class="detail-page">
+  <div class="detail-shell">
+    <div class="detail-breadcrumb">
+      <span>{{ exam_group.subject.name }}</span>
+      <i class="fas fa-chevron-right" style="font-size: 0.82rem; color: #94a3b8;"></i>
+      <span>Quản lý ca thi</span>
+    </div>
+
+    <div class="detail-body">
+      <div class="detail-topbar">
+        <div></div>
+        <a class="detail-back-link" href="{{ list_url }}">
+          <i class="fas fa-arrow-left"></i>
+          Quay lại danh sách ca thi
+        </a>
+      </div>
+
+      <div class="detail-header">
+        <div>
+          <h1 class="detail-title">Chi tiết ca thi</h1>
+          <div class="detail-subtitle">Thông tin chi tiết về ca thi được chọn trong hệ thống</div>
+        </div>
+        <a class="detail-primary-btn" href="{{ common_list_url }}">
+          Xem danh sách chung
+        </a>
+      </div>
+
+      <div class="detail-status {{ detail.status_class }}">{{ exam_group.status_label }}</div>
+
+      <div class="detail-panel">
+        <div class="detail-info-grid">
+          <div class="detail-info-cell">
+            <div class="detail-info-label">Tên kỳ thi</div>
+            <div class="detail-info-value">{{ exam_group.group_name }}</div>
+          </div>
+          <div class="detail-info-cell">
+            <div class="detail-info-label">Môn học</div>
+            <div class="detail-info-value">{{ exam_group.subject.name }}</div>
+          </div>
+          <div class="detail-info-cell">
+            <div class="detail-info-label">Mã môn</div>
+            <div class="detail-info-value mono">{{ exam_group.subject.subject_code }}</div>
+          </div>
+          <div class="detail-info-cell">
+            <div class="detail-info-label">Ngày diễn ra</div>
+            <div class="detail-info-value"><i class="far fa-calendar"></i>{{ exam_group.exam_date|date:"d/m/Y" }}</div>
+          </div>
+          <div class="detail-info-cell">
+            <div class="detail-info-label">Thời gian thi</div>
+            <div class="detail-info-value"><i class="far fa-clock"></i>{{ exam_group.exam_date|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</div>
+          </div>
+          <div class="detail-info-cell">
+            <div class="detail-info-label">Thời lượng</div>
+            <div class="detail-info-value"><i class="fas fa-hourglass-half"></i>{{ exam_group.duration_minutes }} phút</div>
+          </div>
+        </div>
+
+        <div class="detail-description-block">
+          <div class="detail-info-label">Mô tả kỳ thi</div>
+          <div class="detail-description-box">
+            {{ exam_group.description|default:"Chưa có mô tả cho ca thi này." }}
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-stats">
+        <div class="detail-stat-card">
+          <div class="detail-stat-icon"><i class="fas fa-door-open"></i></div>
+          <div>
+            <strong>{{ detail.room_count }}</strong>
+            <span>Phòng thi</span>
+          </div>
+        </div>
+        <div class="detail-stat-card">
+          <div class="detail-stat-icon"><i class="fas fa-users"></i></div>
+          <div>
+            <strong>{{ detail.student_count }}</strong>
+            <span>Sinh viên</span>
+          </div>
+        </div>
+        <div class="detail-stat-card">
+          <div class="detail-stat-icon"><i class="fas fa-file-alt"></i></div>
+          <div>
+            <strong>{{ detail.assigned_code_count }}</strong>
+            <span>Mã đề đã gán</span>
+          </div>
+        </div>
+        <div class="detail-stat-card">
+          <div class="detail-stat-icon"><i class="fas fa-archive"></i></div>
+          <div>
+            <strong>{{ detail.exam_set_count }}</strong>
+            <span>Bộ đề sử dụng</span>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="detail-section-title">Danh sách phòng thi</h2>
+
+      <div class="detail-table-wrap">
+        {% if detail.room_rows %}
+          <table class="detail-table">
+            <thead>
+              <tr>
+                <th>Tên phòng</th>
+                <th>Sĩ số</th>
+                <th>Mật khẩu</th>
+                <th>Bộ đề</th>
+                <th>Mã đề</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for room in detail.room_rows %}
+                <tr>
+                  <td>
+                    <span class="detail-room-name">
+                      <i class="fas fa-chevron-right"></i>
+                      {{ room.room_name }}
+                    </span>
+                  </td>
+                  <td>{{ room.student_count }}</td>
+                  <td>
+                    {% if room.password %}
+                      <span class="detail-password-chip">{{ room.password }}</span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>{{ room.exam_set_name }}</td>
+                  <td>
+                    <div class="detail-code-list">
+                      {% for code_name in room.exam_code_names %}
+                        <span class="detail-code-chip">{{ code_name }}</span>
+                      {% empty %}
+                        <span>-</span>
+                      {% endfor %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div style="padding: 2.5rem 1.5rem; text-align: center; color: var(--detail-muted);">
+            Chưa có phòng thi nào trong ca thi này.
+          </div>
+        {% endif %}
+      </div>
+
+      {% if detail.can_edit or detail.can_delete %}
+        <div class="detail-actions">
+          <div>
+            {% if detail.can_delete %}
+              <button type="button" class="detail-danger-btn" id="openDeleteModalButton">
+                <i class="fas fa-trash-alt"></i>
+                Xóa ca thi
+              </button>
+            {% endif %}
+          </div>
+          <div>
+            {% if detail.can_edit %}
+              <a class="detail-primary-btn" href="{{ edit_url }}">
+                <i class="fas fa-pen"></i>
+                Chỉnh sửa
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if detail.can_delete %}
+  <form id="deleteExamGroupForm" method="post" action="{{ delete_url }}">
+    {% csrf_token %}
+  </form>
+
+  <div class="detail-modal-backdrop" id="deleteModalBackdrop">
+    <div class="detail-modal">
+      <h3 class="detail-modal-title">Bạn có chắc chắn muốn xóa ca thi "{{ exam_group.group_name }}" này?</h3>
+      <div class="detail-modal-description">Hành động này sẽ bị xóa vĩnh viễn, không thể khôi phục.</div>
+      <div class="detail-modal-actions">
+        <button type="button" class="detail-outline-btn" id="closeDeleteModalButton">
+          <i class="fas fa-times"></i>
+          Hủy bỏ
+        </button>
+        <button type="submit" form="deleteExamGroupForm" class="detail-confirm-btn">
+          Xác nhận
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const deleteModalBackdrop = document.getElementById("deleteModalBackdrop");
+    const openDeleteModalButton = document.getElementById("openDeleteModalButton");
+    const closeDeleteModalButton = document.getElementById("closeDeleteModalButton");
+
+    if (openDeleteModalButton && deleteModalBackdrop) {
+      openDeleteModalButton.addEventListener("click", () => {
+        deleteModalBackdrop.classList.add("open");
+      });
+    }
+
+    if (closeDeleteModalButton && deleteModalBackdrop) {
+      closeDeleteModalButton.addEventListener("click", () => {
+        deleteModalBackdrop.classList.remove("open");
+      });
+    }
+
+    if (deleteModalBackdrop) {
+      deleteModalBackdrop.addEventListener("click", (event) => {
+        if (event.target === deleteModalBackdrop) {
+          deleteModalBackdrop.classList.remove("open");
+        }
+      });
+    }
+  </script>
+{% endif %}
+{% endblock %}

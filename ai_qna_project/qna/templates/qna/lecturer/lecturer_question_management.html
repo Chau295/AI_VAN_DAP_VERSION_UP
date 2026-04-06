@@ -10,7 +10,7 @@
     --panel: #ffffff;
     --border: #e6ebf2;
     --text: #152033;
-    --muted: #7a8699;t
+    --muted: #7a8699;
     --blue: #1f6feb;
     --blue-600: #1558c0;
     --green: #16a34a;
@@ -170,6 +170,12 @@
 
   .qm2-btn-primary { background: var(--blue); color: #fff; }
   .qm2-btn-primary:hover { background: var(--blue-600); }
+  .qm2-btn-primary:disabled,
+  .qm2-btn-primary.is-loading {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+  }
   .qm2-btn-green { background: var(--green); color: #fff; }
   .qm2-btn-green:hover { filter: brightness(.95); }
   .qm2-btn-outline { background: #fff; color: #475569; border-color: #cfd7e3; }
@@ -330,7 +336,6 @@
     color: #fff;
   }
 
-  /* TOOLBAR DANH SÁCH & TÌM KIẾM CÂU HỎI */
   .qm2-list-tools,
   .qm2-question-list-tools {
     display: flex;
@@ -481,6 +486,7 @@
   }
 
   .qm2-chip.active { color: var(--blue); border-color: var(--blue); background: #eef4ff; }
+  .qm2-ai-status { margin-top: 8px; color: var(--blue); font-size: 12px; min-height: 18px; }
   .qm2-ai-error { margin-top: 8px; color: var(--red); font-size: 12px; min-height: 18px; }
 
   .qm2-question-panel {
@@ -946,9 +952,41 @@
     align-items: center;
     gap: 4px;
   }
+
   .qm2-question-row.draft-row {
     border-left: 4px solid #f59e0b;
     background: #fffdf8;
+  }
+
+  /* CSS cho Inline Edit */
+  .qm2-inline-edit-textarea {
+    width: 100%;
+    min-height: 60px;
+    border: 1px solid var(--blue);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    line-height: 1.45;
+  }
+  .qm2-inline-edit-textarea:focus {
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12);
+  }
+
+  .qm2-inline-edit-select {
+    padding: 6px 10px;
+    border: 1px solid var(--blue);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+    background: #fff;
+  }
+  .qm2-inline-edit-select:focus {
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12);
   }
 
   @media (max-width: 1200px) {
@@ -1160,6 +1198,7 @@
               <i class="fas fa-wand-magic-sparkles"></i>
               <span>Tạo câu hỏi</span>
             </button>
+            <div class="qm2-ai-status" id="aiGenerateStatus"></div>
             <div class="qm2-ai-error" id="aiConfigError"></div>
           </div>
         </div>
@@ -1186,11 +1225,6 @@
             </div>
 
             <div class="qm2-question-actions">
-              <button class="qm2-btn qm2-btn-outline" type="button" id="exportWordBtn">
-                <i class="fas fa-file-word"></i>
-                <span>Xuất Word</span>
-              </button>
-
               <button class="qm2-btn qm2-btn-primary" type="button" id="openAddQuestionModalBtn">
                 <i class="fas fa-plus"></i>
                 <span>Thêm câu hỏi</span>
@@ -1399,6 +1433,16 @@
 </div>
 
 <script>
+  let hasUnsavedGeneratedQuestions = false;
+
+  // Cảnh báo người dùng nếu định thoát trang khi chưa lưu câu hỏi AI
+  window.addEventListener('beforeunload', function (e) {
+      if (hasUnsavedGeneratedQuestions) {
+          e.preventDefault();
+          e.returnValue = 'Bạn có các câu hỏi vừa tạo chưa được lưu. Bạn có chắc chắn muốn thoát?';
+      }
+  });
+
   const app = document.getElementById('qm2App');
   const pageMode = app?.dataset.pageMode || 'list';
   const viewType = app?.dataset.viewType || 'bank';
@@ -1407,7 +1451,6 @@
   let workspaceId = app?.dataset.workspaceId || '';
   const listUrl = app?.dataset.listUrl || '';
 
-  // Các URL API
   const apiMaterials = app?.dataset.apiMaterials || '';
   const apiMaterialPresign = app?.dataset.apiMaterialPresign || '';
   const apiMaterialUploadComplete = app?.dataset.apiMaterialUploadComplete || '';
@@ -1432,6 +1475,16 @@
   let pollingTimer = null;
   let editingQuestionId = null;
   let deletingQuestionId = null;
+
+  // Cảnh báo thoát trang nếu có câu hỏi nháp chưa lưu
+  window.addEventListener('beforeunload', function (e) {
+      const drafts = document.querySelectorAll('.draft-row');
+      if (drafts.length > 0) {
+          const msg = "Bạn có câu hỏi nháp chưa được lưu vào ngân hàng. Bạn có chắc chắn muốn thoát?";
+          e.returnValue = msg;
+          return msg;
+      }
+  });
 
   function getCookie(name) {
     let cookieValue = null;
@@ -1480,7 +1533,7 @@
     if (type !== 'success') stateToast.classList.add(type);
     stateToast.classList.add('show');
     window.clearTimeout(window.__qm2ToastTimer);
-    window.__qm2ToastTimer = window.setTimeout(hideToast, 2600);
+    window.__qm2ToastTimer = window.setTimeout(hideToast, 5000);
   }
 
   function hideToast() {
@@ -1757,7 +1810,6 @@
   }
   window.clearQuestionSelection = clearQuestionSelection;
 
-  // HÀM LỌC TÌM KIẾM CÂU HỎI Ở GIAO DIỆN CLIENT
   function filterQuestions() {
     const searchInput = document.getElementById('questionSearchInput');
     if (!searchInput) return;
@@ -1771,10 +1823,9 @@
 
       const text = contentNode.textContent.toLowerCase();
       if (text.includes(query)) {
-        row.style.display = ''; // Hiện dòng
+        row.style.display = '';
       } else {
-        row.style.display = 'none'; // Ẩn dòng
-        // Bỏ chọn nếu câu hỏi đang bị ẩn để tránh vô tình thao tác xóa/đổi level
+        row.style.display = 'none';
         const cb = row.querySelector('.question-checkbox');
         if (cb && cb.checked) {
           cb.checked = false;
@@ -1782,7 +1833,6 @@
       }
     });
 
-    // Cập nhật lại UI sau khi đã ẩn/hiện hoặc bỏ tick
     updateQuestionSelectionUI();
   }
 
@@ -1804,19 +1854,42 @@
       return `
       <div class="qm2-question-row ${draftClass}" data-question-id="${q.question_id}" data-difficulty="${q.difficulty}">
         <input type="checkbox" class="question-checkbox" value="${q.question_id}" data-question-id="${q.question_id}" ${autoCheck}>
+
         <div class="qm2-question-main">
-          <div class="qm2-question-content">${escapeHtml(q.content)}</div>
-          <div class="qm2-question-extra">
-            ${draftBadge}
-            <span>${escapeHtml(q.created_at || '')}</span>
+          <div class="qm2-view-mode">
+            <div class="qm2-question-content">${escapeHtml(q.content)}</div>
+            <div class="qm2-question-extra">
+              ${draftBadge}
+              <span>${escapeHtml(q.created_at || '')}</span>
+            </div>
+          </div>
+          <div class="qm2-edit-mode" style="display:none;">
+            <textarea class="qm2-inline-edit-textarea">${escapeHtml(q.content)}</textarea>
           </div>
         </div>
-        <div style="font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; text-align: center; white-space: nowrap; background: ${q.difficulty === 'EASY' ? 'var(--easy-bg)' : (q.difficulty === 'HARD' ? 'var(--hard-bg)' : 'var(--medium-bg)')}; color: ${q.difficulty === 'EASY' ? 'var(--easy-text)' : (q.difficulty === 'HARD' ? 'var(--hard-text)' : 'var(--medium-text)')}">
-            ${q.difficulty === 'EASY' ? 'Dễ' : (q.difficulty === 'HARD' ? 'Khó' : 'Trung bình')}
+
+        <div>
+            <div class="qm2-view-mode" style="font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; text-align: center; white-space: nowrap; background: ${q.difficulty === 'EASY' ? 'var(--easy-bg)' : (q.difficulty === 'HARD' ? 'var(--hard-bg)' : 'var(--medium-bg)')}; color: ${q.difficulty === 'EASY' ? 'var(--easy-text)' : (q.difficulty === 'HARD' ? 'var(--hard-text)' : 'var(--medium-text)')}">
+                ${q.difficulty === 'EASY' ? 'Dễ' : (q.difficulty === 'HARD' ? 'Khó' : 'Trung bình')}
+            </div>
+            <div class="qm2-edit-mode" style="display:none;">
+                <select class="qm2-inline-edit-select">
+                    <option value="EASY" ${q.difficulty === 'EASY' ? 'selected' : ''}>Dễ</option>
+                    <option value="MEDIUM" ${q.difficulty === 'MEDIUM' ? 'selected' : ''}>Trung bình</option>
+                    <option value="HARD" ${q.difficulty === 'HARD' ? 'selected' : ''}>Khó</option>
+                </select>
+            </div>
         </div>
+
         <div class="qm2-row-actions">
-          <button type="button" title="Chỉnh sửa nội dung & mức độ" class="edit-question-btn" data-question-id="${q.question_id}"><i class="fas fa-pen"></i></button>
-          <button type="button" title="Xóa" class="delete-question-btn" data-question-id="${q.question_id}"><i class="far fa-trash-alt"></i></button>
+          <div class="qm2-view-mode" style="display: flex; gap: 10px;">
+              <button type="button" title="Chỉnh sửa trực tiếp" class="edit-question-inline-btn" data-question-id="${q.question_id}"><i class="fas fa-pen"></i></button>
+              <button type="button" title="Xóa" class="delete-question-btn" data-question-id="${q.question_id}"><i class="far fa-trash-alt"></i></button>
+          </div>
+          <div class="qm2-edit-mode" style="display:none; gap: 8px;">
+              <button type="button" title="Lưu lại" class="save-inline-btn" data-question-id="${q.question_id}" style="color: var(--green); background: #f0fdf4; border: 1px solid #bbf7d0;"><i class="fas fa-check"></i></button>
+              <button type="button" title="Hủy bỏ" class="cancel-inline-btn" style="color: var(--red); background: #fef2f2; border: 1px solid #fecaca;"><i class="fas fa-times"></i></button>
+          </div>
         </div>
       </div>
       `;
@@ -1827,14 +1900,13 @@
 
     bindQuestionEvents();
     updateQuestionSelectionUI();
-    filterQuestions(); // Apply lọc ngay khi vừa render xong nhỡ người dùng chuyển tab (Dễ/Khó/...) mà đang có text tìm kiếm
+    filterQuestions();
   }
 
   function bindQuestionEvents() {
     const selectAllQuestions = document.getElementById('selectAllQuestions');
     if (selectAllQuestions) {
       selectAllQuestions.onchange = () => {
-        // Chỉ chọn những câu hỏi ĐANG HIỂN THỊ (không bị ẩn bởi lệnh filter tìm kiếm)
         document.querySelectorAll('.qm2-question-row').forEach(row => {
           if (row.style.display !== 'none') {
              const cb = row.querySelector('.question-checkbox');
@@ -1847,20 +1919,70 @@
 
     document.querySelectorAll('.question-checkbox').forEach(cb => cb.addEventListener('change', updateQuestionSelectionUI));
 
-    document.querySelectorAll('.edit-question-btn').forEach(btn => {
+    // Kích hoạt chế độ sửa trực tiếp (Inline Edit)
+    document.querySelectorAll('.edit-question-inline-btn').forEach(btn => {
       btn.addEventListener('click', function () {
-        const id = this.dataset.questionId;
         const row = this.closest('.qm2-question-row');
-        const textNode = row?.querySelector('.qm2-question-content');
-        const oldText = textNode?.textContent?.trim() || '';
-        const currentLevel = row?.dataset.difficulty || 'MEDIUM';
-        editingQuestionId = id;
+        row.querySelectorAll('.qm2-view-mode').forEach(el => el.style.display = 'none');
+        row.querySelectorAll('.qm2-edit-mode').forEach(el => el.style.display = '');
+        // focus vào textarea
+        const textarea = row.querySelector('.qm2-inline-edit-textarea');
+        if (textarea) textarea.focus();
+      });
+    });
 
-        document.getElementById('questionModalTitle').textContent = 'Chỉnh sửa câu hỏi';
-        document.getElementById('questionModalSub').textContent = 'Chỉnh sửa nội dung và cập nhật mức độ khó.';
-        document.getElementById('manualQuestionText').value = oldText;
-        document.querySelectorAll('input[name="questionLevel"]').forEach(radio => radio.checked = (radio.value === currentLevel));
-        toggleModal('addQuestionModal', true);
+    // Hủy sửa trực tiếp
+    document.querySelectorAll('.cancel-inline-btn').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const row = this.closest('.qm2-question-row');
+        row.querySelectorAll('.qm2-edit-mode').forEach(el => el.style.display = 'none');
+        row.querySelectorAll('.qm2-view-mode').forEach(el => el.style.display = '');
+        // Khôi phục giá trị ban đầu nếu người dùng gõ sai
+        const textarea = row.querySelector('.qm2-inline-edit-textarea');
+        const contentNode = row.querySelector('.qm2-question-content');
+        if (textarea && contentNode) {
+            textarea.value = contentNode.textContent;
+        }
+      });
+    });
+
+    // Lưu câu hỏi khi sửa trực tiếp
+    document.querySelectorAll('.save-inline-btn').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        const row = this.closest('.qm2-question-row');
+        const id = this.dataset.questionId;
+        const textarea = row.querySelector('.qm2-inline-edit-textarea');
+        const content = textarea ? textarea.value.trim() : '';
+        const selectEl = row.querySelector('.qm2-inline-edit-select');
+        const difficulty = selectEl ? selectEl.value : 'MEDIUM';
+
+        if (!content) {
+            showToast('Nội dung không được để trống', 'error');
+            return;
+        }
+
+        const originalHtml = this.innerHTML;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        this.disabled = true;
+
+        try {
+            const url = `/api/lecturer/questions/${id}/update/`; // Endpoint update của bạn
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+                body: JSON.stringify({ content, difficulty, workspace_id: workspaceId, view_type: viewType })
+            });
+            const data = await res.json();
+
+            if (data.status !== 'SUCCESS') throw new Error(data.message || 'Lỗi cập nhật câu hỏi');
+
+            showToast('Đã lưu thành công');
+            await fetchQuestions(); // Tải lại danh sách để render lại view chuẩn
+        } catch (err) {
+            showToast(err.message, 'error');
+            this.innerHTML = originalHtml;
+            this.disabled = false;
+        }
       });
     });
 
@@ -1896,10 +2018,15 @@
       const res = await fetch(`${apiBanks}?subject_id=${subjectId}`);
       const data = await res.json();
       if (data.status === 'SUCCESS') {
-        renderBanks(data.question_banks);
-      } else {
-        showToast(data.message || 'Không thể tải danh sách', 'error');
-      }
+        showToast('Đã lưu câu hỏi vào ngân hàng thành công!', 'success');
+        hasUnsavedGeneratedQuestions = false; // Tắt cờ cảnh báo
+        toggleModal('saveBankModal', false); // Chỉ đóng Pop-up
+
+        // COMMENT LẠI DÒNG DƯỚI ĐÂY ĐỂ TRÁNH BỊ TẢI LẠI TRANG
+        // window.location.href = `?subject_id=${selectedSubjectId}&bank_id=${bankId}&mode=detail&view=bank`;
+    } else {
+        showToast(data.message || 'Lưu không thành công', 'error');
+    }
     } catch (err) {
       showToast('Lỗi kết nối API', 'error');
     }
@@ -1991,11 +2118,13 @@
   async function startGenerateQuestions() {
     const totalCountRange = document.getElementById('questionCountRange');
     const aiConfigError = document.getElementById('aiConfigError');
+    const aiGenerateStatus = document.getElementById('aiGenerateStatus');
     const btn = document.getElementById('generateAiBtn');
     const documentIds = getSelectedDocIds();
     const totalCount = Number(totalCountRange?.value || 0);
 
     aiConfigError.textContent = '';
+    if (aiGenerateStatus) aiGenerateStatus.textContent = '';
     if (!documentIds.length) {
       aiConfigError.textContent = 'Vui lòng chọn ít nhất 1 tài liệu.';
       return;
@@ -2006,8 +2135,11 @@
         if(app) app.dataset.workspaceId = workspaceId;
     }
 
+    btn.classList.add('is-loading');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Đang tạo...</span>';
+    if (aiGenerateStatus) aiGenerateStatus.textContent = 'Đang tạo câu hỏi từ tài liệu đã chọn...';
+    showToast('Đang tạo câu hỏi...', 'warning');
 
     try {
       const res = await fetch(apiGenerate, {
@@ -2025,17 +2157,39 @@
         }),
       });
 
-      const data = await res.json();
-      if (data.status !== 'SUCCESS') throw new Error(data.message || 'Tạo câu hỏi thất bại.');
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error('Máy chủ trả về phản hồi không hợp lệ khi tạo câu hỏi.');
+      }
 
-      currentJobId = data.job_id;
-      showToast('Đã tiếp nhận yêu cầu tạo câu hỏi.');
-      startPolling();
+      if (!res.ok || data.status !== 'SUCCESS') {
+        throw new Error(data.message || 'Tạo câu hỏi thất bại.');
+      }
+
+      currentJobId = data.job_id || null;
+      if (aiGenerateStatus) aiGenerateStatus.textContent = '';
+
+      if (data.process_status === 'PROCESSING' && currentJobId) {
+        showToast(data.message || 'Đã tiếp nhận yêu cầu tạo câu hỏi.');
+        startPolling();
+        return;
+      }
+
+      if (Array.isArray(data.questions)) {
+        renderQuestions(data.questions);
+      }
+      updateSummary(data.summary || {});
+      showToast(data.message || 'Tạo câu hỏi thành công');
+      await fetchQuestions();
     } catch (err) {
+      if (aiGenerateStatus) aiGenerateStatus.textContent = '';
       aiConfigError.textContent = err.message || 'Tạo câu hỏi thất bại.';
     } finally {
-      btn.disabled = false;
+      btn.classList.remove('is-loading');
       btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i><span>Tạo câu hỏi</span>';
+      validateGenerateConfig();
     }
   }
 
@@ -2292,8 +2446,7 @@
 
       if (!contentType.includes('application/json')) {
         const text = await res.text();
-        console.error('Delete bank returned non-JSON:', text);
-        throw new Error('Server không trả về JSON. Kiểm tra lại URL hoặc view xóa ngân hàng.');
+        throw new Error('Server không trả về JSON.');
       }
 
       const data = await res.json();
@@ -2306,11 +2459,10 @@
       showToast('Xóa ngân hàng thành công!');
 
       setTimeout(() => {
-        window.location.href = buildListUrl(selectedSubjectId);
+        window.location.href = `${listUrl}?subject_id=${selectedSubjectId}`;
       }, 1200);
 
     } catch (err) {
-      console.error(err);
       showToast(err.message || 'Có lỗi xảy ra khi xóa ngân hàng.', 'error');
     }
   }
@@ -2386,7 +2538,6 @@
     const exportWordBtn = document.getElementById('exportWordBtn');
     const openAddQuestionModalBtn = document.getElementById('openAddQuestionModalBtn');
 
-    // Mới Thêm: Khởi tạo sự kiện tìm kiếm
     const searchInput = document.getElementById('questionSearchInput');
     if (searchInput) {
       searchInput.addEventListener('input', filterQuestions);
@@ -2459,6 +2610,7 @@
     if (confirmDeleteBtn) confirmDeleteBtn.addEventListener('click', handleBulkDelete);
     if (confirmSaveBankBtn) confirmSaveBankBtn.addEventListener('click', confirmSaveBank);
 
+    // Xử lý nút xuất Word (Có thể giữ hoặc bỏ tùy nhu cầu)
     if (exportWordBtn) {
       exportWordBtn.addEventListener('click', () => {
         if (!selectedSubjectId) {

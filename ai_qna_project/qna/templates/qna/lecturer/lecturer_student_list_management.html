@@ -1,7 +1,7 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% load static %}
 
-{% block title %}Danh sách Lớp - Lịch sử import{% endblock %}
+{% block title %}Danh sách lớp - Lịch sử import{% endblock %}
 
 {% block content %}
 <style>
@@ -583,7 +583,6 @@
         <p>Quản lý và cập nhật danh sách sinh viên theo từng lớp.</p>
       </div>
 
-      <!-- Đã thêm nút quay lại vào trong Flex Group -->
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
         <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
           <i class="fas fa-arrow-left"></i>
@@ -595,69 +594,6 @@
         </a>
       </div>
     </div>
-
-    {% comment %}
-    <div class="qm2-summary">
-      <div class="qm2-summary-card">
-        <span class="qm2-summary-label">Tệp danh sách</span>
-        <div class="qm2-summary-value">{{ roster_summary.total_files|default:0 }}</div>
-        <div class="qm2-summary-note">Số lớp đã tải lên cho môn này</div>
-      </div>
-      <div class="qm2-summary-card">
-        <span class="qm2-summary-label">Lớp đã tạo xong</span>
-        <div class="qm2-summary-value">{{ roster_summary.completed_files|default:0 }}</div>
-        <div class="qm2-summary-note">Danh sách đã hoàn tất tạo hoặc liên kết tài khoản</div>
-      </div>
-      <div class="qm2-summary-card">
-        <span class="qm2-summary-label">Tổng sinh viên</span>
-        <div class="qm2-summary-value">{{ roster_summary.total_students|default:0 }}</div>
-        <div class="qm2-summary-note">Tổng số sinh viên trong các danh sách</div>
-      </div>
-      <div class="qm2-summary-card">
-        <span class="qm2-summary-label">Đã có tài khoản</span>
-        <div class="qm2-summary-value">{{ roster_summary.total_created_accounts|default:0 }}</div>
-        <div class="qm2-summary-note">Số sinh viên đã có thể dùng tài khoản hệ thống</div>
-      </div>
-    </div>
-    {% endcomment %}
-
-    {% if False %}
-    {% comment %}
-        {% if roster_summary.total_files %}
-      <div class="qm2-progress-banner {% if roster_summary.all_files_completed %}is-complete{% endif %}">
-        <div class="qm2-progress-copy">
-                    <strong>
-            {% if roster_summary.all_files_completed %}
-              Tất cả {{ roster_summary.completed_files }}/{{ roster_summary.total_files }} danh sách lớp đã hoàn tất tạo tài khoản.
-            {% else %}
-              Đã hoàn tất {{ roster_summary.completed_files }}/{{ roster_summary.total_files }} danh sách lớp.
-            {% endif %}
-          </strong>
-          <span>
-            {% if roster_summary.all_files_completed %}
-              Toàn bộ {{ roster_summary.total_created_accounts }}/{{ roster_summary.total_students }} sinh viên trong các danh sách đang hiển thị đã sẵn sàng đăng nhập.
-            {% else %}
-              Còn {{ roster_summary.pending_files }} danh sách và {{ roster_summary.pending_accounts }} sinh viên chưa được cấp đủ tài khoản.
-            {% endif %}
-          </span>
-        </div>
-
-        {% if completed_rosters_preview %}
-          <div class="qm2-progress-links">
-            {% for roster in completed_rosters_preview %}
-              <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}" class="qm2-progress-link">
-                  <span>{{ roster.original_file_name }}</span>
-                  {% if roster.account_created_at %}
-                    <small>Hoàn tất lúc {{ roster.account_created_at|date:"H:i d/m/Y" }}</small>
-                  {% endif %}
-              </a>
-            {% endfor %}
-          </div>
-        {% endif %}
-      </div>
-    {% endif %}
-    {% endcomment %}
-    {% endif %}
 
     <div class="qm2-card">
       <form method="get" class="qm2-filters">
@@ -866,7 +802,7 @@
     if (toast && toast.style.display !== 'none') {
       setTimeout(() => {
         hideToast();
-      }, 2800);
+      }, 5000);
     }
   });
 

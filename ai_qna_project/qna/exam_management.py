@@ -9,11 +9,12 @@ from uuid import uuid4
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET, require_POST
+from django.urls import reverse
 
 from .models import (
     DifficultyLevel,
@@ -25,8 +26,13 @@ from .models import (
     QuestionBank,
     SemesterChoices,
     Subject,
+    normalize_question_text,
 )
 
+
+# ==============================================================================
+# HELPER FUNCTIONS
+# ==============================================================================
 
 def _ensure_lecturer(request):
     profile = getattr(request.user, "userprofile", None)
@@ -46,14 +52,25 @@ def _parse_int_field(raw_value, field_label: str) -> int:
     try:
         return int(raw_value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_label} khÃ´ng há»£p lá»‡.") from exc
+        raise ValueError(f"{field_label} không hợp lệ.") from exc
+
+
+def _question_exists_in_subject(subject: Subject, question_text: str, exclude_question_id: int | None = None) -> bool:
+    normalized = normalize_question_text(question_text)
+    queryset = Question.objects.filter(
+        subject_id=subject,
+        question_text_normalized=normalized,
+        is_exam_clone=False,
+    )
+    if exclude_question_id:
+        queryset = queryset.exclude(pk=exclude_question_id)
+    return queryset.exists()
 
 
 def _clone_question_for_exam(source_question: Question) -> Question:
     return Question.objects.create(
-        subject=source_question.subject,
-        # Exam clones should not appear in question-bank management screens.
-        bank=None,
+        subject_id=source_question.subject_id,
+        question_bank_id=None,
         question_text=source_question.question_text,
         question_id_in_barem=f"EC_{uuid4().hex[:8]}",
         difficulty=source_question.difficulty,
@@ -97,11 +114,47 @@ def _required_counts(exam_set: ExamSet) -> Dict[str, int]:
     }
 
 
+def _next_exam_code_number(exam_set: ExamSet) -> int:
+    latest_code = exam_set.exam_codes.order_by("-code_number", "-pk").first()
+    return (latest_code.code_number if latest_code else 100) + 1
+
+
+def _approval_error_for_code(code: ExamCode) -> str | None:
+    items = list(code.exam_code_questions.select_related("question_id").all())
+    if not items:
+        return "Mã đề chưa có câu hỏi."
+
+    for item in items:
+        if item.question_id is None or not (item.question_id.question_text or "").strip():
+            return "Vui lòng nhập đầy đủ nội dung câu hỏi trước khi duyệt."
+
+    return None
+
+
+def _exam_set_summary(exam_set: ExamSet) -> dict:
+    prefetched_codes = getattr(exam_set, "_prefetched_objects_cache", {}).get("exam_codes")
+    codes = list(prefetched_codes) if prefetched_codes is not None else list(exam_set.exam_codes.all())
+
+    approved_count = 0
+    used_count = 0
+    for code in codes:
+        if code.is_approved:
+            approved_count += 1
+        if code.session_rooms.exists():
+            used_count += 1
+
+    return {
+        "total_codes_count": len(codes),
+        "approved_codes_count": approved_count,
+        "used_codes_count": used_count,
+    }
+
+
 def _ordered_items(code: ExamCode):
     meta = _difficulty_meta()
     items = []
-    for item in code.exam_code_questions.select_related("question").order_by("display_order", "id"):
-        question = item.question
+    for item in code.exam_code_questions.select_related("question_id").order_by("display_order", "pk"):
+        question = item.question_id
         info = meta.get(item.difficulty, {"label": item.difficulty, "slug": item.difficulty.lower()})
         items.append(
             {
@@ -121,11 +174,11 @@ def _ordered_items(code: ExamCode):
 def _serialize_exam_code(code: ExamCode) -> dict:
     items = _ordered_items(code)
     return {
-        "id": code.id,
+        "id": code.pk,
         "code_name": code.code_name,
         "code_number": code.code_number,
         "is_approved": code.is_approved,
-        "is_linked": code.is_linked,
+        "is_linked": code.session_rooms.exists(),
         "items": items,
         "preview": [
             {
@@ -139,15 +192,15 @@ def _serialize_exam_code(code: ExamCode) -> dict:
 
 
 def _build_question_pools(
-    subject: Subject,
-    bank_ids: Sequence[int],
-    easy_count: int,
-    medium_count: int,
-    hard_count: int,
+        subject: Subject,
+        bank_ids: Sequence[int],
+        easy_count: int,
+        medium_count: int,
+        hard_count: int,
 ):
     base_qs = Question.objects.filter(
-        subject=subject,
-        bank_id__in=bank_ids,
+        subject_id=subject,
+        question_bank_id__in=bank_ids,
         is_exam_clone=False,
     )
 
@@ -181,11 +234,11 @@ def _build_question_pools(
 
 
 def _calculate_max_versions(
-    pools: dict,
-    easy_count: int,
-    medium_count: int,
-    hard_count: int,
-    allow_duplicates: bool,
+        pools: dict,
+        easy_count: int,
+        medium_count: int,
+        hard_count: int,
+        allow_duplicates: bool,
 ) -> int:
     if allow_duplicates:
         return 999999
@@ -201,12 +254,12 @@ def _calculate_max_versions(
 
 
 def _generate_version_blueprints(
-    pools: dict,
-    versions: int,
-    easy_count: int,
-    medium_count: int,
-    hard_count: int,
-    allow_duplicates: bool,
+        pools: dict,
+        versions: int,
+        easy_count: int,
+        medium_count: int,
+        hard_count: int,
+        allow_duplicates: bool,
 ):
     result = []
     requirements = {
@@ -255,8 +308,8 @@ def _generate_version_blueprints(
 
 
 def _build_exam_code_items(
-    exam_code: ExamCode,
-    selected_questions_by_difficulty: dict,
+        exam_code: ExamCode,
+        selected_questions_by_difficulty: dict,
 ):
     items = []
     display_order = 1
@@ -269,13 +322,13 @@ def _build_exam_code_items(
 
     flat_rows = []
     for difficulty in difficulty_sequence:
-        for source_question in selected_questions_by_difficulty[difficulty]:
+        for source_question in selected_questions_by_difficulty.get(difficulty, []):
             clone = _clone_question_for_exam(source_question)
             flat_rows.append(
                 {
                     "question": clone,
                     "difficulty": difficulty,
-                    "score": _score_for_difficulty(exam_code.exam_set, difficulty),
+                    "score": _score_for_difficulty(exam_code.exam_set_id, difficulty),
                     "display_order": display_order,
                 }
             )
@@ -285,7 +338,7 @@ def _build_exam_code_items(
         items.append(
             ExamCodeQuestion(
                 exam_code=exam_code,
-                question=row["question"],
+                question_id=row["question"],
                 difficulty=row["difficulty"],
                 display_order=index,
                 score=row["score"],
@@ -296,7 +349,7 @@ def _build_exam_code_items(
 
 
 def _replace_exam_code_items(code: ExamCode, new_blueprint: dict):
-    old_items = list(code.exam_code_questions.select_related("question").all())
+    old_items = list(code.exam_code_questions.select_related("question_id").all())
 
     code.exam_code_questions.all().delete()
 
@@ -307,18 +360,18 @@ def _replace_exam_code_items(code: ExamCode, new_blueprint: dict):
     ExamCodeQuestion.objects.bulk_create(new_items)
 
     for old_item in old_items:
-        _delete_exam_clone(old_item.question)
+        _delete_exam_clone(old_item.question_id)
 
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
-    _mark_exam_set_draft(code.exam_set)
+    _mark_exam_set_draft(code.exam_set_id)
 
 
 def _collect_used_original_question_ids(exam_set: ExamSet, exclude_code_id: int | None = None):
-    qs = ExamCodeQuestion.objects.filter(exam_code__exam_set=exam_set)
+    qs = ExamCodeQuestion.objects.filter(exam_code__exam_set_id=exam_set)
 
     if exclude_code_id is not None:
-        qs = qs.exclude(exam_code_id=exclude_code_id)
+        qs = qs.exclude(exam_code__pk=exclude_code_id)
 
     used = {
         DifficultyLevel.EASY: set(),
@@ -326,19 +379,19 @@ def _collect_used_original_question_ids(exam_set: ExamSet, exclude_code_id: int 
         DifficultyLevel.HARD: set(),
     }
 
-    bank_ids = list(exam_set.question_banks.values_list("id", flat=True))
+    bank_ids = list(exam_set.question_banks.values_list("pk", flat=True))
 
-    for item in qs.select_related("question"):
-        question = item.question
+    for item in qs.select_related("question_id"):
+        question = item.question_id
         if not question:
             continue
 
         original = Question.objects.filter(
-            subject=exam_set.subject,
-            bank_id__in=bank_ids,
+            subject_id=exam_set.subject_id,
+            question_bank_id__in=bank_ids,
             is_exam_clone=False,
             difficulty=item.difficulty,
-            question_text=question.question_text,
+            question_text_normalized=normalize_question_text(question.question_text),
         ).first()
 
         if original:
@@ -348,16 +401,16 @@ def _collect_used_original_question_ids(exam_set: ExamSet, exclude_code_id: int 
 
 
 def _regenerate_single_code(code: ExamCode) -> None:
-    exam_set = code.exam_set
+    exam_set = code.exam_set_id
     if exam_set is None:
         raise ValueError("Mã đề chưa thuộc bộ đề nào.")
 
-    source_bank_ids = list(exam_set.question_banks.values_list("id", flat=True))
+    source_bank_ids = list(exam_set.question_banks.values_list("pk", flat=True))
     if not source_bank_ids:
         raise ValueError("Bộ đề chưa có nguồn câu hỏi.")
 
     pools = _build_question_pools(
-        subject=exam_set.subject,
+        subject=exam_set.subject_id,
         bank_ids=source_bank_ids,
         easy_count=exam_set.easy_pool_size,
         medium_count=exam_set.medium_pool_size,
@@ -374,7 +427,7 @@ def _regenerate_single_code(code: ExamCode) -> None:
         _replace_exam_code_items(code, blueprint)
         return
 
-    used = _collect_used_original_question_ids(exam_set, exclude_code_id=code.id)
+    used = _collect_used_original_question_ids(exam_set, exclude_code_id=code.pk)
 
     labels = {
         DifficultyLevel.EASY: "dễ",
@@ -399,7 +452,7 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
         raise ValueError("Danh sách câu hỏi không hợp lệ.")
 
     existing_items = list(
-        code.exam_code_questions.select_related("question").order_by("display_order", "id")
+        code.exam_code_questions.select_related("question_id").order_by("display_order", "pk")
     )
 
     if len(existing_items) != len(payload_items):
@@ -408,10 +461,10 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
     existing_by_id = {str(item.id): item for item in existing_items}
     existing_by_order = {str(item.display_order): item for item in existing_items}
     seen_item_ids = set()
+    seen_normalized_contents = set()
 
     for incoming in payload_items:
         existing = None
-
         incoming_id = str(incoming.get("id") or "").strip()
         if incoming_id:
             existing = existing_by_id.get(incoming_id)
@@ -422,55 +475,62 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
                 existing = existing_by_order.get(incoming_order)
 
         if existing is None or existing.id in seen_item_ids:
-            raise ValueError("Du lieu cau hoi khong hop le.")
+            raise ValueError("Dữ liệu câu hỏi không hợp lệ.")
 
         seen_item_ids.add(existing.id)
         content = (incoming.get("content") or "").strip()
         if not content:
             raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
 
-        question = existing.question
+        normalized_content = normalize_question_text(content)
+        if normalized_content in seen_normalized_contents:
+            raise ValueError("Mã đề đang có câu hỏi bị trùng nội dung.")
+        seen_normalized_contents.add(normalized_content)
+
+        if _question_exists_in_subject(code.subject_id, content, exclude_question_id=existing.question_id_id):
+            raise ValueError(
+                "Nội dung câu hỏi đang trùng với câu hỏi đã có trong ngân hàng. Vui lòng sửa lại."
+            )
+
+        question = existing.question_id
         if question is None:
             question = Question.objects.create(
-                subject=code.subject,
-                bank=None,
+                subject_id=code.subject_id,
                 question_text=content,
-                question_id_in_barem=f"EC_{uuid4().hex[:8]}",
+                question_id_in_barem=f"MANUAL_{uuid4().hex[:8]}",
                 difficulty=existing.difficulty,
-                is_supplementary=False,
                 is_exam_clone=True,
             )
-            existing.question = question
-            existing.save(update_fields=["question"])
+            existing.question_id = question
+            existing.save(update_fields=["question_id"])
         else:
             question.question_text = content
-            question.difficulty = existing.difficulty
-            question.is_exam_clone = True
-            question.save(update_fields=["question_text", "difficulty", "is_exam_clone"])
-
-    if len(seen_item_ids) != len(existing_items):
-        raise ValueError("Du lieu cau hoi khong hop le.")
+            question.save(update_fields=["question_text"])
 
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
-    _mark_exam_set_draft(code.exam_set)
+    _mark_exam_set_draft(code.exam_set_id)
 
 
 def _prefetch_exam_sets(qs):
-    return qs.select_related("subject").prefetch_related(
+    return qs.select_related("subject_id").prefetch_related(
         "question_banks",
         Prefetch(
             "exam_codes",
             queryset=ExamCode.objects.prefetch_related(
                 Prefetch(
                     "exam_code_questions",
-                    queryset=ExamCodeQuestion.objects.select_related("question").order_by("display_order", "id"),
+                    queryset=ExamCodeQuestion.objects.select_related("question_id").order_by("display_order", "pk"),
                 ),
-                "exam_session_groups",
+                "session_rooms",
             ),
         ),
     )
 
+
+# ==============================================================================
+# VIEW FUNCTIONS
+# ==============================================================================
 
 @login_required
 @require_GET
@@ -482,10 +542,9 @@ def lecturer_exam_codes_screen(request):
     academic_year = (request.GET.get("academic_year") or "").strip()
     semester = (request.GET.get("semester") or "").strip()
     status_filter = (request.GET.get("status") or "").strip()
-    linked_filter = (request.GET.get("linked") or "").strip()
     keyword = (request.GET.get("q") or "").strip()
 
-    exam_sets = ExamSet.objects.filter(subject__in=subjects)
+    exam_sets = ExamSet.objects.filter(subject_id__in=subjects)
     if subject_id:
         exam_sets = exam_sets.filter(subject_id=subject_id)
     if academic_year:
@@ -494,59 +553,43 @@ def lecturer_exam_codes_screen(request):
         exam_sets = exam_sets.filter(semester=semester)
     if status_filter:
         exam_sets = exam_sets.filter(status=status_filter)
-    if linked_filter == "USED":
-        exam_sets = exam_sets.filter(exam_codes__exam_session_groups__isnull=False).distinct()
-    elif linked_filter == "UNUSED":
-        exam_sets = exam_sets.exclude(exam_codes__exam_session_groups__isnull=False).distinct()
     if keyword:
         exam_sets = exam_sets.filter(
-            Q(subject__name__icontains=keyword)
-            | Q(subject__subject_code__icontains=keyword)
-            | Q(name__icontains=keyword)
+            Q(subject_id__name__icontains=keyword) | Q(name__icontains=keyword)
         )
 
     exam_sets = _prefetch_exam_sets(exam_sets)
 
     rows = []
-    year_options = []
-    seen_years = set()
-    for exam_set in exam_sets:
-        if exam_set.academic_year and exam_set.academic_year not in seen_years:
-            year_options.append(exam_set.academic_year)
-            seen_years.add(exam_set.academic_year)
+    for es in exam_sets:
+        summary = _exam_set_summary(es)
         rows.append(
             {
-                "id": exam_set.id,
-                "exam_set_code": f"BD-{exam_set.id:04d}",
-                "subject_name": exam_set.subject.name,
-                "subject_code": exam_set.subject.subject_code,
-                "academic_year": exam_set.academic_year,
-                "semester": exam_set.get_semester_display(),
-                "version_count": exam_set.exam_codes.count(),
-                "created_at": exam_set.created_at,
-                "status": exam_set.status,
-                "status_label": exam_set.status_label,
-                "linked_label": exam_set.linked_status_label,
-                "is_linked": exam_set.is_linked,
-                "detail_url": f"/lecturer/exam-codes/{exam_set.id}/",
-                "can_delete": not exam_set.is_linked and exam_set.status == ExamSetStatus.DRAFT,
+                "id": es.exam_set_id,
+                "exam_set_code": f"BD-{es.exam_set_id:04d}",
+                "subject_name": es.subject_id.name,
+                "subject_code": es.subject_id.subject_code,
+                "academic_year": es.academic_year,
+                "semester": es.get_semester_display(),
+                "version_count": summary["total_codes_count"],
+                "approved_codes_count": summary["approved_codes_count"],
+                "used_codes_count": summary["used_codes_count"],
+                "status": es.status,
+                "is_linked": es.is_linked,
+                "can_delete": not es.is_linked and es.status == ExamSetStatus.DRAFT,
+                "created_at": es.created_at,
+                "detail_url": reverse("qna:lecturer_exam_set_detail_screen", kwargs={"exam_set_id": es.exam_set_id}),
             }
         )
 
+    year_options = sorted(list(set(ExamSet.objects.values_list("academic_year", flat=True))), reverse=True)
     context = {
         "subjects": subjects,
         "rows": rows,
-        "filter_values": {
-            "subject_id": subject_id,
-            "academic_year": academic_year,
-            "semester": semester,
-            "status": status_filter,
-            "linked": linked_filter,
-            "q": keyword,
-        },
-        "year_options": sorted(year_options, reverse=True),
+        "year_options": year_options,
         "semester_choices": SemesterChoices.choices,
         "status_choices": ExamSetStatus.choices,
+        "filter_values": request.GET,
     }
     return render(request, "qna/lecturer/lecturer_exam_codes_management.html", context)
 
@@ -555,21 +598,19 @@ def lecturer_exam_codes_screen(request):
 @require_GET
 def lecturer_generate_codes_screen(request):
     _ensure_lecturer(request)
-
     subjects = list(_lecturer_subjects(request))
-    selected_subject_id = (request.GET.get("subject_id") or "").strip()
+    selected_subject_id = request.GET.get("subject_id")
+
     selected_subject = None
     if selected_subject_id:
-        selected_subject = get_object_or_404(_lecturer_subjects(request), id=selected_subject_id)
+        selected_subject = get_object_or_404(subjects, pk=selected_subject_id)
     elif subjects:
         selected_subject = subjects[0]
 
     question_banks = []
     if selected_subject:
-        question_banks = list(
-            QuestionBank.objects.filter(subject=selected_subject)
-            .annotate(real_question_count=Count("questions", filter=Q(questions__is_exam_clone=False)))
-            .order_by("-created_at")
+        question_banks = QuestionBank.objects.filter(subject_id=selected_subject).annotate(
+            real_question_count=Count("questions", filter=Q(questions__is_exam_clone=False))
         )
 
     context = {
@@ -577,26 +618,33 @@ def lecturer_generate_codes_screen(request):
         "selected_subject": selected_subject,
         "question_banks": question_banks,
         "semester_choices": SemesterChoices.choices,
-        "default_year": request.GET.get("academic_year") or "2024-2025",
+        "default_year": "2024-2025",
     }
     return render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
 
 
 @login_required
 @require_GET
-def lecturer_exam_set_detail_screen(request, exam_set_id: int):
+def lecturer_exam_set_detail_screen(request, exam_set_id):
     _ensure_lecturer(request)
     exam_set = get_object_or_404(
-        _prefetch_exam_sets(ExamSet.objects.filter(subject__in=_lecturer_subjects(request))),
-        id=exam_set_id,
+        ExamSet,
+        exam_set_id=exam_set_id,
+        subject_id__in=request.user.userprofile.subjects_taught.all()
     )
-    exam_codes = [_serialize_exam_code(item) for item in exam_set.exam_codes.all()]
+
+    exam_codes = exam_set.exam_codes.all().order_by('code_number', 'exam_code_id')
+    codes_data = [_serialize_exam_code(code) for code in exam_codes]
+
     context = {
         "exam_set": exam_set,
-        "exam_set_code": f"BD-{exam_set.id:04d}",
-        "exam_codes_json": json.dumps(exam_codes, ensure_ascii=False),
-        "publish_disabled": exam_set.approved_codes_count != exam_set.exam_codes.count(),
+        "exam_set_code": f"BD-{exam_set.exam_set_id:04d}",
+        "total_codes_count": exam_codes.count(),
+        "approved_codes_count": sum(1 for c in codes_data if c['is_approved']),
+        "used_codes_count": sum(1 for c in codes_data if c['is_linked']),
+        "exam_codes_json": json.dumps(codes_data),
         "exam_set_is_linked": exam_set.is_linked,
+        "publish_disabled": exam_codes.filter(is_approved=False).exists() or exam_codes.count() == 0,
     }
     return render(request, "qna/lecturer/lecturer_exam_code_detail.html", context)
 
@@ -605,352 +653,319 @@ def lecturer_exam_set_detail_screen(request, exam_set_id: int):
 @require_POST
 def lecturer_create_exam_set(request):
     _ensure_lecturer(request)
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        payload = request.POST
+    payload = json.loads(request.body)
 
-    subject_id = payload.get("subject_id")
-    academic_year = (payload.get("academic_year") or "").strip()
-    semester = (payload.get("semester") or "").strip() or SemesterChoices.HK1
+    subject = get_object_or_404(_lecturer_subjects(request), pk=payload.get("subject_id"))
 
     try:
-        number_of_versions = _parse_int_field(payload.get("number_of_versions") or 0, "So luong ma de")
-        easy_count = _parse_int_field(payload.get("easy_count") or 0, "So luong cau de")
-        medium_count = _parse_int_field(payload.get("medium_count") or 0, "So luong cau trung binh")
-        hard_count = _parse_int_field(payload.get("hard_count") or 0, "So luong cau kho")
-    except ValueError as exc:
-        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+        num_v = _parse_int_field(payload.get("number_of_versions"), "Số lượng mã đề")
+        easy_c = _parse_int_field(payload.get("easy_count"), "Câu dễ")
+        medium_c = _parse_int_field(payload.get("medium_count"), "Câu trung bình")
+        hard_c = _parse_int_field(payload.get("hard_count"), "Câu khó")
 
-    easy_score = payload.get("easy_score") or 2.0
-    medium_score = payload.get("medium_score") or 2.5
-    hard_score = payload.get("hard_score") or 3.0
-    shuffle_question_order = False
-    allow_duplicate_questions = str(payload.get("allow_duplicate_questions", "false")).lower() in {"1", "true", "yes", "on"}
-    source_bank_ids = payload.get("source_bank_ids") or []
-
-    if isinstance(source_bank_ids, str):
-        source_bank_ids = [item for item in source_bank_ids.split(",") if item]
-
-    if not subject_id:
-        return JsonResponse({"status": "FAIL", "message": "Vui lòng chọn môn học."}, status=400)
-    if not source_bank_ids:
-        return JsonResponse({"status": "FAIL", "message": "Vui lòng chọn Ngân hàng câu hỏi"}, status=400)
-    if not _validate_academic_year(academic_year):
-        return JsonResponse({"status": "FAIL", "message": "Năm học không hợp lệ ! Vui lòng nhập lại!"}, status=400)
-    if number_of_versions <= 0:
-        return JsonResponse({"status": "FAIL", "message": "Vui lòng nhập Số lượng mã đề"}, status=400)
-    if easy_count < 0 or medium_count < 0 or hard_count < 0:
-        return JsonResponse({"status": "FAIL", "message": "Số lượng ma trận phải lớn hơn 0."}, status=400)
-
-    if easy_count + medium_count + hard_count <= 0:
-        return JsonResponse({"status": "FAIL", "message": "Can chon it nhat 1 cau hoi cho ma tran de."}, status=400)
-
-    subject = get_object_or_404(_lecturer_subjects(request), id=subject_id)
-    bank_ids = [int(item) for item in source_bank_ids]
-    banks = list(QuestionBank.objects.filter(subject=subject, id__in=bank_ids))
-    if not banks:
-        return JsonResponse({"status": "FAIL", "message": "Nguồn câu hỏi không hợp lệ."}, status=400)
-
-    try:
-        pools = _build_question_pools(subject, bank_ids, easy_count, medium_count, hard_count)
+        bank_ids = [int(i) for i in payload.get("source_bank_ids", [])]
+        pools = _build_question_pools(subject, bank_ids, easy_c, medium_c, hard_c)
         blueprints = _generate_version_blueprints(
-            pools=pools,
-            versions=number_of_versions,
-            easy_count=easy_count,
-            medium_count=medium_count,
-            hard_count=hard_count,
-            allow_duplicates=allow_duplicate_questions,
+            pools, num_v, easy_c, medium_c, hard_c,
+            str(payload.get("allow_duplicate_questions")).lower() == "true"
         )
-    except ValueError as exc:
-        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+    except ValueError as e:
+        return JsonResponse({"status": "FAIL", "message": str(e)}, status=400)
 
     with transaction.atomic():
-        exam_set = ExamSet.objects.create(
-            subject=subject,
+        es = ExamSet.objects.create(
+            subject_id=subject,
             name=subject.name,
-            academic_year=academic_year,
-            semester=semester,
-            number_of_versions=number_of_versions,
-            easy_pool_size=easy_count,
-            medium_pool_size=medium_count,
-            hard_pool_size=hard_count,
-            easy_score=easy_score,
-            medium_score=medium_score,
-            hard_score=hard_score,
-            shuffle_question_order=shuffle_question_order,
-            allow_duplicate_questions=allow_duplicate_questions,
-            created_by=request.user,
-            status=ExamSetStatus.DRAFT,
+            academic_year=payload.get("academic_year"),
+            semester=payload.get("semester", SemesterChoices.HK1),
+            number_of_versions=num_v,
+            easy_pool_size=easy_c,
+            medium_pool_size=medium_c,
+            hard_pool_size=hard_c,
+            easy_score=payload.get("easy_score", 2.0),
+            medium_score=payload.get("medium_score", 3.0),
+            hard_score=payload.get("hard_score", 5.0),
+            created_by_user_id=request.user,
+            status=ExamSetStatus.DRAFT
         )
-        exam_set.question_banks.set(banks)
+        es.question_banks.set(QuestionBank.objects.filter(pk__in=bank_ids))
 
-        created_codes = []
-        for index in range(number_of_versions):
-            code_number = 100 + index + 1
-            created_codes.append(
-                ExamCode(
-                    subject=subject,
-                    exam_set=exam_set,
-                    code_name=str(code_number),
-                    code_number=code_number,
-                    source_material=", ".join(bank.name for bank in banks),
-                    is_approved=False,
-                )
+        for i in range(num_v):
+            code_num = 101 + i
+            code = ExamCode.objects.create(
+                exam_set_id=es,
+                subject_id=subject,
+                code_name=str(code_num),
+                code_number=code_num,
+                is_approved=False
             )
+            items = _build_exam_code_items(code, blueprints[i])
+            ExamCodeQuestion.objects.bulk_create(items)
 
-        created_codes = ExamCode.objects.bulk_create(created_codes)
+    return JsonResponse({
+        "status": "SUCCESS",
+        "message": "Tạo bộ đề thành công.",
+        "detail_url": f"/lecturer/exam-codes/{es.exam_set_id}/"
+    })
 
-        code_items = []
-        for code, blueprint in zip(created_codes, blueprints):
-            code_items.extend(
-                _build_exam_code_items(
-                    exam_code=code,
-                    selected_questions_by_difficulty=blueprint,
-                )
-            )
 
-        ExamCodeQuestion.objects.bulk_create(code_items)
-
-    return JsonResponse(
-        {
-            "status": "SUCCESS",
-            "message": "Tạo đề thi thành công.",
-            "detail_url": f"/lecturer/exam-codes/{exam_set.id}/",
-            "exam_set_id": exam_set.id,
-        }
+@login_required
+@require_POST
+def lecturer_create_manual_exam_code(request, exam_set_id: int):
+    _ensure_lecturer(request)
+    exam_set = get_object_or_404(
+        ExamSet,
+        pk=exam_set_id,
+        subject_id__in=_lecturer_subjects(request)
     )
+
+    if exam_set.is_linked:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Bộ đề đã được sử dụng, không thể tạo thêm mã đề."},
+            status=400
+        )
+
+    try:
+        data = json.loads(request.body)
+        payload_items = data.get("items", [])
+        if not payload_items:
+            return JsonResponse({"status": "FAIL", "message": "Nội dung mã đề trống."}, status=400)
+
+        with transaction.atomic():
+            last_code = exam_set.exam_codes.order_by("-code_number").first()
+            next_num = (last_code.code_number + 1) if last_code else 101
+
+            new_code = ExamCode.objects.create(
+                exam_set_id=exam_set,
+                subject_id=exam_set.subject_id,
+                code_number=next_num,
+                code_name=str(next_num),
+                is_approved=False
+            )
+
+            db_questions = []
+            for item in payload_items:
+                content = (item.get("content") or "").strip()
+                if not content:
+                    raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
+
+                if _question_exists_in_subject(exam_set.subject_id, content):
+                    raise ValueError(f"Câu hỏi '{content[:30]}...' đã tồn tại trong ngân hàng.")
+
+                difficulty = item.get("difficulty") or DifficultyLevel.MEDIUM
+
+                q = Question.objects.create(
+                    subject_id=exam_set.subject_id,
+                    question_text=content,
+                    question_id_in_barem=f"MANUAL_{uuid4().hex[:8]}",
+                    difficulty=difficulty,
+                    is_exam_clone=True
+                )
+
+                db_questions.append(
+                    ExamCodeQuestion(
+                        exam_code=new_code,
+                        question_id=q,
+                        difficulty=difficulty,
+                        display_order=item.get("display_order", 1),
+                        score=_score_for_difficulty(exam_set, difficulty)
+                    )
+                )
+
+            ExamCodeQuestion.objects.bulk_create(db_questions)
+            _mark_exam_set_draft(exam_set)
+
+        return JsonResponse({
+            "status": "SUCCESS",
+            "message": f"Đã tạo mã đề {new_code.code_name} thành công.",
+            "exam_code": _serialize_exam_code(new_code)
+        })
+
+    except ValueError as e:
+        return JsonResponse({"status": "FAIL", "message": str(e)}, status=400)
+    except Exception:
+        return JsonResponse({"status": "FAIL", "message": "Có lỗi xảy ra khi tạo mã đề."}, status=500)
 
 
 @login_required
 @require_POST
 def lecturer_update_exam_code_content(request, exam_code_id: int):
     _ensure_lecturer(request)
-    code = get_object_or_404(
-        ExamCode.objects.select_related("exam_set", "subject").prefetch_related(
-            Prefetch(
-                "exam_code_questions",
-                queryset=ExamCodeQuestion.objects.select_related("question").order_by("display_order", "id"),
-            )
-        ),
-        id=exam_code_id,
-        subject__in=_lecturer_subjects(request),
-    )
-    if code.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
-            status=400,
-        )
+    code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+
+    if code.session_rooms.exists():
+        return JsonResponse({"status": "FAIL", "message": "Mã đề đã được sử dụng, không thể sửa."}, status=400)
 
     try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        payload = request.POST
-
-    items = payload.get("items", [])
-
-    try:
+        payload = json.loads(request.body)
         with transaction.atomic():
-            _update_exam_code_content_from_payload(code, items)
-    except ValueError as exc:
-        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+            _update_exam_code_content_from_payload(code, payload.get("items", []))
+    except ValueError as e:
+        return JsonResponse({"status": "FAIL", "message": str(e)}, status=400)
 
-    code.refresh_from_db()
-    return JsonResponse(
-        {
-            "status": "SUCCESS",
-            "message": "Lưu nháp thành công.",
-            "exam_code": _serialize_exam_code(code),
-        }
-    )
+    return JsonResponse({
+        "status": "SUCCESS",
+        "message": "Cập nhật thành công.",
+        "exam_code": _serialize_exam_code(code)
+    })
 
 
 @login_required
 @require_POST
 def lecturer_approve_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
-    code = get_object_or_404(
-        ExamCode.objects.select_related("exam_set", "subject").prefetch_related(
-            Prefetch(
-                "exam_code_questions",
-                queryset=ExamCodeQuestion.objects.select_related("question").order_by("display_order", "id"),
-            )
-        ),
-        id=exam_code_id,
-        subject__in=_lecturer_subjects(request),
-    )
-    if code.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
-            status=400,
-        )
+    code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
 
-    items = code.exam_code_questions.select_related("question").all()
-    if not items.exists():
-        return JsonResponse({"status": "FAIL", "message": "Mã đề chưa có câu hỏi."}, status=400)
-
-    for item in items:
-        if item.question is None or not (item.question.question_text or "").strip():
-            return JsonResponse({"status": "FAIL", "message": "Vui lòng nhập nội dung."}, status=400)
+    err = _approval_error_for_code(code)
+    if err:
+        return JsonResponse({"status": "FAIL", "message": err}, status=400)
 
     code.is_approved = True
     code.save(update_fields=["is_approved", "updated_at"])
-    return JsonResponse(
-        {
-            "status": "SUCCESS",
-            "message": "Duyệt mã đề thành công",
-            "exam_code": _serialize_exam_code(code),
-        }
+
+    # Auto-publish logic
+    exam_set_published = False
+    exam_set = code.exam_set_id
+    if not exam_set.exam_codes.filter(is_approved=False).exists():
+        exam_set.status = ExamSetStatus.APPROVED
+        exam_set.save(update_fields=["status", "updated_at"])
+        exam_set_published = True
+
+    return JsonResponse({
+        "status": "SUCCESS",
+        "message": "Đã duyệt mã đề.",
+        "exam_code": _serialize_exam_code(code),
+        "exam_set_published": exam_set_published
+    })
+
+
+@login_required
+@require_POST
+def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
+    _ensure_lecturer(request)
+    data = json.loads(request.body)
+    code_ids = data.get("exam_code_ids", [])
+
+    codes = ExamCode.objects.filter(
+        exam_set_id__pk=exam_set_id,
+        pk__in=code_ids,
+        is_approved=False
     )
+
+    count = 0
+    for code in codes:
+        if not _approval_error_for_code(code):
+            code.is_approved = True
+            code.save(update_fields=["is_approved", "updated_at"])
+            count += 1
+
+    # Auto-publish logic
+    exam_set_published = False
+    exam_set = ExamSet.objects.get(pk=exam_set_id)
+    if count > 0 and not exam_set.exam_codes.filter(is_approved=False).exists():
+        exam_set.status = ExamSetStatus.APPROVED
+        exam_set.save(update_fields=["status", "updated_at"])
+        exam_set_published = True
+
+    return JsonResponse({
+        "status": "SUCCESS",
+        "message": f"Đã duyệt {count} mã đề.",
+        "approved_count": count,
+        "exam_set_published": exam_set_published
+    })
 
 
 @login_required
 @require_POST
 def lecturer_regenerate_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
-    code = get_object_or_404(
-        ExamCode.objects.select_related("exam_set", "subject").prefetch_related("exam_code_questions"),
-        id=exam_code_id,
-        subject__in=_lecturer_subjects(request),
-    )
-    if code.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Mã đề đang được sử dụng trong ca thi, không thể sinh lại."},
-            status=400,
-        )
+    code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+
+    if code.session_rooms.exists():
+        return JsonResponse({"status": "FAIL", "message": "Mã đề đang sử dụng, không thể sinh lại."}, status=400)
 
     try:
         with transaction.atomic():
             _regenerate_single_code(code)
-    except ValueError as exc:
-        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+    except ValueError as e:
+        return JsonResponse({"status": "FAIL", "message": str(e)}, status=400)
 
-    code.refresh_from_db()
-    return JsonResponse(
-        {
-            "status": "SUCCESS",
-            "message": "Sinh lại mã đề thành công",
-            "exam_code": _serialize_exam_code(code),
-        }
-    )
+    return JsonResponse({
+        "status": "SUCCESS",
+        "message": "Sinh lại mã đề thành công.",
+        "exam_code": _serialize_exam_code(code)
+    })
 
 
 @login_required
 @require_POST
 def lecturer_delete_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
-    code = get_object_or_404(
-        ExamCode.objects.select_related("exam_set", "subject").prefetch_related(
-            Prefetch(
-                "exam_code_questions",
-                queryset=ExamCodeQuestion.objects.select_related("question"),
-            )
-        ),
-        id=exam_code_id,
-        subject__in=_lecturer_subjects(request),
-    )
-    if code.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Mã đề đang được sử dụng trong ca thi, không thể xóa."},
-            status=400,
-        )
+    code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
 
-    exam_set = code.exam_set
-    old_questions = [item.question for item in code.exam_code_questions.all()]
+    if code.session_rooms.exists():
+        return JsonResponse({"status": "FAIL", "message": "Mã đề đang được sử dụng, không thể xóa."}, status=400)
 
+    exam_set = code.exam_set_id
     with transaction.atomic():
+        for eq in code.exam_code_questions.all():
+            _delete_exam_clone(eq.question_id)
         code.delete()
-        for question in old_questions:
-            _delete_exam_clone(question)
+        _mark_exam_set_draft(exam_set)
 
-        if exam_set:
-            remaining = exam_set.exam_codes.count()
-            exam_set.number_of_versions = remaining
-            if remaining == 0:
-                exam_set.delete()
-                return JsonResponse(
-                    {"status": "SUCCESS", "message": "Xóa mã đề thành công", "deleted_exam_set": True}
-                )
-            if exam_set.status != ExamSetStatus.DRAFT:
-                exam_set.status = ExamSetStatus.DRAFT
-            exam_set.save(update_fields=["number_of_versions", "status", "updated_at"])
-
-    return JsonResponse(
-        {
-            "status": "SUCCESS",
-            "message": "Xóa mã đề thành công",
-            "remaining": exam_set.exam_codes.count() if exam_set else 0,
-        }
-    )
+    return JsonResponse({"status": "SUCCESS", "message": "Đã xóa mã đề thành công."})
 
 
 @login_required
 @require_POST
 def lecturer_publish_exam_set(request, exam_set_id: int):
     _ensure_lecturer(request)
-    exam_set = get_object_or_404(
-        _prefetch_exam_sets(ExamSet.objects.filter(subject__in=_lecturer_subjects(request))),
-        id=exam_set_id,
-    )
-    if exam_set.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Bộ đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
-            status=400,
-        )
-    total_count = exam_set.exam_codes.count()
-    approved_count = exam_set.approved_codes_count
-    if total_count == 0:
-        return JsonResponse({"status": "FAIL", "message": "Bộ đề chưa có mã đề nào để lưu."}, status=400)
-    if approved_count != total_count:
-        return JsonResponse(
-            {"status": "FAIL", "message": f"Vui lòng duyệt {approved_count}/{total_count} mã đề !!!"},
-            status=400,
-        )
+    exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+
+    codes = exam_set.exam_codes.all()
+    if not codes.exists():
+        return JsonResponse({"status": "FAIL", "message": "Bộ đề không có mã đề nào."}, status=400)
+
+    if codes.filter(is_approved=False).exists():
+        return JsonResponse({"status": "FAIL", "message": "Vui lòng duyệt tất cả mã đề."}, status=400)
 
     exam_set.status = ExamSetStatus.APPROVED
     exam_set.save(update_fields=["status", "updated_at"])
     return JsonResponse(
-        {"status": "SUCCESS", "message": "Lưu bộ đề thành công !", "redirect_url": "/lecturer/exam-codes/"}
-    )
+        {"status": "SUCCESS", "message": "Lưu bộ đề thành công.", "redirect_url": "/lecturer/exam-codes/"})
 
 
 @login_required
 @require_POST
 def lecturer_save_exam_set_draft(request, exam_set_id: int):
     _ensure_lecturer(request)
-    exam_set = get_object_or_404(
-        ExamSet.objects.filter(subject__in=_lecturer_subjects(request)),
-        id=exam_set_id,
-    )
-    if exam_set.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Bộ đề đã được sử dụng trong ca thi, không thể chỉnh sửa."},
-            status=400,
-        )
+    exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
     exam_set.save(update_fields=["updated_at"])
-    return JsonResponse({"status": "SUCCESS", "message": "Lưu nháp thành công."})
+    return JsonResponse({"status": "SUCCESS", "message": "Đã lưu bản nháp."})
 
 
 @login_required
 @require_POST
 def lecturer_delete_exam_set(request, exam_set_id: int):
     _ensure_lecturer(request)
-    exam_set = get_object_or_404(
-        _prefetch_exam_sets(ExamSet.objects.filter(subject__in=_lecturer_subjects(request))),
-        id=exam_set_id,
-    )
-    if exam_set.status == ExamSetStatus.APPROVED or exam_set.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Bộ đề đã duyệt hoặc đang trong ca thi, không thể xóa"},
-            status=400,
-        )
+    exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+
+    # Kiểm tra kĩ càng xem có mã đề nào bên trong đang được dùng không
+    has_used_codes = False
+    for code in exam_set.exam_codes.all():
+        if code.session_rooms.exists():
+            has_used_codes = True
+            break
+
+    if exam_set.status == ExamSetStatus.APPROVED or exam_set.is_linked or has_used_codes:
+        return JsonResponse({"status": "FAIL", "message": "Bộ đề đã duyệt hoặc có mã đề đang được sử dụng, không thể xóa."},
+                            status=400)
 
     with transaction.atomic():
         for code in exam_set.exam_codes.all():
-            old_questions = [item.question for item in code.exam_code_questions.select_related("question").all()]
+            for eq in code.exam_code_questions.all():
+                _delete_exam_clone(eq.question_id)
             code.delete()
-            for question in old_questions:
-                _delete_exam_clone(question)
         exam_set.delete()
 
-    return JsonResponse({"status": "SUCCESS", "message": "Xóa đề thi thành công !"})
+    return JsonResponse({"status": "SUCCESS", "message": "Xóa bộ đề thành công."})

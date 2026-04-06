@@ -310,7 +310,7 @@
     min-width: 320px;
     max-width: 420px;
     padding: 0.9rem 1rem 0.9rem 0.95rem;
-    border-radius: 2px;
+    border-radius: 12px;
     background: #fff;
     box-shadow: var(--session-shadow);
     border-left: 5px solid #22c55e;
@@ -318,6 +318,10 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
+  }
+
+  .session-toast.error {
+    border-left-color: #dc2626;
   }
 
   .session-toast button {
@@ -371,7 +375,7 @@
   {% if messages %}
     <div class="session-toast-stack">
       {% for message in messages %}
-        <div class="session-toast" data-session-toast>
+        <div class="session-toast {% if message.tags == 'error' %}error{% endif %}" data-session-toast>
           <div>{{ message }}</div>
           <button type="button" aria-label="Đóng" data-close-session-toast>
             <i class="fas fa-times"></i>
@@ -381,193 +385,193 @@
     </div>
   {% endif %}
 
-    <div class="session-shell">
-        <div class="session-breadcrumb">
-          <span>Quản lý ca thi</span>
-          <i class="fas fa-chevron-right" style="font-size: 0.82rem; color: #94a3b8;"></i>
-          <span>Danh sách ca thi</span>
-        </div>
-
-        <div class="session-body">
-          <div class="session-head">
-            <div>
-              <h1 class="session-title">Danh sách ca thi</h1>
-              <div class="session-subject">
-                {% if selected_subject %}
-                  {{ selected_subject.name }}
-                {% else %}
-                  Tất cả môn học
-                {% endif %}
-              </div>
-              <div class="session-description">Quản lý tập trung toàn bộ ca thi của giảng viên trong hệ thống</div>
-            </div>
-            <a class="session-btn-primary" href="{% url 'qna:lecturer_create_session_screen' %}">
-              <i class="fas fa-plus"></i>
-              Tạo ca thi mới
-            </a>
-          </div>
-
-          <form method="get" id="sessionFilterForm">
-            <input type="hidden" name="page" value="1">
-            <button class="session-filter-submit" type="submit">Lọc</button>
-            <a class="session-filter-reset" href="{% url 'qna:lecturer_exam_sessions_list' %}">Xóa bộ lọc</a>
-
-            <div class="session-filter-row">
-              <label class="session-search">
-                <i class="fas fa-search"></i>
-                <input
-                  type="search"
-                  name="q"
-                  value="{{ filters.q }}"
-                  placeholder="Tìm theo tên kỳ thi, môn học, mã môn..."
-                >
-              </label>
-
-              <select class="session-status" name="subject_id" onchange="document.getElementById('sessionFilterForm').submit()">
-                <option value="">Tất cả môn học</option>
-                {% for subject in subjects %}
-                  <option value="{{ subject.id }}" {% if filters.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>
-                    {{ subject.name }}
-                  </option>
-                {% endfor %}
-              </select>
-
-              <select class="session-status" name="academic_year" onchange="document.getElementById('sessionFilterForm').submit()">
-                <option value="">Tất cả năm học</option>
-                {% for year in year_options %}
-                  <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>
-                    {{ year }}
-                  </option>
-                {% endfor %}
-              </select>
-
-              <select class="session-status" name="semester" onchange="document.getElementById('sessionFilterForm').submit()">
-                <option value="">Tất cả học kỳ</option>
-                {% for value, label in semester_choices %}
-                  <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>
-                    {{ label }}
-                  </option>
-                {% endfor %}
-              </select>
-
-              <select class="session-status" name="status" onchange="document.getElementById('sessionFilterForm').submit()">
-                {% for value, label in status_choices %}
-                  <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
-                    {{ label }}
-                  </option>
-                {% endfor %}
-              </select>
-            </div>
-          </form>
-
-          <div class="session-table-wrap">
-            {% if page_obj.object_list %}
-              <table class="session-table">
-                <thead>
-                  <tr>
-                    <th>STT</th>
-                    <th>Tên kỳ thi</th>
-                    <th>Môn học</th>
-                    <th>Năm học</th>
-                    <th>Học kì</th>
-                    <th>Ngày diễn ra</th>
-                    <th>Thời gian</th>
-                    <th>Trạng thái</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for exam_group in page_obj.object_list %}
-                    <tr>
-                      <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
-                      <td class="session-name">{{ exam_group.group_name }}</td>
-                      <td>{{ exam_group.subject.name }}</td>
-                      <td>{{ exam_group.academic_year|default:"-" }}</td>
-                      <td>{{ exam_group.get_semester_display }}</td>
-                      <td>{{ exam_group.exam_date|date:"d/m/Y" }}</td>
-                      <td>{{ exam_group.exam_date|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</td>
-                      <td>
-                        <span class="status-pill {{ exam_group.computed_status|lower }}">{{ exam_group.status_label }}</span>
-                      </td>
-                      <td>
-                        <div class="session-actions">
-                          <a href="{% url 'qna:lecturer_exam_session_detail_screen' exam_group.id %}" title="Xem">
-                            <i class="fas fa-eye"></i>
-                          </a>
-                          {% if exam_group.can_modify %}
-                            <a href="{% url 'qna:lecturer_create_session_screen' %}?session_id={{ exam_group.id }}&mode=edit" title="Chỉnh sửa">
-                              <i class="fas fa-pen"></i>
-                            </a>
-                          {% else %}
-                            <span class="disabled" title="Ca thi đã khóa chỉnh sửa">
-                              <i class="fas fa-lock"></i>
-                            </span>
-                          {% endif %}
-                        </div>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% else %}
-              <div class="session-empty">
-                <div style="font-size: 2.8rem; color: #c6d0df; margin-bottom: 0.65rem;">
-                  <i class="fas fa-calendar-alt"></i>
-                </div>
-                <div style="font-size: 1.08rem; font-weight: 700; color: var(--session-text);">Chưa có ca thi nào phù hợp</div>
-                <div style="margin-top: 0.4rem;">Tạo ca thi mới để bắt đầu cấu hình phòng thi, bộ đề và phân bổ sinh viên.</div>
-              </div>
-            {% endif %}
-          </div>
-
-          <div class="session-footer">
-            <div>
-              Hiển thị
-              {% if page_obj.paginator.count %}
-                <strong>{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
-              {% else %}
-                <strong>0</strong>
-              {% endif %}
-              trong <strong>{{ page_obj.paginator.count }}</strong> ca thi
-            </div>
-
-            {% if page_obj.paginator.num_pages > 1 %}
-              <div class="pagination">
-                {% if page_obj.has_previous %}
-                  <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}">
-                    <i class="fas fa-chevron-left"></i>
-                  </a>
-                {% else %}
-                  <span><i class="fas fa-chevron-left"></i></span>
-                {% endif %}
-
-                {% for page_number in page_obj.paginator.page_range %}
-                  {% if page_number == page_obj.number %}
-                    <span class="active">{{ page_number }}</span>
-                  {% elif page_number >= page_obj.number|add:-1 and page_number <= page_obj.number|add:1 %}
-                    <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_number }}">{{ page_number }}</a>
-                  {% endif %}
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                  <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}">
-                    <i class="fas fa-chevron-right"></i>
-                  </a>
-                {% else %}
-                  <span><i class="fas fa-chevron-right"></i></span>
-                {% endif %}
-              </div>
-            {% endif %}
-          </div>
-        </div>
+  <div class="session-shell">
+    <div class="session-breadcrumb">
+      <span>Quản lý ca thi</span>
+      <i class="fas fa-chevron-right" style="font-size: 0.82rem; color: #94a3b8;"></i>
+      <span>Danh sách ca thi</span>
     </div>
+
+    <div class="session-body">
+      <div class="session-head">
+        <div>
+          <h1 class="session-title">Danh sách ca thi</h1>
+          <div class="session-subject">
+            {% if selected_subject %}
+              {{ selected_subject.name }}
+            {% else %}
+              Tất cả môn học
+            {% endif %}
+          </div>
+          <div class="session-description">Quản lý tập trung toàn bộ ca thi của giảng viên trong hệ thống</div>
+        </div>
+        <a class="session-btn-primary" href="{% url 'qna:lecturer_create_session_screen' %}">
+          <i class="fas fa-plus"></i>
+          Tạo ca thi mới
+        </a>
+      </div>
+
+      <form method="get" id="sessionFilterForm">
+        <input type="hidden" name="page" value="1">
+        <button class="session-filter-submit" type="submit">Lọc</button>
+        <a class="session-filter-reset" href="{% url 'qna:lecturer_exam_sessions_list' %}">Xóa bộ lọc</a>
+
+        <div class="session-filter-row">
+          <label class="session-search">
+            <i class="fas fa-search"></i>
+            <input
+              type="search"
+              name="q"
+              value="{{ filters.q }}"
+              placeholder="Tìm theo tên kỳ thi, môn học, mã môn..."
+            >
+          </label>
+
+          <select class="session-status" name="subject_id" onchange="document.getElementById('sessionFilterForm').submit()">
+            <option value="">Tất cả môn học</option>
+            {% for subject in subjects %}
+              <option value="{{ subject.id }}" {% if filters.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>
+                {{ subject.name }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <select class="session-status" name="academic_year" onchange="document.getElementById('sessionFilterForm').submit()">
+            <option value="">Tất cả năm học</option>
+            {% for year in year_options %}
+              <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>
+                {{ year }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <select class="session-status" name="semester" onchange="document.getElementById('sessionFilterForm').submit()">
+            <option value="">Tất cả học kỳ</option>
+            {% for value, label in semester_choices %}
+              <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <select class="session-status" name="status" onchange="document.getElementById('sessionFilterForm').submit()">
+            {% for value, label in status_choices %}
+              <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+
+      <div class="session-table-wrap">
+        {% if page_obj.object_list %}
+          <table class="session-table">
+            <thead>
+              <tr>
+                <th>STT</th>
+                <th>Tên kỳ thi</th>
+                <th>Môn học</th>
+                <th>Năm học</th>
+                <th>Học kì</th>
+                <th>Ngày diễn ra</th>
+                <th>Thời gian</th>
+                <th>Trạng thái</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for exam_group in page_obj.object_list %}
+                <tr>
+                  <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
+                  <td class="session-name">{{ exam_group.group_name }}</td>
+                  <td>{{ exam_group.subject.name }}</td>
+                  <td>{{ exam_group.academic_year|default:"-" }}</td>
+                  <td>{{ exam_group.get_semester_display }}</td>
+                  <td>{{ exam_group.exam_date|date:"d/m/Y" }}</td>
+                  <td>{{ exam_group.exam_date|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</td>
+                  <td>
+                    <span class="status-pill {{ exam_group.computed_status|lower }}">{{ exam_group.status_label }}</span>
+                  </td>
+                  <td>
+                    <div class="session-actions">
+                      <a href="{% url 'qna:lecturer_exam_session_detail_screen' exam_group.id %}" title="Xem">
+                        <i class="fas fa-eye"></i>
+                      </a>
+                      {% if exam_group.can_modify %}
+                        <a href="{% url 'qna:lecturer_create_session_screen' %}?session_id={{ exam_group.id }}&mode=edit" title="Chỉnh sửa">
+                          <i class="fas fa-pen"></i>
+                        </a>
+                      {% else %}
+                        <span class="disabled" title="Ca thi đã khóa chỉnh sửa">
+                          <i class="fas fa-lock"></i>
+                        </span>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="session-empty">
+            <div style="font-size: 2.8rem; color: #c6d0df; margin-bottom: 0.65rem;">
+              <i class="fas fa-calendar-alt"></i>
+            </div>
+            <div style="font-size: 1.08rem; font-weight: 700; color: var(--session-text);">Chưa có ca thi nào phù hợp</div>
+            <div style="margin-top: 0.4rem;">Tạo ca thi mới để bắt đầu cấu hình phòng thi, bộ đề và phân bổ sinh viên.</div>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="session-footer">
+        <div>
+          Hiển thị
+          {% if page_obj.paginator.count %}
+            <strong>{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+          {% else %}
+            <strong>0</strong>
+          {% endif %}
+          trong <strong>{{ page_obj.paginator.count }}</strong> ca thi
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+          <div class="pagination">
+            {% if page_obj.has_previous %}
+              <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}">
+                <i class="fas fa-chevron-left"></i>
+              </a>
+            {% else %}
+              <span><i class="fas fa-chevron-left"></i></span>
+            {% endif %}
+
+            {% for page_number in page_obj.paginator.page_range %}
+              {% if page_number == page_obj.number %}
+                <span class="active">{{ page_number }}</span>
+              {% elif page_number >= page_obj.number|add:-1 and page_number <= page_obj.number|add:1 %}
+                <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_number }}">{{ page_number }}</a>
+              {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+              <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}">
+                <i class="fas fa-chevron-right"></i>
+              </a>
+            {% else %}
+              <span><i class="fas fa-chevron-right"></i></span>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
   document.querySelectorAll("[data-session-toast]").forEach((toast) => {
     window.setTimeout(() => {
       toast.remove();
-    }, 3500);
+    }, 5000);
   });
 
   document.querySelectorAll("[data-close-session-toast]").forEach((button) => {

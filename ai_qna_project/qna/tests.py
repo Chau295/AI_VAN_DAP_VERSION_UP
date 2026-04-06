@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -10,6 +11,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from . import views
 from .models import (
     DifficultyLevel,
     ExamCode,
@@ -17,6 +19,7 @@ from .models import (
     ExamSessionGroup,
     ExamSet,
     ExamSetStatus,
+    LectureMaterial,
     Question,
     QuestionBank,
     StudentRosterAccountStatus,
@@ -480,6 +483,99 @@ class LecturerRedirectTests(TestCase):
         self.assertRedirects(response, reverse("qna:dashboard"))
 
 
+class LecturerDashboardTests(TestCase):
+    def setUp(self):
+        self.user_model = get_user_model()
+        self.lecturer = self.user_model.objects.create_user(
+            username="lecturer_dashboard_counts",
+            password="Password123!",
+        )
+        self.profile = UserProfile.objects.create(
+            user=self.lecturer,
+            is_lecturer=True,
+            full_name="Giang Vien Dashboard",
+        )
+        self.subject_a = Subject.objects.create(name="Kho va Khai pha du lieu", subject_code="DS001")
+        self.subject_b = Subject.objects.create(name="Phan tich du lieu bang python", subject_code="DS002")
+        self.profile.subjects_taught.add(self.subject_a, self.subject_b)
+        self.client.force_login(self.lecturer)
+
+        for index in range(2):
+            ExamSessionGroup.objects.create(
+                subject=self.subject_a,
+                group_name=f"Ca thi {index + 1}",
+                academic_year="2025-2026",
+                semester="HK1",
+                exam_date=timezone.now() + timedelta(days=index + 1),
+                duration_minutes=60,
+                status="SCHEDULED",
+                created_by=self.lecturer,
+            )
+
+        roster_1 = StudentRosterUpload.objects.create(
+            subject=self.subject_a,
+            academic_year="2025-2026",
+            semester="HK1",
+            title="Lop A",
+            original_file_name="lop_a.xlsx",
+            total_students=2,
+            created_by=self.lecturer,
+        )
+        roster_2 = StudentRosterUpload.objects.create(
+            subject=self.subject_a,
+            academic_year="2025-2026",
+            semester="HK2",
+            title="Lop B",
+            original_file_name="lop_b.xlsx",
+            total_students=2,
+            created_by=self.lecturer,
+        )
+        StudentRosterStudent.objects.create(
+            roster=roster_1,
+            row_number=1,
+            student_code="SV001",
+            full_name="Sinh Vien 1",
+        )
+        StudentRosterStudent.objects.create(
+            roster=roster_1,
+            row_number=2,
+            student_code="SV002",
+            full_name="Sinh Vien 2",
+        )
+        StudentRosterStudent.objects.create(
+            roster=roster_2,
+            row_number=1,
+            student_code="SV002",
+            full_name="Sinh Vien 2",
+        )
+        StudentRosterStudent.objects.create(
+            roster=roster_2,
+            row_number=2,
+            student_code="SV003",
+            full_name="Sinh Vien 3",
+        )
+
+    def test_lecturer_dashboard_subject_cards_use_database_counts(self):
+        response = self.client.get(reverse("qna:lecturer_dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.subject_a.name)
+        self.assertContains(response, self.subject_b.name)
+
+        subjects = {subject.subject_code: subject for subject in response.context["subjects"]}
+        self.assertEqual(subjects["DS001"].created_exam_count, 2)
+        self.assertEqual(subjects["DS001"].participating_student_count, 3)
+        self.assertEqual(subjects["DS002"].created_exam_count, 0)
+        self.assertEqual(subjects["DS002"].participating_student_count, 0)
+
+        content = response.content.decode("utf-8")
+        self.assertIn("<strong>2</strong>", content)
+        self.assertIn("<strong>3</strong>", content)
+        self.assertGreaterEqual(content.count("<strong>0</strong>"), 2)
+        self.assertNotIn("<strong>10</strong>", content)
+        self.assertNotIn("<strong>50</strong>", content)
+
+
 class LecturerQuestionManagementTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
@@ -853,7 +949,19 @@ class LecturerExamManagementTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="easyCount" class="stepper-input" type="number"')
+        content = response.content.decode("utf-8")
+        self.assertContains(response, 'class="matrix-toolbar"')
+        self.assertContains(response, 'class="field matrix-count-field"')
+        self.assertContains(response, 'class="field matrix-score-field"')
+        self.assertContains(response, 'id="easyCount" type="number" min="0" step="1"')
+        self.assertIn("Thiết lập ma trận đề", content)
+        self.assertIn("Mức độ câu hỏi", content)
+        self.assertIn("Dễ", content)
+        self.assertIn("Trung bình", content)
+        self.assertIn("Khó", content)
+        self.assertNotIn("M?c ?? c?u h?i", content)
+        self.assertNotIn("c?u h?i", content)
+        self.assertNotContains(response, 'class="stepper-input"')
         self.assertNotContains(response, 'type="hidden" id="easyCount"')
 
     def test_legacy_create_session_route_redirects_to_session_wizard(self):
@@ -891,6 +999,85 @@ class LecturerExamManagementTests(TestCase):
         self.assertContains(response, f"BD-{exam_set.id:04d}")
         self.assertNotContains(response, "fa-rotate-right")
         self.assertNotContains(response, "Sinh lại")
+
+    def test_exam_set_detail_uses_bulk_toolbar_and_keeps_manual_create_action(self):
+        exam_set = self._create_exam_set(number_of_versions=1)
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="btnManualCreate"')
+        self.assertContains(response, 'id="bulkBar"')
+        self.assertContains(response, 'Duyệt mã đề')
+        self.assertContains(response, 'Bỏ chọn tất cả')
+        self.assertNotContains(response, 'id="btnBatchApprove"')
+        self.assertNotContains(response, 'class="summary-bar"')
+        self.assertNotContains(response, "fa-eye")
+
+    def test_exam_set_list_shows_approved_and_used_code_counts(self):
+        exam_set = self._create_exam_set(number_of_versions=2)
+        approved_code, _ = list(exam_set.exam_codes.order_by("code_number", "id"))
+        approved_code.is_approved = True
+        approved_code.save(update_fields=["is_approved", "updated_at"])
+        self._link_exam_code(approved_code)
+
+        response = self.client.get(reverse("qna:lecturer_exam_codes_screen"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"BD-{exam_set.id:04d}")
+        self.assertContains(response, "1 &#273;&#227; duy&#7879;t")
+        self.assertContains(response, "1 &#273;&#227; d&#249;ng")
+
+    def test_create_manual_exam_code_creates_blank_questions_and_updates_counts(self):
+        exam_set = self._create_exam_set(number_of_versions=1)
+
+        response = self.client.post(
+            reverse("qna:lecturer_create_manual_exam_code", args=[exam_set.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        exam_set.refresh_from_db()
+
+        self.assertEqual(exam_set.exam_codes.count(), 2)
+        self.assertEqual(exam_set.number_of_versions, 2)
+        self.assertEqual(payload["total_codes_count"], 2)
+        self.assertEqual(payload["approved_codes_count"], 0)
+
+        new_code = exam_set.exam_codes.order_by("-code_number", "-id").first()
+        items = list(new_code.exam_code_questions.select_related("question").order_by("display_order"))
+
+        self.assertEqual(new_code.source_material, "T\u1ea1o th\u1ee7 c\u00f4ng")
+        self.assertFalse(new_code.is_approved)
+        self.assertEqual(len(items), 3)
+        self.assertTrue(all((item.question.question_text or "") == "" for item in items))
+
+    def test_bulk_approve_exam_codes_marks_only_valid_codes(self):
+        exam_set = self._create_exam_set(number_of_versions=2)
+        valid_code, invalid_code = list(exam_set.exam_codes.order_by("code_number", "id"))
+        invalid_item = invalid_code.exam_code_questions.select_related("question").order_by("display_order").first()
+        invalid_item.question.question_text = "   "
+        invalid_item.question.save(update_fields=["question_text"])
+
+        response = self._post_json(
+            "qna:lecturer_bulk_approve_exam_codes",
+            {"exam_code_ids": [valid_code.id, invalid_code.id]},
+            args=[exam_set.id],
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        valid_code.refresh_from_db()
+        invalid_code.refresh_from_db()
+
+        self.assertEqual(payload["status"], "SUCCESS")
+        self.assertEqual(payload["approved_ids"], [valid_code.id])
+        self.assertEqual(payload["failed_codes"][0]["id"], invalid_code.id)
+        self.assertEqual(payload["approved_codes_count"], 1)
+        self.assertTrue(valid_code.is_approved)
+        self.assertFalse(invalid_code.is_approved)
 
     def test_publish_requires_all_codes_to_be_approved_first(self):
         exam_set = self._create_exam_set(number_of_versions=1)
@@ -1120,14 +1307,21 @@ class LecturerExamSessionManagementTests(TestCase):
         return exam_set
 
     def _build_session_payload(self, submit_action="CONFIRM"):
+        future_start = timezone.localtime(timezone.now() + timedelta(days=2)).replace(
+            hour=8,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        future_end = future_start + timedelta(minutes=90)
         return {
             "subject_id": self.subject.id,
             "group_name": "Thi giua ky DS403",
             "academic_year": "2025-2026",
             "semester": "HK1",
-            "exam_date": "2026-04-20",
-            "start_time": "08:00",
-            "end_time": "09:30",
+            "exam_date": future_start.strftime("%Y-%m-%d"),
+            "start_time": future_start.strftime("%H:%M"),
+            "end_time": future_end.strftime("%H:%M"),
             "description": "Ca thi duoc tao tu wizard moi",
             "exam_password": "EXAM123",
             "roster_ids": [self.roster.id],
@@ -1137,7 +1331,7 @@ class LecturerExamSessionManagementTests(TestCase):
                     "client_id": "room-1",
                     "room_name": "Phong A101",
                     "student_count": 1,
-                    "password": "CK_A101",
+                    "password": "A1011",
                     "exam_set_id": self.exam_set.id,
                     "exam_code_ids": [self.exam_codes[0].id],
                     "assignments": [
@@ -1156,7 +1350,7 @@ class LecturerExamSessionManagementTests(TestCase):
                     "client_id": "room-2",
                     "room_name": "Phong A102",
                     "student_count": 1,
-                    "password": "CK_A102",
+                    "password": "A1022",
                     "exam_set_id": self.exam_set.id,
                     "exam_code_ids": [self.exam_codes[1].id],
                     "assignments": [
@@ -1196,6 +1390,25 @@ class LecturerExamSessionManagementTests(TestCase):
         self.assertContains(response, 'data-step-panel="3"')
         self.assertContains(response, "wizardSubmitButton")
         self.assertNotContains(response, "Tao de thi moi")
+
+    def test_create_session_screen_uses_clean_room_fields(self):
+        response = self.client.get(
+            reverse("qna:lecturer_create_session_screen"),
+            {"subject_id": self.subject.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn('class="es-input es-room-count-input"', content)
+        self.assertIn('placeholder="Nh\u1eadp 5 k\xfd t\u1ef1"', content)
+        self.assertNotIn('placeholder="Nh?p 5 k? t?"', content)
+        self.assertNotIn('data-room-step="increase"', content)
+        self.assertNotIn('${assignedCount}/${room.student_count || 0} SV', content)
+        self.assertNotIn('Gi\u1ea3ng vi\u00ean t\u1ef1 nh\u1eadp \u0111\u00fang 5 k\xfd t\u1ef1 cho ph\u00f2ng thi.', content)
+        self.assertNotIn(': "Ch\u01b0a g\u1eafn b\u1ed9 \u0111\u1ec1";', content)
+        self.assertNotIn(': "Ch\u01b0a g\u1eafn";', content)
+        self.assertNotIn('Vui l\xc3\xb2ng', content)
+        self.assertNotIn('Gi\xc3\xa1\xc2\xba', content)
 
     def test_create_exam_group_screen_persists_session_configuration(self):
         response = self._post_json(
@@ -1269,7 +1482,7 @@ class LecturerExamSessionManagementTests(TestCase):
             reverse("qna:lecturer_exam_session_common_list_screen", args=[exam_group.id]),
         )
         self.assertContains(response, "Phong A101")
-        self.assertContains(response, "CK_A101")
+        self.assertContains(response, "A1011")
 
     def test_exam_session_common_list_screen_renders_assigned_students(self):
         exam_group = self._create_exam_group()
@@ -1339,6 +1552,63 @@ class LecturerExamSessionManagementTests(TestCase):
             response,
             'id="saveDraftButton" class="es-btn es-btn-secondary"',
         )
+
+    def test_create_exam_group_screen_allows_extra_room_capacity(self):
+        payload = self._build_session_payload()
+        payload["rooms"][0]["student_count"] = 2
+        payload["rooms"][1]["student_count"] = 3
+
+        response = self._post_json(
+            "qna:lecturer_create_exam_group_screen",
+            payload,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        exam_group = ExamSessionGroup.objects.get(pk=response.json()["exam_group_id"])
+        room_counts = list(
+            exam_group.session_rooms.order_by("display_order").values_list("expected_students", flat=True)
+        )
+
+        self.assertEqual(room_counts, [2, 3])
+
+    def test_create_exam_group_screen_rejects_room_password_not_exactly_five_characters(self):
+        payload = self._build_session_payload()
+        payload["rooms"][0]["password"] = "A101"
+
+        response = self._post_json(
+            "qna:lecturer_create_exam_group_screen",
+            payload,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["success"])
+        self.assertEqual(response.json()["status"], "FAIL")
+        self.assertIn("5", response.json()["message"])
+
+    def test_update_exam_group_rejects_start_time_in_past(self):
+        exam_group = self._create_exam_group()
+        payload = self._build_session_payload()
+        local_now = timezone.localtime()
+        if local_now.hour >= 2:
+            past_start = local_now.replace(hour=local_now.hour - 1, minute=0, second=0, microsecond=0)
+        else:
+            past_start = (local_now - timedelta(days=1)).replace(hour=22, minute=0, second=0, microsecond=0)
+        past_end = past_start + timedelta(minutes=90)
+
+        payload["exam_date"] = past_start.strftime("%Y-%m-%d")
+        payload["start_time"] = past_start.strftime("%H:%M")
+        payload["end_time"] = past_end.strftime("%H:%M")
+
+        response = self._post_json(
+            "qna:lecturer_update_exam_group",
+            payload,
+            args=[exam_group.id],
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["success"])
+        self.assertEqual(response.json()["status"], "FAIL")
+        self.assertIn("hi\u1ec7n t\u1ea1i", response.json()["message"])
 
     def test_update_locked_exam_group_is_rejected(self):
         exam_group = ExamSessionGroup.objects.create(
@@ -1572,3 +1842,127 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["status"], "FAIL")
+
+@override_settings(CACHES=TEST_CACHES, CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
+class LecturerGenerateQuestionsTests(TestCase):
+    def setUp(self):
+        views.QUESTION_JOB_LOCAL_FALLBACK.clear()
+
+        self.user_model = get_user_model()
+        self.lecturer = self.user_model.objects.create_user(
+            username="lecturer-generate",
+            password="Password123!",
+        )
+        self.profile = UserProfile.objects.create(
+            user=self.lecturer,
+            is_lecturer=True,
+            full_name="Giang Vien Tao Cau Hoi",
+        )
+        self.subject = Subject.objects.create(
+            name="Tri tue nhan tao",
+            subject_code="AI401",
+        )
+        self.profile.subjects_taught.add(self.subject)
+        self.material = LectureMaterial.objects.create(
+            subject=self.subject,
+            title="Bai giang chuong 1",
+            file_path="materials/chuong_1.txt",
+            file_type="text/plain",
+            workspace_id="ws_test",
+        )
+        self.client.force_login(self.lecturer)
+
+    def tearDown(self):
+        views.QUESTION_JOB_LOCAL_FALLBACK.clear()
+
+    @patch("qna.views.cache.get", side_effect=ConnectionError("redis down"))
+    @patch("qna.views.cache.set", side_effect=ConnectionError("redis down"))
+    @patch("qna.views._generate_questions_from_ai")
+    def test_generate_questions_uses_local_job_fallback_when_cache_is_unavailable(
+        self,
+        mock_generate_questions,
+        mock_cache_set,
+        mock_cache_get,
+    ):
+        mock_generate_questions.return_value = [
+            {
+                "content": "Trinh bay cac thanh phan cua mot he thong AI.",
+                "difficulty": "MEDIUM",
+                "source": "Bai giang chuong 1",
+            }
+        ]
+
+        response = self.client.post(
+            reverse("qna:api_generate_questions"),
+            data=json.dumps(
+                {
+                    "subject_id": self.subject.id,
+                    "document_ids": [self.material.id],
+                    "total_count": 1,
+                    "level_config": {"easy": 0, "medium": 1, "hard": 0},
+                    "workspace_id": "ws_test",
+                }
+            ),
+            content_type="application/json",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "SUCCESS")
+        self.assertEqual(len(payload["questions"]), 1)
+        self.assertEqual(payload["summary"]["medium"], 1)
+        self.assertEqual(Question.objects.filter(subject=self.subject).count(), 1)
+        self.assertTrue(
+            Question.objects.get(subject=self.subject).question_id_in_barem.startswith("DRAFT_ws_test_")
+        )
+
+        status_response = self.client.get(
+            reverse("qna:api_generate_questions_status"),
+            {"job_id": payload["job_id"]},
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(status_response.status_code, 200)
+        status_payload = status_response.json()
+        self.assertEqual(status_payload["status"], "SUCCESS")
+        self.assertEqual(status_payload["process_status"], "COMPLETE")
+        self.assertEqual(status_payload["summary"]["medium"], 1)
+
+    @patch("qna.views._generate_questions_from_ai")
+    def test_generate_questions_returns_friendly_message_when_api_key_is_invalid(self, mock_generate_questions):
+        from httpx import Request, Response
+        from openai import AuthenticationError
+
+        mock_generate_questions.side_effect = AuthenticationError(
+            "Incorrect API key provided",
+            response=Response(401, request=Request("POST", "https://api.openai.com/v1/chat/completions")),
+            body={
+                "error": {
+                    "message": "Incorrect API key provided",
+                    "code": "invalid_api_key",
+                }
+            },
+        )
+
+        response = self.client.post(
+            reverse("qna:api_generate_questions"),
+            data=json.dumps(
+                {
+                    "subject_id": self.subject.id,
+                    "document_ids": [self.material.id],
+                    "total_count": 1,
+                    "level_config": {"easy": 0, "medium": 1, "hard": 0},
+                    "workspace_id": "ws_test",
+                }
+            ),
+            content_type="application/json",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertIn("OpenAI API key không hợp lệ", payload["message"])
+        self.assertNotIn("Incorrect API key", payload["message"])
+        self.assertEqual(Question.objects.filter(subject=self.subject).count(), 0)
+

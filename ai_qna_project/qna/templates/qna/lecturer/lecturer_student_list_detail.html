@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% load static %}
 
 {% block title %}Chi tiết danh sách sinh viên{% endblock %}
@@ -396,7 +396,6 @@
     border-color: #cbd5e1;
   }
 
-  /* Toast Notification */
   .qm2-toast {
     position: fixed;
     top: 22px;
@@ -415,10 +414,10 @@
     gap: 12px;
     font-weight: 600;
   }
+
   .qm2-toast.error { border-left-color: var(--qm-red); }
   .qm2-toast.warning { border-left-color: #f59e0b; }
 
-  /* --- CSS MỚI CHO POPUP TẠO TÀI KHOẢN --- */
   .qm2-modal {
     position: fixed;
     inset: 0;
@@ -430,9 +429,11 @@
     overflow: hidden;
     z-index: 1300;
   }
+
   .qm2-modal.show {
     display: flex;
   }
+
   .mdl-dialog {
     width: 100%;
     max-width: 1100px;
@@ -446,11 +447,13 @@
     display: flex;
     flex-direction: column;
   }
+
   .mdl-dialog form {
     display: flex;
     flex-direction: column;
     min-height: 0;
   }
+
   .mdl-header {
     padding: 22px 28px 18px;
     display: flex;
@@ -458,10 +461,12 @@
     align-items: flex-start;
     flex-shrink: 0;
   }
+
   .mdl-header-left {
     display: flex;
     gap: 14px;
   }
+
   .mdl-icon-box {
     width: 44px;
     height: 44px;
@@ -474,17 +479,20 @@
     font-size: 20px;
     flex-shrink: 0;
   }
+
   .mdl-header h3 {
     margin: 0;
     font-size: 18px;
     font-weight: 700;
     color: #111827;
   }
+
   .mdl-header p {
     margin: 4px 0 0;
     font-size: 13px;
     color: #6b7280;
   }
+
   .mdl-close {
     background: transparent;
     border: none;
@@ -494,6 +502,7 @@
     transition: 0.2s;
     padding: 0;
   }
+
   .mdl-close:hover { color: #4b5563; }
 
   .mdl-body {
@@ -502,6 +511,7 @@
     flex: 1 1 auto;
     min-height: 0;
   }
+
   .mdl-section-title {
     font-size: 14px;
     font-weight: 700;
@@ -511,6 +521,7 @@
     align-items: center;
     gap: 8px;
   }
+
   .mdl-section-title i {
     color: #3b82f6;
   }
@@ -522,24 +533,29 @@
     margin-bottom: 22px;
     display: block;
   }
+
   .mdl-info-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.7fr) repeat(5, minmax(0, 1fr));
     gap: 16px;
     align-items: end;
   }
+
   .mdl-info-cell {
     min-width: 0;
   }
+
   .mdl-info-row {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 20px;
     padding: 18px 0;
   }
+
   .mdl-info-row.border-b {
     border-bottom: 1px solid #e2e8f0;
   }
+
   .mdl-info-label {
     font-size: 11px;
     font-weight: 700;
@@ -548,12 +564,14 @@
     margin-bottom: 6px;
     display: block;
   }
+
   .mdl-info-val {
     font-size: 14px;
     font-weight: 700;
     color: #1e293b;
     line-height: 1.35;
   }
+
   .mdl-info-val.blue { color: #3b82f6; }
   .mdl-info-card .mdl-info-row:first-child > div:first-child .mdl-info-val {
     display: block;
@@ -561,12 +579,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+
   .mdl-info-val.file {
     display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+
   .mdl-info-val.black { font-size: 20px; color: #0f172a; }
   .mdl-info-val.orange { font-size: 20px; color: #f97316; }
   .mdl-info-val.green { font-size: 20px; color: #10b981; }
@@ -577,6 +597,7 @@
     gap: 24px;
     align-items: start;
   }
+
   .mdl-rule-card {
     background: #f0f9ff;
     border: 1px solid #e0f2fe;
@@ -584,6 +605,7 @@
     padding: 18px;
     height: 100%;
   }
+
   .mdl-rule-item {
     display: flex;
     gap: 10px;
@@ -592,6 +614,7 @@
     color: #334155;
     line-height: 1.35;
   }
+
   .mdl-rule-item:last-child { margin-bottom: 0; }
   .mdl-rule-item i {
     color: #3b82f6;
@@ -604,6 +627,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 16px;
   }
+
   .mdl-form-group label {
     display: block;
     font-size: 13px;
@@ -611,6 +635,7 @@
     color: #374151;
     margin-bottom: 6px;
   }
+
   .mdl-form-group input {
     width: 100%;
     height: 40px;
@@ -621,16 +646,20 @@
     outline: none;
     transition: 0.2s;
   }
+
   .mdl-form-group input:focus {
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
+
   .mdl-password-field {
     position: relative;
   }
+
   .mdl-password-field input {
     padding-right: 46px;
   }
+
   .mdl-password-toggle {
     position: absolute;
     top: 50%;
@@ -643,9 +672,11 @@
     font-size: 15px;
     padding: 0;
   }
+
   .mdl-password-toggle:hover {
     color: #1d4ed8;
   }
+
   .mdl-inline-alert {
     display: none;
     align-items: flex-start;
@@ -659,12 +690,15 @@
     line-height: 1.5;
     margin-bottom: 12px;
   }
+
   .mdl-inline-alert.show {
     display: flex;
   }
+
   .mdl-inline-alert i {
     margin-top: 2px;
   }
+
   .mdl-password-rules {
     margin-bottom: 14px;
     padding: 14px 16px;
@@ -672,12 +706,14 @@
     border: 1px solid #dbeafe;
     background: #f8fbff;
   }
+
   .mdl-password-rules-title {
     font-size: 13px;
     font-weight: 700;
     color: #1e3a8a;
     margin-bottom: 8px;
   }
+
   .mdl-password-rule-list {
     margin: 0;
     padding-left: 18px;
@@ -695,6 +731,7 @@
     gap: 12px;
     flex-shrink: 0;
   }
+
   .mdl-btn-cancel {
     padding: 9px 18px;
     border-radius: 8px;
@@ -705,7 +742,9 @@
     cursor: pointer;
     font-size: 14px;
   }
+
   .mdl-btn-cancel:hover { background: #f8fafc; }
+
   .mdl-btn-submit {
     padding: 9px 18px;
     border-radius: 8px;
@@ -719,7 +758,9 @@
     gap: 8px;
     font-size: 14px;
   }
+
   .mdl-btn-submit:hover { background: #2563eb; }
+
   .mdl-btn-submit:disabled {
     background: #9ca3af;
     cursor: not-allowed;
@@ -906,7 +947,7 @@
       <div class="mdl-body">
 
         <div class="mdl-section-title">
-          <i class="far fa-file-alt"></i> Thông tin tệp tin & lớp học
+          <i class="far fa-file-alt"></i> Thông tin tệp tin và lớp học
         </div>
         <div class="mdl-info-card">
           <div class="mdl-info-row border-b">
@@ -940,24 +981,24 @@
         </div>
 
         <div class="mdl-grid-2">
-            <div>
-                <div class="mdl-section-title">
-                  <i class="fas fa-list-check"></i> Quy tắc tạo tài khoản
-                </div>
-                <div class="mdl-rule-card">
-                  <div class="mdl-rule-item">
-                    <i class="far fa-check-circle"></i>
-                    <div><strong>Tên đăng nhập:</strong> Sử dụng Mã số sinh viên (MSSV) được cung cấp trong tệp tin.</div>
-                  </div>
-                  <div class="mdl-rule-item">
-                    <i class="far fa-check-circle"></i>
-                    <div><strong>Mật khẩu mặc định:</strong> Áp dụng chung cho tất cả các tài khoản mới tạo.</div>
-                  </div>
-                  <div class="mdl-rule-item">
-                    <i class="far fa-check-circle"></i>
-                    <div><strong>Sinh viên đã có tài khoản:</strong> Hệ thống chỉ liên kết lại, không tạo trùng và giữ nguyên mật khẩu hiện có của tài khoản đã tồn tại.</div>
-                  </div>
-                </div>
+          <div>
+            <div class="mdl-section-title">
+              <i class="fas fa-list-check"></i> Quy tắc tạo tài khoản
+            </div>
+            <div class="mdl-rule-card">
+              <div class="mdl-rule-item">
+                <i class="far fa-check-circle"></i>
+                <div><strong>Tên đăng nhập:</strong> Sử dụng Mã số sinh viên (MSSV) được cung cấp trong tệp tin.</div>
+              </div>
+              <div class="mdl-rule-item">
+                <i class="far fa-check-circle"></i>
+                <div><strong>Mật khẩu mặc định:</strong> Áp dụng chung cho tất cả các tài khoản mới tạo.</div>
+              </div>
+              <div class="mdl-rule-item">
+                <i class="far fa-check-circle"></i>
+                <div><strong>Sinh viên đã có tài khoản:</strong> Hệ thống chỉ liên kết lại, không tạo trùng và giữ nguyên mật khẩu hiện có của tài khoản đã tồn tại.</div>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -970,11 +1011,6 @@
             </div>
             <div class="mdl-password-rules">
               <div class="mdl-password-rules-title">Quy tắc đặt mật khẩu</div>
-              {% comment %}<ol class="mdl-password-rule-list">
-                <li>Tối thiểu 8 ký tự.</li>
-                <li>Không được chỉ gồm toàn chữ số.</li>
-                <li>Hai ô mật khẩu phải trùng khớp trước khi tạo tài khoản.</li>
-              </ol>{% endcomment %}
               <ol class="mdl-password-rule-list">
                 {% for rule in password_rules|slice:":2" %}
                   <li>{{ rule }}</li>
@@ -1120,6 +1156,6 @@
   setTimeout(() => {
     const toast = document.getElementById('stateToast');
     if (toast) toast.style.display = 'none';
-  }, 3500);
+  }, 5000);
 </script>
 {% endblock %}

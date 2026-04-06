@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 
 {% block title %}Tải lên danh sách sinh viên{% endblock %}
@@ -28,7 +28,7 @@
     background: var(--bg);
     min-height: calc(100vh - 80px);
     padding: 28px 24px 32px;
-    font-family: 'Inter', sans-serif; /* Đảm bảo font đồng bộ */
+    font-family: 'Inter', sans-serif;
   }
 
   .qm2-shell {
@@ -44,6 +44,8 @@
     align-items: flex-start;
     justify-content: space-between;
     margin-bottom: 8px;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 
   .qm2-breadcrumb {
@@ -54,6 +56,7 @@
     color: var(--text);
     margin-bottom: 12px;
     font-weight: 500;
+    flex-wrap: wrap;
   }
 
   .qm2-breadcrumb a { color: var(--text); text-decoration: none; transition: 0.2s; }
@@ -71,6 +74,7 @@
     color: var(--muted);
     font-size: 14px;
     margin: 0;
+    line-height: 1.6;
   }
 
   .qm2-btn {
@@ -91,10 +95,10 @@
   }
 
   .qm2-btn-secondary { background: #64748b; color: #fff; }
-  .qm2-btn-secondary:hover { background: #475569; }
+  .qm2-btn-secondary:hover { background: #475569; color: #fff; }
 
   .qm2-btn-primary { background: var(--blue); color: #fff; }
-  .qm2-btn-primary:hover { background: var(--blue-600); box-shadow: 0 4px 12px rgba(31,111,235,0.2); }
+  .qm2-btn-primary:hover { background: var(--blue-600); box-shadow: 0 4px 12px rgba(31,111,235,0.2); color: #fff; }
   .qm2-btn-primary:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }
 
   .qm2-btn-outline { background: #fff; color: var(--blue); border-color: var(--blue); }
@@ -141,7 +145,6 @@
   .qm2-input[readonly] { background: #f8fafc; color: var(--muted); font-weight: 500; cursor: not-allowed; }
   .qm2-input:focus:not([readonly]) { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12); }
 
-  /* Semester Toggle */
   .qm2-toggle-group {
     display: flex;
     background: #f8fafc;
@@ -150,13 +153,16 @@
     padding: 4px;
     height: 44px;
   }
+
   .qm2-toggle-group label {
     flex: 1;
     margin: 0;
     cursor: pointer;
     position: relative;
   }
+
   .qm2-toggle-group input { display: none; }
+
   .qm2-toggle-group span {
     display: flex;
     align-items: center;
@@ -170,9 +176,13 @@
     text-transform: none;
     letter-spacing: 0;
   }
-  .qm2-toggle-group input:checked + span { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-  /* Dropzone */
+  .qm2-toggle-group input:checked + span {
+    background: #fff;
+    color: var(--blue);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
   .qm2-dropzone {
     border: 2px dashed #cbd5e1;
     border-radius: var(--radius-md);
@@ -183,6 +193,7 @@
     cursor: pointer;
     margin-bottom: 24px;
   }
+
   .qm2-dropzone.active { border-color: var(--blue); background: #f0f5ff; }
   .qm2-dropzone.error { border-color: var(--red); background: #fef2f2; }
 
@@ -200,14 +211,14 @@
     margin-bottom: 16px;
     transition: 0.3s;
   }
+
   .qm2-dropzone.error .qm2-drop-icon { color: var(--red); }
-  .qm2-dropzone.error .fa-cloud-upload-alt:before { content: "\f05e"; } /* Đổi icon thành cấm khi lỗi */
+  .qm2-dropzone.error .fa-cloud-upload-alt:before { content: "\f05e"; }
 
   .qm2-drop-title { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
   .qm2-dropzone.error .qm2-drop-title { color: var(--red); }
-  .qm2-drop-desc { font-size: 14px; color: var(--muted); margin-bottom: 20px; }
+  .qm2-drop-desc { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
 
-  /* File Queue */
   .qm2-queue-wrapper { display: none; margin-bottom: 24px; }
   .qm2-queue-title { font-size: 13px; font-weight: 800; color: var(--text); text-transform: uppercase; margin-bottom: 12px; }
 
@@ -221,6 +232,7 @@
     flex-direction: column;
     gap: 12px;
   }
+
   .qm2-file-info { display: flex; align-items: center; justify-content: space-between; }
   .qm2-file-main { display: flex; align-items: center; gap: 12px; }
   .qm2-file-icon {
@@ -234,6 +246,7 @@
     justify-content: center;
     font-size: 20px;
   }
+
   .qm2-file-item.error .qm2-file-icon { background: #fef2f2; color: var(--red); }
 
   .qm2-file-name { font-size: 14px; font-weight: 700; color: var(--text); }
@@ -248,11 +261,10 @@
   .qm2-progress-fill { height: 100%; background: var(--green); width: 0%; transition: width 0.3s linear; }
   .qm2-file-item.error .qm2-progress-fill { background: var(--red); }
 
-  .qm2-progress-status { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-top: 6px; }
+  .qm2-progress-status { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-top: 6px; gap: 12px; }
   .status-text.success { color: var(--green); }
   .status-text.error { color: var(--red); }
 
-  /* Info Note */
   .qm2-info-box {
     background: #fffbeb;
     border: 1px solid #fde68a;
@@ -262,13 +274,13 @@
     gap: 16px;
     align-items: flex-start;
   }
+
   .qm2-info-icon { color: var(--amber); font-size: 24px; margin-top: 2px; }
   .qm2-info-content h4 { margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #111827; }
   .qm2-info-content p { margin: 0 0 8px 0; font-size: 14px; color: #4b5563; line-height: 1.6; }
   .qm2-info-content a { color: var(--text); font-weight: 700; text-decoration: underline; }
   .qm2-info-content a:hover { color: var(--blue); }
 
-  /* Toast Notification */
   .qm2-toast-container {
     position: fixed;
     top: 24px;
@@ -278,6 +290,7 @@
     flex-direction: column;
     gap: 10px;
   }
+
   .qm2-toast {
     background: #fff;
     border-left: 4px solid var(--red);
@@ -290,6 +303,7 @@
     width: 320px;
     animation: slideInRight 0.3s ease forwards;
   }
+
   .qm2-toast.success { border-left-color: var(--green); }
   .qm2-toast i.icon { font-size: 18px; color: var(--red); margin-top: 2px; }
   .qm2-toast.success i.icon { color: var(--green); }
@@ -303,51 +317,78 @@
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
+
   @keyframes fadeOut {
     to { opacity: 0; transform: translateY(-10px); }
   }
 
   .text-right { text-align: right; }
+
+  @media (max-width: 900px) {
+    .qm2-grid-3 {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .qm2-page {
+      padding: 18px 14px 24px;
+    }
+
+    .qm2-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .qm2-btn-secondary,
+    .qm2-btn-primary,
+    .qm2-btn-outline {
+      width: 100%;
+    }
+
+    .qm2-info-box {
+      flex-direction: column;
+    }
+  }
 </style>
 
 <div class="qm2-page">
   <div class="qm2-shell">
 
-    <!-- Header -->
-        <!-- Header -->
-       <div class="qm2-header">
-          <div>
-            <div class="qm2-breadcrumb">
-              <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}">{{ subject.name }}</a>
-              <i class="fas fa-chevron-right"></i>
-              <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}">Quản lý danh sách lớp</a>
-            </div>
-            <h1 class="qm2-title">Tải lên danh sách sinh viên</h1>
-            <p class="qm2-subtitle">Chọn năm học và tải tệp Excel hoặc CSV chứa thông tin sinh viên để cập nhật hệ thống.</p>
-            <p><strong>Lưu ý:</strong> Hệ thống hiện chỉ hiển thị cảnh báo, bỏ qua các dòng thiếu MSSV, thiếu họ tên hoặc trùng MSSV trong cùng tệp; chưa có luồng gửi email tự động cho sinh viên.</p>
-          </div>
-          <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
-            <i class="fas fa-arrow-left"></i> Quay lại danh sách lớp
-          </a>
-       </div>
+    <div class="qm2-header">
+      <div>
+        <div class="qm2-breadcrumb">
+          <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}">{{ subject.name }}</a>
+          <i class="fas fa-chevron-right"></i>
+          <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}">Quản lý danh sách lớp</a>
+        </div>
+        <h1 class="qm2-title">Tải lên danh sách sinh viên</h1>
+        <p class="qm2-subtitle">Chọn năm học và tải tệp Excel hoặc CSV chứa thông tin sinh viên để cập nhật hệ thống.</p>
+        <p class="qm2-subtitle"><strong>Lưu ý:</strong> Hệ thống hiện sẽ cảnh báo và bỏ qua các dòng thiếu MSSV, thiếu họ tên hoặc trùng MSSV trong cùng tệp; hiện chưa có luồng gửi email tự động cho sinh viên sau khi tải lên.</p>
+      </div>
 
-    <!-- Main Form Panel -->
+      <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
+        <i class="fas fa-arrow-left"></i> Quay lại danh sách lớp
+      </a>
+    </div>
+
     <form method="post" enctype="multipart/form-data" id="uploadForm" class="qm2-panel">
       {% csrf_token %}
 
-      <!-- Grid Inputs -->
       <div class="qm2-grid-3">
         <div class="qm2-field">
           <label>Môn học</label>
           <div style="position: relative;">
-              <input type="text" class="qm2-input" value="{{ subject.name }}" readonly>
-              <i class="fas fa-chevron-down" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px;"></i>
+            <input type="text" class="qm2-input" value="{{ subject.name }}" readonly>
+            <i class="fas fa-chevron-down" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px;"></i>
           </div>
         </div>
+
         <div class="qm2-field">
           <label>Năm học</label>
           <input type="text" name="academic_year" class="qm2-input" value="{{ default_academic_year }}" placeholder="VD: 2024-2025" required>
         </div>
+
         <div class="qm2-field">
           <label>Học kỳ</label>
           <div class="qm2-toggle-group">
@@ -361,8 +402,8 @@
         </div>
       </div>
 
-      <!-- Dropzone -->
       <input type="file" id="fileInput" name="files" accept=".xlsx,.xls,.csv" multiple hidden>
+
       <div class="qm2-dropzone" id="dropZone">
         <div class="qm2-drop-icon"><i class="fas fa-cloud-upload-alt"></i></div>
         <h3 class="qm2-drop-title" id="dropTitle">Kéo và thả file vào đây</h3>
@@ -370,13 +411,11 @@
         <button type="button" class="qm2-btn qm2-btn-outline" id="browseBtn">Chọn file từ máy tính</button>
       </div>
 
-      <!-- File Queue -->
       <div class="qm2-queue-wrapper" id="queueWrapper">
         <div class="qm2-queue-title">DANH SÁCH FILE ĐANG CHỜ (<span id="queueCount">0</span>)</div>
         <div id="fileList"></div>
       </div>
 
-      <!-- Submit Action -->
       <div class="text-right">
         <button type="submit" class="qm2-btn qm2-btn-primary" id="submitBtn" disabled>
           <i class="fas fa-check-circle"></i> Xác nhận tải lên hệ thống
@@ -384,306 +423,28 @@
       </div>
     </form>
 
-    <!-- Info Note -->
     <div class="qm2-info-box">
       <i class="far fa-lightbulb qm2-info-icon"></i>
       <div class="qm2-info-content">
         <h4>Lưu ý khi nhập dữ liệu</h4>
         <p>Vui lòng sử dụng đúng <a href="{% url 'qna:lecturer_student_list_template' subject.subject_code %}">template mẫu</a> do hệ thống cung cấp để đảm bảo tính nhất quán của dữ liệu.</p>
-        <p><strong>Mã sinh viên là định danh duy nhất.</strong> Nếu sinh viên đã tồn tại, hệ thống sẽ tự động cập nhật thông tin mới nhất.</p>
-        <p>Hệ thống sẽ tự động <strong>gửi thông báo qua email</strong> cho các sinh viên mới được thêm vào danh sách sau khi quá trình tải lên hoàn tất.</p>
+        <p><strong>Mã sinh viên là định danh duy nhất.</strong> Nếu sinh viên đã tồn tại, hệ thống sẽ tự động cập nhật thông tin mới nhất khi xử lý dữ liệu.</p>
+        <p>Khi có dòng không hợp lệ hoặc bị trùng trong cùng tệp, hệ thống sẽ bỏ qua các dòng đó và hiển thị cảnh báo chi tiết sau khi tải lên hoàn tất.</p>
       </div>
     </div>
 
   </div>
 </div>
 
-<!-- Container chứa Toasts -->
 <div class="qm2-toast-container" id="toastContainer"></div>
 
 {% endblock %}
 
 {% block extra_js %}
 <script>
-  const MAX_MB = {{ max_upload_mb|default:10 }};
-  const MAX_SIZE = MAX_MB * 1024 * 1024;
-  const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'csv'];
-
-  const uploadForm = document.getElementById('uploadForm');
-  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-  const academicYearInput = document.querySelector('[name=academic_year]');
-  const fileInput = document.getElementById('fileInput');
-  const browseBtn = document.getElementById('browseBtn');
-  const dropZone = document.getElementById('dropZone');
-  const queueWrapper = document.getElementById('queueWrapper');
-  const fileList = document.getElementById('fileList');
-  const queueCount = document.getElementById('queueCount');
-  const submitBtn = document.getElementById('submitBtn');
-  const dropTitle = document.getElementById('dropTitle');
-  const dropDesc = document.getElementById('dropDesc');
-  const toastContainer = document.getElementById('toastContainer');
-
-  let currentFiles = [];
-
-  function escapeHtml(value) {
-    return String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function activeSemester() {
-    const selected = document.querySelector('[name=semester]:checked');
-    return selected ? selected.value : 'HK1';
-  }
-
-  function refreshDropZoneState() {
-    const invalidFile = currentFiles.find(item => item.status === 'invalid');
-    if (invalidFile) {
-      dropZone.classList.add('error');
-      dropTitle.textContent = 'Tệp tin không hợp lệ';
-      dropDesc.textContent = invalidFile.errMsg;
-      return;
-    }
-
-    dropZone.classList.remove('error');
-    dropTitle.textContent = 'Kéo và thả file vào đây';
-    dropDesc.textContent = `Hỗ trợ định dạng .xlsx, .xls, .csv. Dung lượng tối đa ${MAX_MB}MB`;
-  }
-
-  function syncSubmitState() {
-    const hasReady = currentFiles.some(item => item.status === 'ready');
-    const hasUploading = currentFiles.some(item => item.status === 'uploading');
-    submitBtn.disabled = !hasReady || hasUploading;
-  }
-
-  // Tạo thông báo Toast (Góc trên bên phải giống mockup)
-  function showToast(title, message, isError = true) {
-    const toast = document.createElement('div');
-    toast.className = `qm2-toast ${isError ? '' : 'success'}`;
-    toast.innerHTML = `
-      <i class="fas ${isError ? 'fa-exclamation-circle' : 'fa-check-circle'} icon"></i>
-      <div class="qm2-toast-content">
-        <div class="qm2-toast-title">${title}</div>
-        <div class="qm2-toast-msg">${message}</div>
-      </div>
-      <button type="button" class="qm2-toast-close"><i class="fas fa-times"></i></button>
-    `;
-
-    toast.querySelector('.qm2-toast-close').onclick = () => {
-      toast.style.animation = 'fadeOut 0.3s ease forwards';
-      setTimeout(() => toast.remove(), 300);
-    };
-
-    toastContainer.appendChild(toast);
-    setTimeout(() => {
-      if (toast.parentElement) {
-        toast.style.animation = 'fadeOut 0.3s ease forwards';
-        setTimeout(() => toast.remove(), 300);
-      }
-    }, 5000);
-  }
-
-  function formatSize(bytes) {
-    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
-    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-  }
-
-  // Xử lý kéo thả
-  browseBtn.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('click', (e) => { if(e.target === dropZone) fileInput.click(); });
-
-  ['dragenter', 'dragover'].forEach(evt => {
-    dropZone.addEventListener(evt, e => {
-      e.preventDefault();
-      dropZone.classList.add('active');
-    });
-  });
-
-  ['dragleave', 'drop'].forEach(evt => {
-    dropZone.addEventListener(evt, e => {
-      e.preventDefault();
-      dropZone.classList.remove('active');
-    });
-  });
-
-  dropZone.addEventListener('drop', e => {
-    handleFiles(e.dataTransfer.files);
-  });
-
-  fileInput.addEventListener('change', e => {
-    handleFiles(e.target.files);
-  });
-
-  function handleFiles(filesObj) {
-    const newFiles = Array.from(filesObj);
-    let hasInvalid = false;
-
-    newFiles.forEach(file => {
-      const ext = file.name.split('.').pop().toLowerCase();
-      let status = 'processing'; // Đang giả lập load
-      let errMsg = '';
-
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        status = 'error';
-        errMsg = 'Định dạng file không hợp lệ.';
-        showToast('Tải file thất bại', errMsg, true);
-        hasInvalid = true;
-      } else if (file.size > MAX_SIZE) {
-        status = 'error';
-        errMsg = `Dung lượng file vượt quá ${MAX_MB}MB. Vui lòng kiểm tra lại.`;
-        showToast('Tải file thất bại', errMsg, true);
-        hasInvalid = true;
-      }
-
-      currentFiles.push({
-        file: file,
-        id: 'file_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-        status: status,
-        errMsg: errMsg
-      });
-    });
-
-    // Cập nhật giao diện Dropzone nếu có lỗi
-    if (hasInvalid) {
-      dropZone.classList.add('error');
-      dropTitle.textContent = 'Tệp tin không hợp lệ';
-      dropDesc.textContent = 'Hệ thống chỉ chấp nhận định dạng Excel (.xlsx) hoặc CSV.';
-    } else {
-      dropZone.classList.remove('error');
-      dropTitle.textContent = 'Kéo và thả file vào đây';
-      dropDesc.textContent = `Hỗ trợ định dạng .xlsx, .xls, .csv. Dung lượng tối đa ${MAX_MB}MB`;
-    }
-
-    renderFileList();
-    syncFileInput();
-  }
-
-  function removeFile(id) {
-    currentFiles = currentFiles.filter(f => f.id !== id);
-    // Xóa trạng thái lỗi ở dropzone nếu list trống
-    if (currentFiles.length === 0) {
-      dropZone.classList.remove('error');
-      dropTitle.textContent = 'Kéo và thả file vào đây';
-      dropDesc.textContent = `Hỗ trợ định dạng .xlsx, .xls, .csv. Dung lượng tối đa ${MAX_MB}MB`;
-    }
-    renderFileList();
-    syncFileInput();
-  }
-
-  // Đồng bộ mảng currentFiles ngược lại thẻ <input type="file"> để submit form
-  function syncFileInput() {
-    const dt = new DataTransfer();
-    currentFiles.filter(f => f.status === 'success' || f.status === 'processing').forEach(f => dt.items.add(f.file));
-    fileInput.files = dt.files;
-
-    // Nút submit chỉ bật khi có file success và không có file processing/error
-    const hasSuccess = currentFiles.some(f => f.status === 'success');
-    const hasNotReady = currentFiles.some(f => f.status !== 'success');
-    submitBtn.disabled = !(hasSuccess && !hasNotReady);
-  }
-
-  function renderFileList() {
-    fileList.innerHTML = '';
-    queueCount.textContent = currentFiles.length;
-    queueWrapper.style.display = currentFiles.length > 0 ? 'block' : 'none';
-
-    currentFiles.forEach(f => {
-      const isError = f.status === 'error';
-      const isProcessing = f.status === 'processing';
-      const isSuccess = f.status === 'success';
-
-      const iconClass = isError ? 'fa-file-alt text-red-500' : 'fa-file-excel text-green-500';
-      const iconBg = isError ? 'bg-red-50' : 'bg-green-50';
-
-      let metaHtml = '';
-      if (isError) {
-        metaHtml = `
-          <div class="qm2-progress-status mt-2">
-            <span class="text-red-500 font-semibold text-xs">Lỗi tải lên</span>
-          </div>
-          <div class="qm2-progress-bar mt-1">
-            <div class="qm2-progress-fill bg-red-500" style="width: 100%"></div>
-          </div>
-          <div class="text-xs text-red-500 mt-1">${f.errMsg}</div>
-        `;
-      } else if (isProcessing) {
-        metaHtml = `
-          <div class="qm2-progress-bar mt-2">
-            <div class="qm2-progress-fill" id="prog_${f.id}" style="width: 0%"></div>
-          </div>
-        `;
-        // Giả lập progress bar chạy
-        setTimeout(() => {
-          const el = document.getElementById(`prog_${f.id}`);
-          if (el) el.style.width = '100%';
-          setTimeout(() => {
-            f.status = 'success';
-            renderFileList();
-            syncFileInput();
-          }, 600); // Đợi bar chạy xong
-        }, 50);
-      } else if (isSuccess) {
-        metaHtml = `
-          <div class="qm2-progress-status mt-2">
-            <span class="text-green-600 font-semibold text-xs">Hoàn thành</span>
-          </div>
-          <div class="qm2-progress-bar mt-1">
-            <div class="qm2-progress-fill bg-green-500" style="width: 100%"></div>
-          </div>
-          <div class="text-xs text-green-600 mt-1">Đã tải lên sẵn sàng</div>
-        `;
-      }
-
-      const item = document.createElement('div');
-      item.className = `qm2-file-item ${isError ? 'error' : ''}`;
-      item.innerHTML = `
-        <div class="qm2-file-info">
-          <div class="qm2-file-main w-full">
-            <div class="qm2-file-icon ${iconBg}"><i class="fas ${iconClass}"></i></div>
-            <div class="flex-1 min-w-0">
-              <div class="flex justify-between">
-                <div class="qm2-file-name truncate">${f.file.name}</div>
-                <div class="qm2-file-meta text-xs whitespace-nowrap">${formatSize(f.file.size)}</div>
-              </div>
-              ${metaHtml}
-            </div>
-          </div>
-          <div class="qm2-file-actions ml-4">
-            ${isError ? `<button type="button" class="text-blue-600 text-xs font-bold whitespace-nowrap mr-2" onclick="removeFile('${f.id}'); document.getElementById('fileInput').click();"><i class="fas fa-redo mr-1"></i> Thử lại</button>` : ''}
-            ${isSuccess ? `<i class="fas fa-check text-green-500 mr-2"></i>` : ''}
-            <button type="button" class="qm2-icon-btn" onclick="removeFile('${f.id}')"><i class="fas fa-trash-alt"></i></button>
-          </div>
-        </div>
-      `;
-      fileList.appendChild(item);
-    });
-  }
-
-  // Hiển thị Toast từ Django Messages (nếu có lỗi khi submit từ backend)
-  window.onload = () => {
-    {% if messages %}
-      {% for message in messages %}
-        showToast("Hệ thống", "{{ message }}", {% if message.tags == 'error' %}true{% else %}false{% endif %});
-      {% endfor %}
-    {% endif %}
-  };
-
-</script>
-<script>
 (() => {
   const form = document.getElementById('uploadForm');
   if (!form) return;
-
-  const oldInput = document.getElementById('fileInput');
-  const newInput = oldInput.cloneNode(true);
-  oldInput.parentNode.replaceChild(newInput, oldInput);
-
-  const oldDropZone = document.getElementById('dropZone');
-  const newDropZone = oldDropZone.cloneNode(true);
-  oldDropZone.parentNode.replaceChild(newDropZone, oldDropZone);
 
   const input = document.getElementById('fileInput');
   const dropZone = document.getElementById('dropZone');
@@ -700,6 +461,7 @@
   const maxMb = {{ max_upload_mb|default:10 }};
   const maxSize = maxMb * 1024 * 1024;
   const allowed = ['xlsx', 'xls', 'csv'];
+
   let filesState = [];
 
   const esc = value => String(value || '')
@@ -709,7 +471,10 @@
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-  const sizeText = bytes => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const sizeText = bytes => bytes < 1024 * 1024
+    ? `${Math.round(bytes / 1024)} KB`
+    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
   const activeSemester = () => (document.querySelector('[name=semester]:checked') || {}).value || 'HK1';
 
   function toast(title, message, isError = true) {
@@ -723,13 +488,18 @@
       </div>
       <button type="button" class="qm2-toast-close"><i class="fas fa-times"></i></button>
     `;
+
     const close = () => {
       el.style.animation = 'fadeOut 0.3s ease forwards';
       setTimeout(() => el.remove(), 300);
     };
+
     el.querySelector('.qm2-toast-close').onclick = close;
     toastContainer.appendChild(el);
-    setTimeout(() => el.parentElement && close(), 4500);
+
+    setTimeout(() => {
+      if (el.parentElement) close();
+    }, 5000);
   }
 
   function refreshDropZone() {
@@ -740,6 +510,7 @@
       dropDesc.textContent = invalid.error;
       return;
     }
+
     dropZone.classList.remove('error');
     dropTitle.textContent = 'Kéo và thả file vào đây';
     dropDesc.textContent = `Hỗ trợ định dạng .xlsx, .xls, .csv. Dung lượng tối đa ${maxMb}MB`;
@@ -783,13 +554,21 @@
       }
 
       if (!allowed.includes(ext)) {
-        addInvalid(file, 'Định dạng file không hợp lệ. Hệ thống chỉ chấp nhận .xlsx, .xls hoặc .csv.', 'Chỉ chấp nhận file Excel hoặc CSV');
+        addInvalid(
+          file,
+          'Định dạng file không hợp lệ. Hệ thống chỉ chấp nhận .xlsx, .xls hoặc .csv.',
+          'Chỉ chấp nhận file Excel hoặc CSV'
+        );
         toast('Tải file thất bại', 'Định dạng file không hợp lệ.');
         return;
       }
 
       if (file.size > maxSize) {
-        addInvalid(file, `Dung lượng file vượt quá ${maxMb}MB. Vui lòng kiểm tra lại.`, `Vượt quá ${maxMb}MB`);
+        addInvalid(
+          file,
+          `Dung lượng file vượt quá ${maxMb}MB. Vui lòng kiểm tra lại.`,
+          `Vượt quá ${maxMb}MB`
+        );
         toast('Tải file thất bại', `Dung lượng file vượt quá ${maxMb}MB. Vui lòng kiểm tra lại.`);
         return;
       }
@@ -852,7 +631,12 @@
     xhr.addEventListener('load', () => {
       item.xhr = null;
       let payload = {};
-      try { payload = JSON.parse(xhr.responseText || '{}'); } catch (error) { payload = {}; }
+      try {
+        payload = JSON.parse(xhr.responseText || '{}');
+      } catch (error) {
+        payload = {};
+      }
+
       const result = (payload.results || [])[0] || null;
       const error = (payload.errors || [])[0] || null;
 
@@ -864,6 +648,19 @@
         item.note = `Tải lên lúc ${result.created_at || 'vừa xong'}`;
         render();
         toast('Tải file lên thành công', `${item.file.name} đã được lưu vào hệ thống.`, false);
+
+        // ---- LOGIC AUTO-REDIRECT ĐƯỢC THÊM VÀO TẠI ĐÂY ----
+        // Đợi 1 giây để người dùng đọc được thông báo màu xanh rồi mới chuyển trang
+        // Đồng thời kiểm tra xem có đang upload file nào khác bị lỗi hoặc chưa xong không.
+        const isUploading = filesState.some(f => f.status === 'uploading');
+        const hasError = filesState.some(f => f.status === 'error' || f.status === 'invalid');
+
+        if (!isUploading && !hasError) {
+          setTimeout(() => {
+            window.location.href = "{% url 'qna:lecturer_student_list_management' subject.subject_code %}";
+          }, 1000); // 1000ms = 1 giây
+        }
+        // ---------------------------------------------------
         return;
       }
 
@@ -903,10 +700,14 @@
       const isUploading = item.status === 'uploading';
       const isSuccess = item.status === 'success';
       const isReady = item.status === 'ready';
-      const iconClass = isError ? 'fa-file-alt text-red-500' : (isUploading ? 'fa-cloud-upload-alt text-blue-500' : 'fa-file-excel text-green-500');
+      const iconClass = isError
+        ? 'fa-file-alt text-red-500'
+        : (isUploading ? 'fa-cloud-upload-alt text-blue-500' : 'fa-file-excel text-green-500');
       const iconBg = isError ? 'bg-red-50' : (isUploading ? 'bg-blue-50' : 'bg-green-50');
       const progress = isReady ? 100 : (typeof item.progress === 'number' ? item.progress : 0);
-      const statusText = isSuccess ? 'Hoàn thành' : (isUploading ? 'Đang tải lên' : (isReady ? 'Đã sẵn sàng' : 'Lỗi tải lên'));
+      const statusText = isSuccess
+        ? 'Hoàn thành'
+        : (isUploading ? 'Đang tải lên' : (isReady ? 'Đã sẵn sàng' : 'Lỗi tải lên'));
       const statusClass = isError ? 'error' : (isSuccess || isReady ? 'success' : '');
 
       const row = document.createElement('div');
@@ -953,31 +754,46 @@
 
   form.addEventListener('submit', event => {
     event.preventDefault();
+
     if (!academicYearInput.value.trim()) {
       toast('Thiếu thông tin', 'Vui lòng nhập năm học trước khi tải file.');
       academicYearInput.focus();
       return;
     }
+
     filesState.filter(item => item.status === 'ready').forEach(uploadItem);
     syncButton();
   });
 
   browseBtn.addEventListener('click', openPicker);
-  dropZone.addEventListener('click', event => { if (event.target === dropZone) openPicker(); });
+  dropZone.addEventListener('click', event => {
+    if (event.target === dropZone) openPicker();
+  });
+
   ['dragenter', 'dragover'].forEach(evt => {
     dropZone.addEventListener(evt, event => {
       event.preventDefault();
       dropZone.classList.add('active');
     });
   });
+
   ['dragleave', 'drop'].forEach(evt => {
     dropZone.addEventListener(evt, event => {
       event.preventDefault();
       dropZone.classList.remove('active');
     });
   });
+
   dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
   input.addEventListener('change', event => addFiles(event.target.files));
+
+  window.addEventListener('load', () => {
+    {% if messages %}
+      {% for message in messages %}
+        toast('Hệ thống', '{{ message|escapejs }}', {% if message.tags == 'error' %}true{% else %}false{% endif %});
+      {% endfor %}
+    {% endif %}
+  });
 
   render();
 })();

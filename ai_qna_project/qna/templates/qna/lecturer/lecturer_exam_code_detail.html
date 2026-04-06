@@ -19,6 +19,7 @@
     --amber-bg: #fef3c7;
     --red: #dc2626;
     --red-bg: #fee2e2;
+    --navy: #07142b;
     --shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
   }
 
@@ -26,6 +27,7 @@
     background: var(--page-bg);
     min-height: calc(100vh - 80px);
     padding: 22px;
+    padding-bottom: 100px;
   }
 
   .detail-shell {
@@ -34,15 +36,15 @@
   }
 
   .detail-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px;
+    align-items: start;
     margin-bottom: 18px;
     background: #fff;
-    padding: 20px 24px;
-    border-radius: 16px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    padding: 24px 28px;
+    border-radius: 18px;
+    box-shadow: var(--shadow);
     border: 1px solid var(--border);
   }
 
@@ -76,45 +78,24 @@
     transition: all 0.2s ease;
   }
 
-  .btn:active {
-    transform: scale(0.98);
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { background: var(--blue-dark); }
+
+  .btn-primary:disabled, .btn-success:disabled {
+    background: #cbd5e1 !important;
+    color: #94a3b8 !important;
+    border-color: #cbd5e1 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
   }
 
-  .btn-primary {
-    background: var(--blue);
-    color: #fff;
-  }
-
-  .btn-primary:hover {
-    background: var(--blue-dark);
-  }
-
-  .btn-secondary {
-    background: #6b7280;
-    color: #fff;
-  }
-
-  .btn-secondary:hover {
-    background: #4b5563;
-  }
-
-  .btn-success {
-    background: #16a34a;
-    color: #fff;
-  }
-
-  .btn-success:hover {
-    background: #15803d;
-  }
-
-  .btn-danger {
-    background: #ef4444;
-    color: #fff;
-  }
-
-  .btn-danger:hover {
-    background: #dc2626;
-  }
+  .btn-secondary { background: #6b7280; color: #fff; }
+  .btn-secondary:hover { background: #4b5563; }
+  .btn-success { background: #16a34a; color: #fff; }
+  .btn-success:hover { background: #15803d; }
+  .btn-danger { background: #ef4444; color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
 
   .pill {
     display: inline-flex;
@@ -126,27 +107,145 @@
     font-weight: 800;
   }
 
-  .pill-approved {
-    background: var(--green-bg);
-    color: var(--green);
-  }
+  .pill-approved { background: var(--green-bg); color: var(--green); }
+  .pill-draft { background: var(--amber-bg); color: var(--amber); }
 
-  .pill-draft {
-    background: var(--amber-bg);
-    color: var(--amber);
+  .head-main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
   }
 
   .top-actions {
     display: flex;
     gap: 12px;
     align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
+
+  .top-actions .btn { min-width: 156px; }
+
+  .head-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .head-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: #f8fbff;
+    border: 1px solid #d9e4f2;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .head-stat strong {
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .selection-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 14px 18px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    flex-wrap: wrap;
+  }
+
+  .selection-helper {
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .bulkbar {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    width: fit-content;
+    max-width: calc(100% - 32px);
+    background: var(--navy);
+    color: #fff;
+    border-radius: 16px;
+    box-shadow: 0 18px 40px rgba(3, 9, 27, 0.34);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+    flex-wrap: wrap;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .bulkbar.hidden {
+    bottom: -100px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .bulkbar .count {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .bulkbar .count-badge {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blue);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .bulkbar .divider {
+    width: 1px;
+    height: 22px;
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .bulk-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .bulk-action:hover { opacity: 0.88; }
+  .bulk-action.danger { color: #ff6b6b; }
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 18px;
-    align-items: stretch; /* Đảm bảo các card trên cùng 1 hàng bằng nhau */
+    align-items: stretch;
   }
 
   .card {
@@ -155,9 +254,16 @@
     border-radius: 18px;
     box-shadow: var(--shadow);
     overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     display: flex;
-    flex-direction: column; /* Cho phép giãn nội dung dọc */
+    flex-direction: column;
+  }
+
+  .card.card-openable { cursor: pointer; }
+
+  .card.is-selected {
+    border-color: rgba(31, 111, 235, 0.45);
+    box-shadow: 0 20px 40px rgba(31, 111, 235, 0.14);
   }
 
   .card:hover {
@@ -170,10 +276,19 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
+  }
+
+  .card-head-main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
   }
 
   .card-title {
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 800;
     color: var(--blue);
     line-height: 1;
@@ -189,6 +304,22 @@
   .card-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
+  }
+
+  .card-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .card-select input {
+    width: 16px;
+    height: 16px;
   }
 
   .icon-btn {
@@ -229,7 +360,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    flex: 1; /* CỰC KỲ QUAN TRỌNG: Đẩy footer xuống đáy */
+    flex: 1;
   }
 
   .preview-item {
@@ -258,15 +389,34 @@
   .card-foot {
     padding: 16px;
     display: flex;
-    justify-content: flex-end;
-    margin-top: auto; /* Giữ foot sát lề dưới */
-    border-top: 1px solid var(--border); /* Tạo đường gạch ngang cho đẹp (tùy chọn) */
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    border-top: 1px solid var(--border);
+  }
+
+  .card-used-note {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    background: #e0ecff;
+    color: #1d4ed8;
+  }
+
+  .card-used-note.is-idle {
+    background: #f8fafc;
+    color: #64748b;
   }
 
   .drawer {
     position: fixed;
     inset: 0;
-    z-index: 80;
+    z-index: 150;
     visibility: hidden;
     opacity: 0;
     transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -297,9 +447,7 @@
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .drawer.show .drawer-panel {
-    transform: translateX(0);
-  }
+  .drawer.show .drawer-panel { transform: translateX(0); }
 
   .drawer-head {
     padding: 22px 24px 18px;
@@ -317,9 +465,7 @@
     color: #1e293b;
   }
 
-  .drawer-head small {
-    color: #64748b;
-  }
+  .drawer-head small { color: #64748b; }
 
   .drawer-close {
     border: 0;
@@ -329,9 +475,7 @@
     cursor: pointer;
   }
 
-  .drawer-close:hover {
-    color: var(--red);
-  }
+  .drawer-close:hover { color: var(--red); }
 
   .drawer-body {
     padding: 22px 24px;
@@ -422,12 +566,10 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 90;
+    z-index: 200;
   }
 
-  .modal.show {
-    display: flex;
-  }
+  .modal.show { display: flex; }
 
   .dialog {
     width: min(560px, 100%);
@@ -465,7 +607,7 @@
     position: fixed;
     top: 24px;
     right: 28px;
-    z-index: 95;
+    z-index: 250;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -484,9 +626,7 @@
     gap: 12px;
   }
 
-  .toast.error {
-    border-left-color: #ef4444;
-  }
+  .toast.error { border-left-color: #ef4444; }
 
   .toast button {
     border: 0;
@@ -511,33 +651,45 @@
 
   @media (max-width: 920px) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .detail-head { flex-direction: column; }
-    .top-actions { flex-wrap: wrap; }
+    .detail-head { grid-template-columns: 1fr; padding: 20px; }
+    .top-actions { justify-content: flex-start; }
+    .selection-tools { align-items: flex-start; }
   }
 
   @media (max-width: 640px) {
     .grid { grid-template-columns: 1fr; }
     .drawer-foot { flex-direction: column; }
+    .bulkbar { width: 90%; flex-direction: column; gap: 10px; padding: 15px; border-radius: 20px; }
+    .bulkbar .divider { display: none; }
   }
 </style>
 
 <div class="detail-page">
   <div class="detail-shell">
     <div class="detail-head">
-      <div>
-        <h1>Bộ đề {{ exam_set_code }} - {{ exam_set.subject.name }}</h1>
-        <div class="meta">
-          <span><i class="fas fa-hashtag"></i> Mã bộ đề: {{ exam_set_code }}</span>
-          <span><i class="fas fa-calendar-alt"></i> Năm học: {{ exam_set.academic_year }}</span>
-          <span><i class="fas fa-cube"></i> Học kỳ: {{ exam_set.get_semester_display }}</span>
-          {% if exam_set.status == 'APPROVED' %}
-            <span class="pill pill-approved">{{ exam_set.status_label|upper }}</span>
-          {% else %}
-            <span class="pill pill-draft">{{ exam_set.status_label|upper }}</span>
-          {% endif %}
+      <div class="head-main">
+        <div>
+          <h1>Bộ đề {{ exam_set_code }} - {{ exam_set.subject.name }}</h1>
+          <div class="meta">
+            <span><i class="fas fa-hashtag"></i> Mã bộ đề: {{ exam_set_code }}</span>
+            <span><i class="fas fa-calendar-alt"></i> Năm học: {{ exam_set.academic_year }}</span>
+            <span><i class="fas fa-cube"></i> Học kỳ: {{ exam_set.get_semester_display }}</span>
+          </div>
         </div>
+
+        <div class="head-stats">
+          {% if exam_set.status == 'APPROVED' %}
+            <span id="examSetStatusPill" class="pill pill-approved">{{ exam_set.status_label|upper }}</span>
+          {% else %}
+            <span id="examSetStatusPill" class="pill pill-draft">{{ exam_set.status_label|upper }}</span>
+          {% endif %}
+          <span class="head-stat"><i class="fas fa-layer-group"></i> Tổng mã đề <strong id="summaryTotalCodes">{{ total_codes_count }}</strong></span>
+          <span class="head-stat"><i class="fas fa-circle-check"></i> Đã duyệt <strong id="summaryApprovedCodes">{{ approved_codes_count }}</strong></span>
+          <span class="head-stat"><i class="fas fa-link"></i> Đã dùng <strong id="summaryUsedCodes">{{ used_codes_count }}</strong></span>
+        </div>
+
         {% if exam_set_is_linked %}
-          <div class="locked-note" style="margin-top: 12px;">
+          <div class="locked-note" style="margin-top: 0;">
             Bộ đề này đã được sử dụng trong ca thi. Hệ thống chỉ cho phép xem, không cho phép sửa, duyệt lại hoặc xóa.
           </div>
         {% endif %}
@@ -549,17 +701,48 @@
         </a>
         <button
           type="button"
+          id="btnManualCreate"
           class="btn btn-primary"
+          onclick="createManualCode()"
+          {% if exam_set_is_linked %}disabled{% endif %}
+        >
+          <i class="fas fa-pen-to-square"></i> Tạo thủ công
+        </button>
+        <button
+          type="button"
+          id="btnPublishExamSet"
+          class="btn btn-success"
           onclick="publishExamSet()"
           {% if publish_disabled or exam_set_is_linked %}disabled{% endif %}
         >
-          Lưu bộ đề
+          <i class="fas fa-save"></i> Lưu
         </button>
       </div>
     </div>
 
+    <div class="selection-tools">
+      <label class="card-select" {% if exam_set_is_linked %}style="opacity: 0.65;"{% endif %}>
+        <input type="checkbox" id="selectAllCodes" {% if exam_set_is_linked %}disabled{% endif %}>
+        <span>Chọn tất cả mã đề</span>
+      </label>
+      <span id="selectedCodesMeta" class="selection-helper">Chọn các mã đề để duyệt hoặc xóa hàng loạt.</span>
+    </div>
+
     <div class="grid" id="cardGrid"></div>
   </div>
+</div>
+
+<div class="bulkbar hidden" id="bulkBar">
+  <div class="count"><span class="count-badge" id="selectedCount">0</span>Mã đề đã chọn</div>
+  <div class="divider"></div>
+  <button class="bulk-action" type="button" onclick="bulkApproveSelectedCodes()">
+    <i class="fas fa-circle-check"></i><span>Duyệt mã đề</span>
+  </button>
+  <button class="bulk-action danger" type="button" onclick="confirmBulkDeleteSelectedCodes()">
+    <i class="far fa-trash-alt"></i><span>Xóa</span>
+  </button>
+  <div class="divider"></div>
+  <button class="bulk-action" type="button" onclick="clearCodeSelection()">Bỏ chọn tất cả</button>
 </div>
 
 <div id="drawer" class="drawer">
@@ -584,7 +767,7 @@
         <i class="fas fa-trash"></i> Xóa mã đề
       </button>
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button type="button" id="btnSaveCode" class="btn btn-secondary" onclick="saveCurrentCode()">
+        <button type="button" id="btnSaveCode" class="btn btn-primary" onclick="saveCurrentCode()">
           <i class="fas fa-save"></i> Lưu thay đổi
         </button>
         <button type="button" id="btnApproveCode" class="btn btn-success" onclick="approveCurrentCode()">
@@ -619,9 +802,19 @@
 <script>
   const examSetId = {{ exam_set.id }};
   const examSetIsLinked = {{ exam_set_is_linked|yesno:"true,false" }};
+
+  const examSetBarem = {
+    easy: {{ exam_set.easy_pool_size|default:0 }},
+    medium: {{ exam_set.medium_pool_size|default:0 }},
+    hard: {{ exam_set.hard_pool_size|default:0 }}
+  };
+
+  let examSetStatus = "{{ exam_set.status }}";
   let examCodes = {{ exam_codes_json|safe }};
   let currentCodeId = null;
   let pendingAction = null;
+  let selectedCodeIds = new Set();
+  let isCreatingNewCode = false;
 
   function getCookie(name) {
     const cookies = document.cookie ? document.cookie.split(';') : [];
@@ -650,13 +843,19 @@
     toast.innerHTML = `<div>${escapeHtml(message)}</div><button type="button"><i class="fas fa-xmark"></i></button>`;
     toast.querySelector('button').onclick = () => toast.remove();
     stack.appendChild(toast);
-    setTimeout(() => toast.remove(), 3500);
+    setTimeout(() => toast.remove(), 5000);
   }
 
   function statusBadge(code) {
     return code.is_approved
       ? '<span class="pill pill-approved">ĐÃ DUYỆT</span>'
       : '<span class="pill pill-draft">CHƯA DUYỆT</span>';
+  }
+
+  function usedBadge(code) {
+    return code.is_linked
+      ? '<span class="card-used-note">Đã dùng trong ca thi</span>'
+      : '<span class="card-used-note is-idle">Chưa dùng</span>';
   }
 
   function levelClass(slug) {
@@ -666,315 +865,298 @@
     return '';
   }
 
-  function isLockedCode(code) {
-    return Boolean(code && code.is_linked);
-  }
+  function isLockedCode(code) { return Boolean(code && code.is_linked); }
 
-  function syncDrawerActions(code) {
-    const isLocked = isLockedCode(code);
-    document.getElementById('btnDeleteCode').disabled = isLocked;
-    document.getElementById('btnSaveCode').disabled = isLocked;
-    document.getElementById('btnApproveCode').disabled = isLocked;
-    document.getElementById('btnApproveCode').style.display = isLocked ? 'none' : 'inline-flex';
-  }
-
-  // Hàm xếp thứ tự chung cho cả Tóm tắt ngoài (Preview) và trong Ngăn Kéo (Drawer)
   function sortExamItems(items) {
     if (!items || !items.length) return [];
-
-    let easys = items.filter(i => i.slug === 'easy');
-    let mediums = items.filter(i => i.slug === 'medium');
-    let hards = items.filter(i => i.slug === 'hard');
-    let others = items.filter(i => !['easy', 'medium', 'hard'].includes(i.slug));
-
-    let sortedItems = [];
-
-    // Đảm bảo thứ tự: 1 Dễ, 2+3 Trung Bình, 4 Khó
+    const easys = items.filter((item) => item.slug === 'easy');
+    const mediums = items.filter((item) => item.slug === 'medium');
+    const hards = items.filter((item) => item.slug === 'hard');
+    const others = items.filter((item) => !['easy', 'medium', 'hard'].includes(item.slug));
+    const sortedItems = [];
     if (easys.length > 0) sortedItems.push(easys.shift());
     if (mediums.length > 0) sortedItems.push(mediums.shift());
     if (mediums.length > 0) sortedItems.push(mediums.shift());
     if (hards.length > 0) sortedItems.push(hards.shift());
-
-    // Các câu dư / ngoại lệ nhét xuống dưới cùng
     sortedItems.push(...easys, ...mediums, ...hards, ...others);
     return sortedItems;
+  }
+
+  function getCodeById(codeId) { return examCodes.find((item) => item.id === codeId) || null; }
+
+  function upsertExamCode(updatedCode) {
+    const index = examCodes.findIndex((item) => item.id === updatedCode.id);
+    if (index >= 0) examCodes[index] = updatedCode;
+    else examCodes.push(updatedCode);
+    examCodes.sort((left, right) => ((left.code_number || 0) - (right.code_number || 0)) || (left.id - right.id));
+  }
+
+  function updateSelectionState() {
+    const meta = document.getElementById('selectedCodesMeta');
+    const selectAll = document.getElementById('selectAllCodes');
+    const bulkBar = document.getElementById('bulkBar');
+    const selectedCount = document.getElementById('selectedCount');
+    const selectableIds = examCodes.filter((code) => !code.is_linked).map((code) => code.id);
+    selectedCodeIds = new Set(Array.from(selectedCodeIds).filter((id) => selectableIds.includes(id)));
+    const count = selectedCodeIds.size;
+    if (selectedCount) selectedCount.textContent = count;
+    if (bulkBar) bulkBar.classList.toggle('hidden', examSetIsLinked || count === 0);
+    if (selectAll) {
+      const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedCodeIds.has(id));
+      selectAll.checked = allSelected;
+      selectAll.indeterminate = count > 0 && !allSelected;
+      selectAll.disabled = examSetIsLinked || !selectableIds.length;
+    }
   }
 
   function renderCards() {
     const grid = document.getElementById('cardGrid');
     grid.innerHTML = '';
-
-    examCodes.forEach(code => {
+    examCodes.forEach((code) => {
       const card = document.createElement('div');
-      card.className = 'card';
-
-      // Sắp xếp items để làm Preview
-      const sortedItems = sortExamItems(code.items);
-
-      // Chỉ lấy tối đa 4 câu đầu để hiển thị preview
-      const previewItems = sortedItems.slice(0, 4);
-      const previewHtml = previewItems.map((item, index) => `
+      card.className = `card card-openable${selectedCodeIds.has(code.id) ? ' is-selected' : ''}`;
+      const sortedItems = sortExamItems(code.items).slice(0, 4);
+      const previewHtml = sortedItems.map((item, index) => `
         <div class="preview-item">
-          <div class="preview-label">Câu ${index + 1} (${escapeHtml(item.label || '')})</div>
+          <div class="preview-label">Câu ${index + 1} (${escapeHtml(item.label)})</div>
           <div class="preview-text">${escapeHtml(item.content || 'Chưa có nội dung')}</div>
         </div>
       `).join('');
-
       card.innerHTML = `
         <div class="card-head">
-          <div>
-            <div class="card-sub">Mã đề</div>
-            <div class="card-title">${escapeHtml(code.code_name)}</div>
+          <div class="card-head-main">
+            <label class="card-select" data-ignore-card-click>
+              <input type="checkbox" data-select-code="${code.id}" ${selectedCodeIds.has(code.id) ? 'checked' : ''} ${examSetIsLinked || code.is_linked ? 'disabled' : ''}>
+              <span>Chọn</span>
+            </label>
+            <div><div class="card-sub">Mã đề</div><div class="card-title">${escapeHtml(code.code_name)}</div></div>
           </div>
           <div class="card-actions">
-            <button type="button" class="icon-btn" title="${code.is_linked ? 'Xem chi tiết' : 'Xem / chỉnh sửa'}" onclick="openDrawer(${code.id})">
-              <i class="fas fa-eye"></i>
-            </button>
-            <button type="button" class="icon-btn" title="Xóa" onclick="openDeleteCodeModal(${code.id})" ${code.is_linked ? 'disabled' : ''}>
+            <button type="button" class="icon-btn" data-ignore-card-click data-delete-code="${code.id}" title="Xóa" ${code.is_linked ? 'disabled' : ''}>
               <i class="fas fa-trash"></i>
             </button>
           </div>
         </div>
-        <div class="card-body">
-          ${previewHtml || '<div class="empty-questions">Mã đề chưa có câu hỏi</div>'}
-        </div>
-        <div class="card-foot">${statusBadge(code)}</div>
+        <div class="card-body">${previewHtml || '<div class="empty-questions">Mã đề chưa có câu hỏi</div>'}</div>
+        <div class="card-foot"><div>${usedBadge(code)}</div><div>${statusBadge(code)}</div></div>
       `;
-
+      card.addEventListener('click', (e) => { if (!e.target.closest('[data-ignore-card-click]')) openDrawer(code.id); });
+      const cb = card.querySelector('[data-select-code]');
+      if (cb) cb.addEventListener('change', () => { if (cb.checked) selectedCodeIds.add(code.id); else selectedCodeIds.delete(code.id); renderCards(); });
+      const del = card.querySelector('[data-delete-code]');
+      if (del) del.addEventListener('click', () => openDeleteCodeModal(code.id));
       grid.appendChild(card);
     });
+    updateExamSetSummary();
+  }
+
+  function updateExamSetSummary() {
+    const total = examCodes.length;
+    const approved = examCodes.filter(c => c.is_approved).length;
+    const used = examCodes.filter(c => c.is_linked).length;
+    document.getElementById('summaryTotalCodes').textContent = total;
+    document.getElementById('summaryApprovedCodes').textContent = approved;
+    document.getElementById('summaryUsedCodes').textContent = used;
+    const pub = document.getElementById('btnPublishExamSet');
+    if (pub) pub.disabled = examSetIsLinked || !total || approved !== total;
+    updateSelectionState();
+  }
+
+  function validateDrawerForm() {
+    const saveBtn = document.getElementById('btnSaveCode');
+    const approveBtn = document.getElementById('btnApproveCode');
+    if (!saveBtn || !approveBtn) return;
+
+    const textareas = Array.from(document.querySelectorAll('#questionEditorList textarea'));
+    const allFilled = textareas.every(ta => ta.value.trim() !== '');
+
+    const isValid = (allFilled && textareas.length > 0);
+    // Nếu mã đề không bị khóa thì mới mở khóa nút lưu
+    if (!saveBtn.hasAttribute('data-locked')) {
+        saveBtn.disabled = !isValid;
+    }
+    if (!approveBtn.hasAttribute('data-locked')) {
+        approveBtn.disabled = !isValid;
+    }
   }
 
   function openDrawer(codeId) {
-    currentCodeId = codeId;
-    const code = examCodes.find(item => item.id === codeId);
-    if (!code) return;
-
-    document.getElementById('drawerTitle').textContent = code.is_linked
-      ? `Xem Mã đề: ${code.code_name}`
-      : `Biên tập Mã đề: ${code.code_name}`;
-    syncDrawerActions(code);
-
+    currentCodeId = codeId; isCreatingNewCode = (codeId === null);
     const container = document.getElementById('questionEditorList');
     container.innerHTML = '';
 
-    if (!code.items || !code.items.length) {
-      container.innerHTML = '<div class="empty-questions">Mã đề chưa có câu hỏi để biên tập.</div>';
-      document.getElementById('drawer').classList.add('show');
-      return;
+    if (isCreatingNewCode) {
+        document.getElementById('drawerTitle').textContent = "Soạn thảo mã đề mới";
+        syncDrawerActions(null);
+        let index = 1;
+        ['easy', 'medium', 'hard'].forEach(diff => {
+            const count = examSetBarem[diff];
+            const label = (diff === 'easy' ? 'Dễ' : (diff === 'medium' ? 'Trung bình' : 'Khó'));
+            for(let i=0; i<count; i++) {
+                const block = document.createElement('div'); block.className = 'question-block';
+                block.innerHTML = `<label><span>Câu hỏi ${String(index).padStart(2, '0')}</span><span class="question-meta"><span class="level-tag level-${diff}">${label}</span></span></label>
+                <textarea class="question-editor-textarea" data-difficulty="${diff.toUpperCase()}" data-display-order="${index}" placeholder="Nhập nội dung câu hỏi..."></textarea>`;
+                container.appendChild(block); index++;
+            }
+        });
+    } else {
+        const code = getCodeById(codeId); if (!code) return;
+        document.getElementById('drawerTitle').textContent = "Biên tập Mã đề: " + code.code_name;
+        syncDrawerActions(code);
+        sortExamItems(code.items).forEach((item, index) => {
+            const block = document.createElement('div'); block.className = 'question-block';
+            block.innerHTML = `<label><span>Câu hỏi ${index+1}</span><span class="level-tag ${levelClass(item.slug)}">${item.label}</span></label>
+            <textarea class="question-editor-textarea" data-item-id="${item.id}" data-difficulty="${item.difficulty}" data-display-order="${index + 1}" ${code.is_linked ? 'readonly' : ''}>${escapeHtml(item.content)}</textarea>`;
+            container.appendChild(block);
+        });
     }
 
-    // Sắp xếp bằng hàm đã định nghĩa
-    let sortedItems = sortExamItems(code.items);
-
-    if (code.is_linked) {
-      const note = document.createElement('div');
-      note.className = 'locked-note';
-      note.textContent = 'Mã đề này đã được sử dụng trong ca thi, chỉ có thể xem và không được phép sửa hoặc xóa.';
-      container.appendChild(note);
-    }
-
-    sortedItems.forEach((item, index) => {
-      const block = document.createElement('div');
-      block.className = 'question-block';
-      block.innerHTML = `
-        <label>
-          <span>Câu hỏi ${String(index + 1).padStart(2, '0')}</span>
-          <span class="question-meta">
-            <span class="level-tag ${levelClass(item.slug)}">${escapeHtml(item.label)}</span>
-            <span class="score-tag">${escapeHtml(item.score)} điểm</span>
-          </span>
-        </label>
-        <textarea
-          class="question-editor-textarea"
-          data-item-id="${item.id}"
-          data-difficulty="${escapeHtml(item.difficulty)}"
-          data-display-order="${index + 1}"
-          ${code.is_linked ? 'readonly' : ''}
-        >${escapeHtml(item.content || '')}</textarea>
-      `;
-      container.appendChild(block);
+    container.querySelectorAll('textarea').forEach(ta => {
+        ta.addEventListener('input', validateDrawerForm);
     });
 
+    validateDrawerForm();
     document.getElementById('drawer').classList.add('show');
   }
 
-  function closeDrawer() {
-    document.getElementById('drawer').classList.remove('show');
-    currentCodeId = null;
-  }
+  function syncDrawerActions(code) {
+    const isLocked = isLockedCode(code);
+    const isApproved = Boolean(code && code.is_approved);
 
-  function openDeleteCodeModal(codeId) {
-    const code = examCodes.find(item => item.id === codeId);
-    if (isLockedCode(code)) {
-      showToast('Mã đề đã được sử dụng trong ca thi, không thể xóa.', true);
-      return;
-    }
-    currentCodeId = codeId;
-    pendingAction = deleteCurrentCode;
-    document.getElementById('confirmTitle').textContent = 'Bạn có chắc chắn muốn xóa mã đề này?';
-    document.getElementById('confirmMessage').textContent = 'Mã đề được xóa sẽ không thể khôi phục lại';
-    document.getElementById('confirmActionBtn').innerHTML = '<i class="fas fa-trash"></i> Xóa';
-    document.getElementById('confirmModal').classList.add('show');
-  }
+    // Ẩn hoàn toàn nút xóa nếu mã đề đang được sử dụng hoặc đang tạo mới
+    document.getElementById('btnDeleteCode').style.display = (isCreatingNewCode || isLocked ? 'none' : 'inline-flex');
 
-  function confirmDeleteCode() {
-    if (!currentCodeId) return;
-    openDeleteCodeModal(currentCodeId);
-  }
-
-  function closeConfirmModal() {
-    document.getElementById('confirmModal').classList.remove('show');
-    pendingAction = null;
-  }
-
-  document.getElementById('confirmActionBtn').addEventListener('click', async () => {
-    if (typeof pendingAction === 'function') {
-      await pendingAction();
-    }
-    closeConfirmModal();
-  });
-
-  // Tách riêng hàm lưu câu hỏi để dùng chung cho cả nút Lưu và Nút Duyệt
-  async function saveCurrentCode(showSuccessToast = true) {
-    if (!currentCodeId) return false;
-    const code = examCodes.find(item => item.id === currentCodeId);
-    if (isLockedCode(code)) {
-      showToast('Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa.', true);
-      return false;
+    document.getElementById('btnApproveCode').style.display = (isLocked ? 'none' : 'inline-flex');
+    if(isApproved || isLocked) {
+        document.getElementById('btnApproveCode').disabled = true;
+        document.getElementById('btnApproveCode').setAttribute('data-locked', 'true');
+    } else {
+        document.getElementById('btnApproveCode').removeAttribute('data-locked');
     }
 
+    // Khóa hoặc ẩn chức năng lưu nếu đã dùng
+    document.getElementById('btnSaveCode').style.display = (isLocked ? 'none' : 'inline-flex');
+    if (isLocked) {
+        document.getElementById('btnSaveCode').disabled = true;
+        document.getElementById('btnSaveCode').setAttribute('data-locked', 'true');
+    } else {
+        document.getElementById('btnSaveCode').removeAttribute('data-locked');
+    }
+
+    const saveBtn = document.getElementById('btnSaveCode');
+    if (isCreatingNewCode) {
+        saveBtn.classList.remove('btn-secondary');
+        saveBtn.classList.add('btn-primary');
+    } else {
+        saveBtn.classList.add('btn-secondary');
+        saveBtn.classList.remove('btn-primary');
+    }
+  }
+
+  function closeDrawer() { document.getElementById('drawer').classList.remove('show'); currentCodeId = null; isCreatingNewCode = false; }
+  function clearCodeSelection() { selectedCodeIds.clear(); renderCards(); }
+  function openDeleteCodeModal(id) { currentCodeId = id; pendingAction = deleteCurrentCode; document.getElementById('confirmModal').classList.add('show'); }
+  function confirmBulkDeleteSelectedCodes() { pendingAction = deleteSelectedCodes; document.getElementById('confirmModal').classList.add('show'); }
+  function closeConfirmModal() { document.getElementById('confirmModal').classList.remove('show'); }
+  function confirmDeleteCode() { if (currentCodeId) openDeleteCodeModal(currentCodeId); }
+
+  document.getElementById('confirmActionBtn').addEventListener('click', async () => { if (pendingAction) await pendingAction(); closeConfirmModal(); });
+
+  async function saveCurrentCode(showToastMsg = true, shouldClose = true) {
     const textareas = Array.from(document.querySelectorAll('#questionEditorList textarea'));
-    const items = textareas.map((el, index) => ({
-      id: el.dataset.itemId,
-      difficulty: el.dataset.difficulty,
-      display_order: el.dataset.displayOrder,
-      content: el.value
-    }));
+    if (textareas.some(ta => !ta.value.trim())) { showToast("Vui lòng nhập đủ nội dung!", true); return false; }
 
-    const saveResponse = await fetch(`/lecturer/api/exam-code/${currentCodeId}/save/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCookie('csrftoken'),
-      },
-      body: JSON.stringify({ items }),
-    });
+    const originalText = document.getElementById('btnSaveCode').innerHTML;
+    document.getElementById('btnSaveCode').disabled = true;
+    document.getElementById('btnSaveCode').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lưu...';
 
-    const saveData = await saveResponse.json();
-    if (!saveResponse.ok || saveData.status !== 'SUCCESS') {
-      showToast(saveData.message || 'Lưu nội dung thất bại', true);
-      return false;
+    const items = textareas.map(ta => ({ id: ta.dataset.itemId || null, difficulty: ta.dataset.difficulty, display_order: ta.dataset.displayOrder, content: ta.value.trim() }));
+    const url = isCreatingNewCode ? `/lecturer/api/exam-sets/${examSetId}/manual-code/` : `/lecturer/api/exam-code/${currentCodeId}/save/`;
+
+    try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify({ items }) });
+        const data = await res.json();
+        if (data.status === 'SUCCESS') {
+            upsertExamCode(data.exam_code);
+            currentCodeId = data.exam_code.id;
+            isCreatingNewCode = false;
+            renderCards();
+            if (showToastMsg) showToast("Lưu thành công");
+            if (shouldClose) closeDrawer();
+            return true;
+        }
+        showToast(data.message, true);
+    } catch(e) {
+        showToast("Lỗi kết nối", true);
+    } finally {
+        document.getElementById('btnSaveCode').innerHTML = originalText;
+        validateDrawerForm();
     }
-
-    const idx = examCodes.findIndex(item => item.id === currentCodeId);
-    if (idx >= 0 && saveData.exam_code) {
-      examCodes[idx] = saveData.exam_code;
-    }
-
-    // Refresh giao diện Card bên ngoài nhưng không đóng Drawer
-    renderCards();
-
-    if (showSuccessToast) {
-        showToast(saveData.message || 'Đã lưu thay đổi thành công');
-    }
-
-    return true;
+    return false;
   }
 
   async function approveCurrentCode() {
-    if (!currentCodeId) return;
-    const code = examCodes.find(item => item.id === currentCodeId);
-    if (isLockedCode(code)) {
-      showToast('Mã đề đã được sử dụng trong ca thi, không thể chỉnh sửa.', true);
-      return;
-    }
-
-    // 1. Tự động lưu trước khi duyệt
-    const isSaved = await saveCurrentCode(false);
+    const isSaved = await saveCurrentCode(false, false);
     if (!isSaved) return;
 
-    // 2. Gọi API Duyệt
-    const response = await fetch(`/lecturer/api/exam-code/${currentCodeId}/approve/`, {
-      method: 'POST',
-      headers: {
-        'X-CSRFToken': getCookie('csrftoken'),
-      },
-    });
+    const originalText = document.getElementById('btnApproveCode').innerHTML;
+    document.getElementById('btnApproveCode').disabled = true;
+    document.getElementById('btnApproveCode').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang duyệt...';
 
-    const data = await response.json();
-    if (!response.ok || data.status !== 'SUCCESS') {
-      showToast(data.message || 'Duyệt mã đề thất bại', true);
-      return;
+    try {
+        const res = await fetch(`/lecturer/api/exam-code/${currentCodeId}/approve/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+        const data = await res.json();
+        if (data.status === 'SUCCESS') {
+            upsertExamCode(data.exam_code);
+            renderCards();
+            showToast("Đã lưu và duyệt mã đề thành công.");
+            closeDrawer();
+
+            if (data.exam_set_published) {
+                showToast("Tất cả mã đề đã duyệt, bộ đề tự động chuyển sang ĐÃ DUYỆT.");
+                setTimeout(() => location.reload(), 1500);
+            }
+        } else {
+            showToast(data.message, true);
+        }
+    } catch(e) {
+        showToast("Lỗi khi duyệt", true);
+    } finally {
+        document.getElementById('btnApproveCode').innerHTML = originalText;
     }
+  }
 
-    const idx = examCodes.findIndex(item => item.id === currentCodeId);
-    if (idx >= 0 && data.exam_code) {
-      examCodes[idx] = data.exam_code;
-    }
-
-    renderCards();
-    closeDrawer();
-    showToast(data.message || 'Đã lưu và duyệt mã đề thành công');
+  async function bulkApproveSelectedCodes() {
+    const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/approve-codes/`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify({ exam_code_ids: Array.from(selectedCodeIds) }) });
+    if (res.ok) { location.reload(); }
   }
 
   async function deleteCurrentCode() {
-    if (!currentCodeId) return;
-    const code = examCodes.find(item => item.id === currentCodeId);
-    if (isLockedCode(code)) {
-      showToast('Mã đề đã được sử dụng trong ca thi, không thể xóa.', true);
-      return;
-    }
+    const res = await fetch(`/lecturer/api/exam-code/${currentCodeId}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
+    if (res.ok) { examCodes = examCodes.filter(c => c.id !== currentCodeId); renderCards(); closeDrawer(); }
+  }
 
-    const response = await fetch(`/lecturer/api/exam-code/${currentCodeId}/delete/`, {
-      method: 'POST',
-      headers: {
-        'X-CSRFToken': getCookie('csrftoken'),
-      },
-    });
-
-    const data = await response.json();
-    if (!response.ok || data.status !== 'SUCCESS') {
-      showToast(data.message || 'Xóa mã đề thất bại', true);
-      return;
-    }
-
-    if (data.deleted_exam_set) {
-      showToast(data.message || 'Xóa mã đề thành công');
-      window.location.href = '{% url "qna:lecturer_exam_codes_screen" %}';
-      return;
-    }
-
-    examCodes = examCodes.filter(item => item.id !== currentCodeId);
-    renderCards();
-    closeDrawer();
-    showToast(data.message || 'Xóa mã đề thành công');
+  async function deleteSelectedCodes() {
+    for (let id of selectedCodeIds) await fetch(`/lecturer/api/exam-code/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
+    location.reload();
   }
 
   async function publishExamSet() {
-    if (examSetIsLinked) {
-      showToast('Bộ đề đã được sử dụng trong ca thi, không thể chỉnh sửa.', true);
-      return;
-    }
-
-    const response = await fetch(`/lecturer/api/exam-sets/${examSetId}/publish/`, {
-      method: 'POST',
-      headers: {
-        'X-CSRFToken': getCookie('csrftoken'),
-      },
-    });
-
-    const data = await response.json();
-    if (!response.ok || data.status !== 'SUCCESS') {
-      showToast(data.message || 'Lưu bộ đề không thành công', true);
-      return;
-    }
-
-    showToast(data.message || 'Lưu bộ đề thành công !');
-    setTimeout(() => {
-      window.location.href = data.redirect_url || '{% url "qna:lecturer_exam_codes_screen" %}';
-    }, 500);
+    const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/publish/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
+    const data = await res.json();
+    if (data.status === 'SUCCESS') window.location.href = data.redirect_url;
   }
+
+  document.getElementById('selectAllCodes').addEventListener('change', (e) => {
+    const ids = examCodes.filter(c => !c.is_linked).map(c => c.id);
+    if (e.target.checked) selectedCodeIds = new Set(ids); else selectedCodeIds.clear();
+    renderCards();
+  });
+
+  function createManualCode() { openDrawer(null); }
 
   renderCards();
 </script>

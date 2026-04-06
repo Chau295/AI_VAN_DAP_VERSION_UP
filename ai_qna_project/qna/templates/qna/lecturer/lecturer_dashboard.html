@@ -15,12 +15,13 @@
             <h3 class="text-xl font-bold text-gray-800">{{ subject.name }}</h3>
             <p class="text-gray-500 text-sm mt-1 mb-4">Mã HP: {{ subject.subject_code }}</p>
 
-            <div class="text-sm text-gray-600 mb-4 flex-grow">
-                <p><i class="fas fa-book mr-2"></i><strong>10</strong> kỳ thi đã tạo</p>
-                <p><i class="fas fa-users mr-2"></i><strong>50</strong> sinh viên tham gia</p>
+            <div class="text-sm text-gray-600 mb-4 flex-grow space-y-2">
+                <p><i class="fas fa-book mr-2"></i><strong>{{ subject.created_exam_count|default:0 }}</strong> kỳ thi đã tạo</p>
+                <p><i class="fas fa-users mr-2"></i><strong>{{ subject.participating_student_count|default:0 }}</strong> sinh viên tham gia</p>
             </div>
 
-            <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" class="w-full text-center block bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition-colors">
+            <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}"
+               class="w-full text-center block bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition-colors">
                 Quản lý môn học
             </a>
         </div>

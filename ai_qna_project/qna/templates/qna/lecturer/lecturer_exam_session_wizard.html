@@ -1,0 +1,2241 @@
+{% extends "base.html" %}
+
+{% block title %}{{ screen_mode_label }}{% endblock %}
+
+{% block content %}
+<style>
+  :root {
+    --es-bg: #f4f7fb;
+    --es-card: #ffffff;
+    --es-border: #e3eaf4;
+    --es-text: #14213a;
+    --es-muted: #73829b;
+    --es-blue: #2348a5;
+    --es-blue-dark: #19357c;
+    --es-green: #16a34a;
+    --es-green-soft: #dcfce7;
+    --es-red: #dc2626;
+    --es-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    --es-radius-xl: 26px;
+    --es-radius-lg: 20px;
+    --es-radius-md: 16px;
+  }
+
+  .es-page { min-height: calc(100vh - 5rem); margin: -2.5rem; background: var(--es-bg); }
+  .es-breadcrumb { padding: 1.45rem 2rem; border-bottom: 1px solid var(--es-border); background: #fff; color: var(--es-muted); font-size: 0.95rem; font-weight: 600; }
+  .es-shell { max-width: 1240px; margin: 0 auto; padding: 1.9rem 2rem 2.5rem; }
+  .es-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+  .es-title h1 { margin: 0; font-size: 2rem; font-weight: 800; color: var(--es-text); }
+  .es-title p { margin: 0.45rem 0 0; color: var(--es-muted); }
+  .es-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.55rem; height: 44px; padding: 0 1rem; border-radius: 14px; border: 1px solid transparent; font-weight: 700; text-decoration: none; cursor: pointer; transition: 0.18s ease; }
+  .es-btn:hover { transform: translateY(-1px); }
+  .es-btn-primary { background: var(--es-blue); color: #fff; box-shadow: 0 12px 24px rgba(35, 72, 165, 0.2); }
+  .es-btn-primary:hover { background: var(--es-blue-dark); color: #fff; }
+  .es-btn-secondary { background: #fff; color: #475569; border-color: #d5dfeb; }
+  .es-btn-ghost { background: #eef3fb; color: var(--es-blue); }
+  .es-btn-danger { background: #fff; color: var(--es-red); border-color: #fecaca; }
+  .es-header-back { background: #6b7280; color: #fff; border-color: #6b7280; box-shadow: none; }
+  .es-header-back:hover { background: #596273; color: #fff; transform: translateY(-1px); }
+  .es-btn[disabled] { opacity: 0.45; cursor: not-allowed; transform: none; }
+  .es-stepper, .es-card { background: var(--es-card); border: 1px solid var(--es-border); border-radius: var(--es-radius-xl); box-shadow: var(--es-shadow); overflow: hidden; }
+  .es-stepper { padding: 1.75rem 2rem; margin-bottom: 1.35rem; }
+  .es-stepper-track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  .es-step { display: flex; flex-direction: column; align-items: center; gap: 0.7rem; color: var(--es-muted); position: relative; }
+  .es-step::before { content: ""; position: absolute; top: 22px; left: calc(-50% + 22px); width: calc(100% - 44px); height: 2px; background: #e6edf7; }
+  .es-step:first-child::before { display: none; }
+  .es-step-number { width: 44px; height: 44px; border-radius: 999px; border: 2px solid #d6e1f0; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: #fff; z-index: 1; }
+  .es-step.active, .es-step.done { color: var(--es-text); }
+  .es-step.active .es-step-number, .es-step.done .es-step-number { background: var(--es-blue); border-color: var(--es-blue); color: #fff; }
+  .es-step.done::before, .es-step.active::before { background: rgba(35, 72, 165, 0.38); }
+  .es-step-label { font-size: 0.97rem; font-weight: 700; }
+  .es-card + .es-card { margin-top: 1.35rem; }
+  .es-card-head { padding: 1.5rem 1.7rem 1.25rem; border-bottom: 1px solid #edf2f8; }
+  .es-card-title { margin: 0; font-size: 1.75rem; font-weight: 800; color: var(--es-text); }
+  .es-card-subtitle { margin-top: 0.4rem; color: var(--es-muted); }
+  .es-card-body { padding: 1.5rem 1.7rem 1.7rem; }
+  .es-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem 1.2rem; }
+  .es-col-6 { grid-column: span 6; }
+  .es-col-4 { grid-column: span 4; }
+  .es-col-3 { grid-column: span 3; }
+  .es-col-9 { grid-column: span 9; }
+  .es-col-12 { grid-column: span 12; }
+  .es-field label { display: block; margin-bottom: 0.48rem; font-size: 0.9rem; font-weight: 700; color: #334155; }
+  .es-required { color: var(--es-red); }
+  .es-input, .es-select, .es-textarea { width: 100%; border-radius: 14px; border: 1px solid #d8e3ef; background: #fff; color: var(--es-text); font-size: 0.98rem; outline: none; transition: 0.18s ease; }
+  .es-input, .es-select { height: 48px; padding: 0 0.95rem; }
+  .es-textarea { min-height: 140px; padding: 0.9rem 1rem; resize: vertical; }
+  .es-input:focus, .es-select:focus, .es-textarea:focus { border-color: #8fb5ff; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12); }
+  .es-input[readonly], .es-select[disabled], .es-textarea[readonly] { background: #f8fafc; color: #64748b; }
+  .es-inline-time { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.65rem; align-items: center; }
+  .es-inline-time span { text-align: center; color: var(--es-muted); font-weight: 700; }
+  .es-banner { margin-bottom: 1.35rem; padding: 1rem 1.1rem; border-radius: 18px; border: 1px solid #bfdbfe; background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%); color: #1d4ed8; font-weight: 600; }
+  .es-section-note { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+  .es-section-note strong { color: var(--es-text); }
+  .es-section-note span { color: var(--es-muted); }
+  .es-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  .es-summary-item { border: 1px solid var(--es-border); border-radius: 18px; background: linear-gradient(180deg, #fff 0%, #f9fbff 100%); padding: 1rem 1.1rem; }
+  .es-summary-item small { display: block; color: var(--es-muted); font-weight: 600; }
+  .es-summary-item strong { display: block; margin-top: 0.35rem; font-size: 1.5rem; color: var(--es-text); }
+  .es-table-wrap { border: 1px solid var(--es-border); border-radius: 18px; overflow: hidden; }
+  .es-table { width: 100%; border-collapse: collapse; }
+  .es-table th { padding: 0.95rem 0.9rem; background: #f8fbff; border-bottom: 1px solid var(--es-border); color: #607089; font-size: 0.8rem; font-weight: 800; text-transform: uppercase; text-align: left; }
+  .es-table td { padding: 0.95rem 0.9rem; border-bottom: 1px solid #eef3f9; vertical-align: middle; }
+  .es-table tbody tr:last-child td { border-bottom: 0; }
+  .es-table tbody tr:hover td { background: #fbfdff; }
+  .es-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.75rem; border-radius: 999px; background: #eff6ff; color: #2563eb; font-size: 0.84rem; font-weight: 700; }
+  .es-status-pill { display: inline-flex; align-items: center; justify-content: center; padding: 0.34rem 0.72rem; border-radius: 999px; font-size: 0.82rem; font-weight: 700; }
+  .es-status-pill.approved { background: var(--es-green-soft); color: var(--es-green); }
+  .es-empty { padding: 2.6rem 1rem; text-align: center; color: var(--es-muted); }
+  .es-empty i { display: block; margin-bottom: 0.7rem; color: #c0ccdc; font-size: 2rem; }
+  .es-room-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .es-room-card { border: 1px solid var(--es-border); border-radius: 20px; background: linear-gradient(180deg, #fff 0%, #f9fbff 100%); overflow: hidden; }
+  .es-room-card-head { padding: 1rem 1rem 0.8rem; border-bottom: 1px solid #edf2f8; display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem; }
+  .es-room-card-title { font-size: 1.1rem; font-weight: 800; color: var(--es-text); }
+  .es-room-card-meta { margin-top: 0.2rem; color: var(--es-muted); font-size: 0.84rem; }
+  .es-room-card-body { padding: 0.9rem 1rem 1rem; }
+  .es-room-list { display: grid; gap: 0.55rem; }
+  .es-room-row { display: grid; grid-template-columns: 110px 1fr 88px; gap: 0.65rem; align-items: center; padding: 0.52rem 0.7rem; border-radius: 12px; background: #fff; border: 1px solid #edf2f7; font-size: 0.92rem; }
+  .es-room-row strong { color: var(--es-text); }
+  .es-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.42); display: none; align-items: center; justify-content: center; padding: 1.5rem; z-index: 80; }
+  .es-modal-backdrop.open { display: flex; }
+  .es-modal { width: min(980px, 100%); max-height: calc(100vh - 3rem); overflow: auto; background: #fff; border-radius: 24px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25); }
+  .es-modal-head { padding: 1.35rem 1.5rem 1rem; border-bottom: 1px solid #edf2f8; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  .es-modal-title { margin: 0; font-size: 1.8rem; font-weight: 800; color: var(--es-text); }
+  .es-modal-close { border: 0; background: transparent; color: #64748b; font-size: 1.5rem; cursor: pointer; }
+  .es-modal-body { padding: 1.35rem 1.5rem 1.5rem; }
+  .es-modal-actions { padding: 1rem 1.5rem 1.5rem; display: flex; justify-content: flex-end; gap: 0.7rem; }
+  .es-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.9rem; margin-bottom: 1rem; }
+  .es-selected-tags { display: flex; gap: 0.45rem; flex-wrap: wrap; margin-top: 0.85rem; }
+  .es-selected-tag { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #2563eb; font-size: 0.82rem; font-weight: 700; }
+  .es-actions { margin-top: 1.4rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .es-actions-right { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .es-toast-stack { position: fixed; top: 1.25rem; right: 1.25rem; display: grid; gap: 0.7rem; z-index: 90; }
+  .es-toast { min-width: 320px; max-width: 420px; padding: 0.95rem 1rem; border-radius: 16px; border-left: 4px solid var(--es-blue); background: #fff; color: var(--es-text); box-shadow: var(--es-shadow); }
+  .es-toast.error { border-left-color: var(--es-red); }
+  .es-toast.success { border-left-color: var(--es-green); }
+  .es-hidden { display: none !important; }
+  .es-toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; border-radius: 2px; }
+  .es-toast button { border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 0.95rem; line-height: 1; }
+  section[data-step-panel="1"] .es-card { max-width: 940px; margin: 0 auto; }
+  section[data-step-panel="1"] .es-card-head { padding: 1.7rem 1.85rem 1.35rem; }
+  section[data-step-panel="1"] .es-card-body { padding: 1.95rem 1.85rem 1.8rem; }
+  section[data-step-panel="1"] .es-grid { gap: 1.35rem 1.45rem; }
+  section[data-step-panel="1"] .es-textarea { min-height: 132px; }
+  section[data-step-panel="1"] .is-optional-hidden { display: none; }
+  section[data-step-panel="2"] .es-summary-grid { grid-template-columns: 1fr; }
+  section[data-step-panel="2"] .es-summary-item:nth-child(n+2) { display: none; }
+  section[data-step-panel="2"] .es-summary-item strong { font-size: 1.35rem; }
+  section[data-step-panel="2"] .es-summary-item { padding: 1.2rem 1.25rem; }
+  #addRoomButton { background: transparent; box-shadow: none; border: 0; color: var(--es-blue); padding: 0; height: auto; }
+  #addRoomButton:hover { transform: none; color: var(--es-blue-dark); }
+  #randomAssignButton { height: 38px; padding: 0 1rem; border-radius: 999px; background: #eef3fb; color: var(--es-blue); box-shadow: none; }
+  #randomAssignButton:hover { background: #e6eefb; color: var(--es-blue-dark); }
+  #saveDraftButton { background: #9aa8bd; color: #fff; border-color: #9aa8bd; }
+  #saveDraftButton:hover { background: #8594aa; color: #fff; }
+  #wizardNextButton, #wizardSubmitButton { min-width: 132px; }
+  .es-room-action-link { color: var(--es-blue); text-decoration: underline; font-weight: 700; border: 0; background: transparent; padding: 0; }
+  .es-room-add-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-width: 118px; height: 38px; border-radius: 10px; border: 0; background: var(--es-blue); color: #fff; font-weight: 700; box-shadow: 0 10px 20px rgba(35, 72, 165, 0.18); }
+  .es-room-add-btn:hover { background: var(--es-blue-dark); }
+  .es-room-delete-btn { border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 1rem; }
+  .es-room-delete-btn:hover { color: var(--es-red); }
+  .es-assign-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 1rem; margin-bottom: 1.3rem; }
+  .es-config-card { border: 1px solid var(--es-border); border-radius: 20px; background: linear-gradient(180deg, #fff 0%, #f9fbff 100%); box-shadow: var(--es-shadow); }
+  .es-config-card-head { padding: 1rem 1.15rem 0.8rem; color: var(--es-text); font-size: 1.25rem; font-weight: 800; }
+  .es-config-card-body { padding: 0 1.15rem 1.15rem; }
+  .es-config-stat { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; color: var(--es-muted); }
+  .es-config-stat strong { color: var(--es-text); font-size: 1.6rem; line-height: 1; }
+  .es-subject-card { margin-bottom: 1.3rem; padding: 1.25rem 1.4rem; }
+  .es-subject-card strong { display: block; color: var(--es-text); font-size: 1.8rem; font-weight: 800; }
+  .es-subject-card small { display: block; margin-top: 0.45rem; color: var(--es-muted); font-size: 0.96rem; }
+  .es-source-count { display: inline-flex; align-items: center; justify-content: center; min-width: 78px; height: 34px; padding: 0 0.8rem; border-radius: 999px; background: #eef3fb; color: var(--es-blue); font-size: 0.9rem; font-weight: 800; }
+  .es-room-students-head,
+  .es-room-student-row { display: grid; grid-template-columns: 1fr 1.7fr 0.8fr; gap: 0.65rem; align-items: center; }
+  .es-room-students-head { padding: 0 0.2rem 0.55rem; color: #64748b; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; }
+  .es-room-student-row { margin-top: 0.4rem; padding: 0.45rem 0.6rem; border-radius: 10px; background: #f8fafc; }
+  .es-room-code-badge { justify-self: end; display: inline-flex; align-items: center; justify-content: center; min-width: 48px; padding: 0.2rem 0.5rem; border-radius: 8px; background: #e8f0ff; color: var(--es-blue); font-weight: 800; }
+  .es-room-more { margin-top: 0.55rem; color: var(--es-muted); font-size: 0.85rem; }
+  .es-room-count-field { max-width: 180px; margin: 0; }
+  .es-room-count-input { height: 40px; text-align: center; font-weight: 700; }
+  .es-room-students-list { display: grid; gap: 0.45rem; max-height: 362px; overflow-y: auto; padding-right: 0.25rem; }
+  .es-room-students-list::-webkit-scrollbar { width: 8px; }
+  .es-room-students-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+  .es-confirm-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.46); display: none; align-items: center; justify-content: center; padding: 1.5rem; z-index: 85; }
+  .es-confirm-backdrop.open { display: flex; }
+  .es-confirm-box { width: min(640px, 100%); background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25); padding: 2.3rem 2rem 2rem; text-align: center; }
+  .es-confirm-title { margin: 0; color: #666b73; font-size: 1.42rem; font-weight: 500; line-height: 1.25; }
+  .es-confirm-description { margin-top: 0.95rem; color: #9aa2af; font-size: 1rem; line-height: 1.5; }
+  .es-confirm-actions { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.8rem; flex-wrap: wrap; }
+  .es-confirm-actions .es-btn-primary { background: linear-gradient(180deg, #5f2bd8 0%, #4720b7 100%); box-shadow: 0 14px 28px rgba(79, 33, 191, 0.24); }
+  .es-confirm-actions .es-btn-primary:hover { background: linear-gradient(180deg, #5524c8 0%, #3f1aa6 100%); }
+
+  @media (max-width: 1024px) {
+    .es-page { margin: -1.5rem; }
+    .es-shell { padding: 1.25rem; }
+    .es-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .es-col-6, .es-col-4, .es-col-3, .es-col-9, .es-col-12 { grid-column: span 6; }
+    .es-room-grid, .es-summary-grid, .es-filter-grid { grid-template-columns: 1fr; }
+    .es-assign-layout { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .es-breadcrumb { padding: 1rem 1.1rem; }
+    .es-shell { padding: 1rem; }
+    .es-header { flex-direction: column; }
+    .es-stepper { padding: 1.1rem 1rem; }
+    .es-card-head, .es-card-body { padding-left: 1rem; padding-right: 1rem; }
+    .es-room-row { grid-template-columns: 1fr; }
+    .es-actions { flex-direction: column; align-items: stretch; }
+    .es-actions-right { width: 100%; }
+    .es-actions-right .es-btn { flex: 1 1 auto; }
+    .es-modal-backdrop { padding: 0.75rem; }
+  }
+</style>
+
+<div class="es-page">
+  <div class="es-breadcrumb">Quản lý ca thi &nbsp;&gt;&nbsp; {{ screen_mode_label }}</div>
+
+  <div class="es-shell">
+    <div class="es-header">
+      <div class="es-title">
+        <h1>{{ screen_mode_label }}</h1>
+        <p>Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.</p>
+      </div>
+      <a class="es-btn es-btn-secondary" href="{% url 'qna:lecturer_exam_sessions_list' %}">
+        <i class="fas fa-arrow-left"></i>
+        Quay lại danh sách ca thi
+      </a>
+    </div>
+
+    {% if screen_mode == "view" %}
+      <div class="es-banner">
+        Ca thi này đang ở chế độ xem. Nếu ca thi đã được sử dụng hoặc đã tới giờ thi, hệ thống sẽ khóa chỉnh sửa để tránh sai lệch dữ liệu.
+      </div>
+    {% endif %}
+
+    <div class="es-stepper">
+      <div class="es-stepper-track">
+        <div class="es-step active" data-step-marker="1">
+          <span class="es-step-number">1</span>
+          <span class="es-step-label">Thông tin chung</span>
+        </div>
+        <div class="es-step" data-step-marker="2">
+          <span class="es-step-number">2</span>
+          <span class="es-step-label">Phòng thi &amp; Trộn</span>
+        </div>
+        <div class="es-step" data-step-marker="3">
+          <span class="es-step-number">3</span>
+          <span class="es-step-label">Phân bố sinh viên</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="es-card" data-step-panel="1">
+      <div class="es-card-head">
+        <h2 class="es-card-title">Thông tin chung</h2>
+        <div class="es-card-subtitle">Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.</div>
+      </div>
+      <div class="es-card-body">
+        <div class="es-grid">
+          <div class="es-field es-col-6">
+            <label for="sessionGroupName">Tên kỳ thi <span class="es-required">*</span></label>
+            <input id="sessionGroupName" class="es-input" type="text" placeholder="Nhập tên kỳ thi (ví dụ: Thi vấn đáp)">
+          </div>
+          <div class="es-field es-col-3">
+            <label for="sessionAcademicYear">Năm học <span class="es-required">*</span></label>
+            <input id="sessionAcademicYear" class="es-input" type="text" placeholder="Ví dụ: 2024-2025">
+          </div>
+          <div class="es-field es-col-3">
+            <label for="sessionSemester">Học kì <span class="es-required">*</span></label>
+            <select id="sessionSemester" class="es-select">
+              <option value="HK1">HK1</option>
+              <option value="HK2">HK2</option>
+              <option value="SUMMER">HK hè</option>
+            </select>
+          </div>
+            <div class="es-field es-col-6">
+                <label for="sessionSubjectSelect">Môn học <span class="es-required">*</span></label>
+                {% if screen_mode == "create" %}
+                  <select id="sessionSubjectSelect" class="es-select">
+                    {% for subject in subjects %}
+                      <option
+                        value="{{ subject.id }}"
+                        data-code="{{ subject.subject_code }}"
+                        {% if selected_subject and subject.id == selected_subject.id %}selected{% endif %}
+                      >
+                        {{ subject.name }} ({{ subject.subject_code }})
+                      </option>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  <input class="es-input" type="text" value="{{ selected_subject.name }}" readonly>
+                {% endif %}
+          </div>
+
+          <div class="es-field es-col-6">
+            <label for="sessionSubjectCode">Mã môn học</label>
+            {% if screen_mode == "create" %}
+              <input id="sessionSubjectCode" class="es-input" type="text" value="{{ selected_subject.subject_code }}" readonly>
+            {% else %}
+              <input class="es-input" type="text" value="{{ selected_subject.subject_code }}" readonly>
+            {% endif %}
+          </div>
+
+          <div class="es-field es-col-6">
+            <label for="sessionExamDate">Ngày diễn ra <span class="es-required">*</span></label>
+            <input id="sessionExamDate" class="es-input" type="date">
+          </div>
+          <div class="es-field es-col-6">
+            <label>Thời gian thi (Bắt đầu - Kết thúc) <span class="es-required">*</span></label>
+            <div class="es-inline-time">
+              <input id="sessionStartTime" class="es-input" type="time">
+              <span>-</span>
+              <input id="sessionEndTime" class="es-input" type="time">
+            </div>
+          </div>
+          <div class="es-field es-col-6">
+            <label for="sessionDuration">Thời gian làm bài (phút) <span class="es-required">*</span></label>
+            <input id="sessionDuration" class="es-input" type="number" min="1" step="1" placeholder="Ví dụ: 90">
+          </div>
+
+          <div class="es-field es-col-6 is-optional-hidden">
+            <label for="sessionPassword">Mật khẩu ca thi</label>
+            <input id="sessionPassword" class="es-input" type="text" placeholder="Để trống nếu không cần">
+          </div>
+          <div class="es-field es-col-6 is-optional-hidden">
+            <label>Trạng thái hiện tại</label>
+            <input id="sessionStatusLabel" class="es-input" type="text" readonly>
+          </div>
+
+          <div class="es-field es-col-12">
+            <label for="sessionDescription">Mô tả kỳ thi</label>
+            <textarea id="sessionDescription" class="es-textarea" placeholder="Nhập mô tả chi tiết về nội dung, quy định của kỳ thi..."></textarea>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="es-card es-hidden" data-step-panel="2">
+      <div class="es-card-head">
+        <h2 class="es-card-title">Phòng thi &amp; Trộn</h2>
+        <div class="es-card-subtitle">Mỗi phòng có thể gán một bộ đề và nhiều mã đề đã duyệt.</div>
+      </div>
+      <div class="es-card-body">
+        <div class="es-summary-grid">
+          <div class="es-summary-item">
+            <small>Môn học</small>
+            <strong>{{ selected_subject.name }}</strong>
+          </div>
+          <div class="es-summary-item">
+            <small>Số phòng thi</small>
+            <strong id="roomCountSummary">0</strong>
+          </div>
+          <div class="es-summary-item">
+            <small>Tổng sức chứa dự kiến</small>
+            <strong id="roomCapacitySummary">0</strong>
+          </div>
+        </div>
+
+        <div class="es-section-note" style="margin-top: 1.3rem;">
+          <div>
+            <strong>Danh sách phân phòng và cấu hình bảo mật</strong><br>
+            <span>Thêm phòng, số lượng sinh viên, mật khẩu phòng và gán bộ đề - mã đề cho từng phòng.</span>
+          </div>
+          <button type="button" id="addRoomButton" class="es-btn es-btn-ghost">
+            <i class="fas fa-plus"></i>
+            Thêm phòng thi
+          </button>
+        </div>
+
+        <div class="es-table-wrap">
+          <table class="es-table">
+            <thead>
+              <tr>
+                <th>Tên phòng</th>
+                <th>Số lượng SV</th>
+                <th>Mật khẩu phòng</th>
+                <th>Bộ đề thi gán cho phòng</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="roomTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="es-card es-hidden" data-step-panel="3">
+      <div class="es-card-head">
+        <h2 class="es-card-title">Phân bố sinh viên</h2>
+        <div class="es-card-subtitle">Chọn nguồn danh sách lớp và random sinh viên vào các phòng theo sức chứa đã cấu hình.</div>
+      </div>
+      <div class="es-card-body">
+        <div class="es-summary-grid">
+          <div class="es-summary-item">
+            <small>Số phòng thi</small>
+            <strong id="assignRoomCount">0</strong>
+          </div>
+          <div class="es-summary-item">
+            <small>Tổng sức chứa</small>
+            <strong id="assignCapacityCount">0</strong>
+          </div>
+          <div class="es-summary-item">
+            <small>Tổng sinh viên đã chọn</small>
+            <strong id="assignStudentCount">0</strong>
+          </div>
+        </div>
+
+        <div class="es-card" style="box-shadow:none; margin-top: 1.3rem;">
+          <div class="es-card-head">
+            <h3 class="es-card-title" style="font-size: 1.3rem;">Nguồn danh sách SV</h3>
+            <div class="es-card-subtitle">Mỗi file đã upload có thể được dùng làm nguồn phục vụ phân bố sinh viên.</div>
+          </div>
+          <div class="es-card-body">
+            <div class="es-grid" style="align-items: end;">
+              <div class="es-field es-col-9">
+                <label for="rosterPicker">Chọn danh sách lớp</label>
+                <select id="rosterPicker" class="es-select"></select>
+              </div>
+              <div class="es-col-3">
+                <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="width: 100%;">
+                  <i class="fas fa-plus"></i>
+                  Thêm nguồn
+                </button>
+              </div>
+            </div>
+
+            <div class="es-table-wrap" style="margin-top: 1rem;">
+              <table class="es-table">
+                <thead>
+                  <tr>
+                    <th>Tên file</th>
+                    <th>Năm học</th>
+                    <th>Học kì</th>
+                    <th>Số SV</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="selectedRosterTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="es-card" style="box-shadow:none; margin-top: 1.3rem;">
+          <div class="es-card-head">
+            <div class="es-section-note" style="margin: 0;">
+              <div>
+                <h3 class="es-card-title" style="font-size: 1.3rem;">Phân bố sinh viên theo phòng</h3>
+                <div class="es-card-subtitle">Hệ thống sẽ random sinh viên từ nguồn đã chọn và gán mã đề theo vòng tròn trong từng phòng.</div>
+              </div>
+              <button type="button" id="randomAssignButton" class="es-btn es-btn-ghost">
+                <i class="fas fa-random"></i>
+                Random lại toàn bộ
+              </button>
+            </div>
+          </div>
+          <div class="es-card-body">
+            <div id="distributionSummary" style="margin-bottom: 1rem; color: var(--es-muted);"></div>
+            <div id="roomAssignmentsGrid" class="es-room-grid"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="es-actions">
+      <button type="button" id="wizardBackButton" class="es-btn es-btn-secondary es-hidden">
+        <i class="fas fa-arrow-left"></i>
+        Quay lại
+      </button>
+      <div class="es-actions-right">
+        <a class="es-btn es-btn-secondary" href="{% url 'qna:lecturer_exam_sessions_list' %}">
+          Hủy bỏ
+        </a>
+        {% if screen_mode != "view" %}
+          <button type="button" id="saveDraftButton" class="es-btn es-btn-secondary">
+            Lưu nháp
+          </button>
+          <button type="button" id="wizardNextButton" class="es-btn es-btn-primary">
+            Tiếp theo
+            <i class="fas fa-arrow-right"></i>
+          </button>
+          <button type="button" id="wizardSubmitButton" class="es-btn es-btn-primary es-hidden">
+            Xác nhận
+          </button>
+        {% else %}
+          <button type="button" id="wizardViewBackButton" class="es-btn es-btn-primary">
+            Quay lại danh sách
+          </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastStack" class="es-toast-stack"></div>
+
+<div id="examPickerBackdrop" class="es-modal-backdrop">
+  <div class="es-modal">
+    <div class="es-modal-head">
+      <div>
+        <h2 class="es-modal-title">Chọn mã đề cho phòng thi</h2>
+        <div class="es-card-subtitle">Chọn bộ đề và các mã đề đã duyệt muốn gán cho phòng hiện tại.</div>
+      </div>
+      <button type="button" class="es-modal-close" id="closeExamPickerButton" aria-label="Đóng">&times;</button>
+    </div>
+    <div class="es-modal-body">
+      <div class="es-summary-grid" style="margin-bottom: 1rem;">
+        <div class="es-summary-item">
+          <small>Phòng thi</small>
+          <strong id="pickerRoomName">-</strong>
+        </div>
+        <div class="es-summary-item">
+          <small>Số lượng SV</small>
+          <strong id="pickerRoomCount">0</strong>
+        </div>
+        <div class="es-summary-item">
+          <small>Số mã đề đã chọn</small>
+          <strong id="pickerSelectedCount">0</strong>
+        </div>
+      </div>
+
+      <div class="es-filter-grid">
+        <div class="es-field">
+          <label for="pickerAcademicYear">Năm học</label>
+          <select id="pickerAcademicYear" class="es-select"></select>
+        </div>
+        <div class="es-field">
+          <label for="pickerSemester">Học kì</label>
+          <select id="pickerSemester" class="es-select"></select>
+        </div>
+        <div class="es-field" style="grid-column: span 2;">
+          <label for="pickerExamSet">Bộ đề</label>
+          <select id="pickerExamSet" class="es-select"></select>
+        </div>
+      </div>
+
+      <div class="es-field" style="margin-bottom: 1rem;">
+        <label for="pickerSearch">Tìm theo mã đề</label>
+        <input id="pickerSearch" class="es-input" type="search" placeholder="Nhập mã đề cần tìm">
+      </div>
+
+      <div class="es-table-wrap">
+        <table class="es-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;"></th>
+              <th>Mã đề</th>
+              <th>Số câu</th>
+              <th>Tổng điểm</th>
+            </tr>
+          </thead>
+          <tbody id="pickerCodeTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="es-selected-tags" id="pickerSelectedTags"></div>
+    </div>
+    <div class="es-modal-actions">
+      <button type="button" class="es-btn es-btn-secondary" id="cancelExamPickerButton">Hủy</button>
+      <button type="button" class="es-btn es-btn-primary" id="confirmExamPickerButton">Xác nhận</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const sessionCatalog = {{ catalog_json }};
+  const sessionInitialState = {{ initial_state_json }};
+  const sessionMode = "{{ screen_mode }}";
+  const sessionListUrl = "{% url 'qna:lecturer_exam_sessions_list' %}";
+  const createSessionUrl = "{% url 'qna:lecturer_create_exam_group_screen' %}";
+  const updateSessionUrlTemplate = "{% url 'qna:lecturer_update_exam_group' 0 %}";
+  const subjectSelect = document.getElementById("sessionSubjectSelect");
+  const subjectCodeInput = document.getElementById("sessionSubjectCode");
+
+  if (subjectSelect && sessionMode === "create") {
+    const syncSubjectCode = () => {
+      const selectedOption = subjectSelect.options[subjectSelect.selectedIndex];
+      if (subjectCodeInput) {
+        subjectCodeInput.value = selectedOption ? selectedOption.dataset.code || "" : "";
+      }
+    };
+
+    syncSubjectCode();
+
+    subjectSelect.addEventListener("change", () => {
+      syncSubjectCode();
+
+      const subjectId = subjectSelect.value;
+      if (!subjectId) return;
+
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("subject_id", subjectId);
+      nextUrl.searchParams.set("mode", "create");
+      nextUrl.searchParams.delete("session_id");
+      nextUrl.searchParams.delete("edit");
+      window.location.href = nextUrl.toString();
+    });
+  }
+
+  const wizardState = {
+    step: 1,
+    sessionId: sessionInitialState.session_id,
+    groupName: sessionInitialState.group_name || "",
+    academicYear: sessionInitialState.academic_year || "",
+    semester: sessionInitialState.semester || "HK1",
+    examDate: sessionInitialState.exam_date || "",
+    startTime: sessionInitialState.start_time || "",
+    endTime: sessionInitialState.end_time || "",
+    durationMinutes: sessionInitialState.duration_minutes || 90,
+    description: sessionInitialState.description || "",
+    examPassword: sessionInitialState.exam_password || "",
+    statusLabel: sessionInitialState.status_label || "Lưu nháp",
+    roomConfigs: (sessionInitialState.room_configs || []).map((room, index) => ({
+      client_id: room.client_id || `room-${index + 1}`,
+      room_name: room.room_name || "",
+      student_count: Number(room.student_count || 0),
+      password: room.password || "",
+      exam_set_id: room.exam_set_id || null,
+      exam_set_name: room.exam_set_name || "",
+      exam_code_ids: Array.isArray(room.exam_code_ids) ? room.exam_code_ids.slice() : [],
+      exam_code_names: Array.isArray(room.exam_code_names) ? room.exam_code_names.slice() : [],
+      assignments: Array.isArray(room.assignments) ? room.assignments.map((item, orderIndex) => ({
+        roster_student_id: item.roster_student_id || null,
+        student_code: item.student_code || "",
+        full_name: item.full_name || "",
+        linked_user_id: item.linked_user_id || null,
+        exam_code_id: item.exam_code_id || null,
+        exam_code_name: item.exam_code_name || "",
+        display_order: item.display_order || orderIndex + 1,
+      })) : [],
+      display_order: room.display_order || index + 1,
+    })),
+    rosterIds: (sessionInitialState.roster_configs || []).map((item) => item.id),
+  };
+
+  let examPickerRoomIndex = null;
+  let examPickerSelection = [];
+  let examPickerOriginalSelection = [];
+  let examPickerOriginalSetId = null;
+  let confirmAction = null;
+
+  let stepPanels;
+  let stepMarkers;
+  let roomTableBody;
+  let selectedRosterTableBody;
+  let roomAssignmentsGrid;
+  let distributionSummary;
+  let rosterPicker;
+  let addRosterButton;
+  let addRoomButton;
+  let randomAssignButton;
+  let wizardBackButton;
+  let wizardNextButton;
+  let wizardSubmitButton;
+  let saveDraftButton;
+  let wizardViewBackButton;
+  let examPickerBackdrop;
+  let pickerAcademicYear;
+  let pickerSemester;
+  let pickerExamSet;
+  let pickerCodeTableBody;
+  let pickerSelectedTags;
+  let pickerSearch;
+  let pickerSelectAll;
+  let pickerSelectionMeta;
+  let confirmBackdrop;
+  let confirmTitle;
+  let confirmDescription;
+  let confirmAcceptButton;
+  let confirmCancelButton;
+
+  function bindDomRefs() {
+    stepPanels = document.querySelectorAll("[data-step-panel]");
+    stepMarkers = document.querySelectorAll("[data-step-marker]");
+    roomTableBody = document.getElementById("roomTableBody");
+    selectedRosterTableBody = document.getElementById("selectedRosterTableBody");
+    roomAssignmentsGrid = document.getElementById("roomAssignmentsGrid");
+    distributionSummary = document.getElementById("distributionSummary");
+    rosterPicker = document.getElementById("rosterPicker");
+    addRosterButton = document.getElementById("addRosterButton");
+    addRoomButton = document.getElementById("addRoomButton");
+    randomAssignButton = document.getElementById("randomAssignButton");
+    wizardBackButton = document.getElementById("wizardBackButton");
+    wizardNextButton = document.getElementById("wizardNextButton");
+    wizardSubmitButton = document.getElementById("wizardSubmitButton");
+    saveDraftButton = document.getElementById("saveDraftButton");
+    wizardViewBackButton = document.getElementById("wizardViewBackButton");
+    examPickerBackdrop = document.getElementById("examPickerBackdrop");
+    pickerAcademicYear = document.getElementById("pickerAcademicYear");
+    pickerSemester = document.getElementById("pickerSemester");
+    pickerExamSet = document.getElementById("pickerExamSet");
+    pickerCodeTableBody = document.getElementById("pickerCodeTableBody");
+    pickerSelectedTags = document.getElementById("pickerSelectedTags");
+    pickerSearch = document.getElementById("pickerSearch");
+    pickerSelectAll = document.getElementById("pickerSelectAll");
+    pickerSelectionMeta = document.getElementById("pickerSelectionMeta");
+    confirmBackdrop = document.getElementById("confirmBackdrop");
+    confirmTitle = document.getElementById("confirmTitle");
+    confirmDescription = document.getElementById("confirmDescription");
+    confirmAcceptButton = document.getElementById("confirmAcceptButton");
+    confirmCancelButton = document.getElementById("confirmCancelButton");
+  }
+
+  function isViewMode() {
+    return sessionMode === "view";
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function upgradeWizardMarkup() {
+    const breadcrumb = document.querySelector(".es-breadcrumb");
+    if (breadcrumb) {
+      breadcrumb.innerHTML = "Kho và khai phá dữ liệu &nbsp;&gt;&nbsp; Quản lý ca thi";
+    }
+
+    const titleDescription = document.querySelector(".es-title p");
+    if (titleDescription) {
+      titleDescription.textContent = "Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.";
+    }
+
+    const backLink = document.querySelector('.es-header a.es-btn-secondary');
+    if (backLink) {
+      backLink.classList.add("es-header-back");
+      backLink.innerHTML = '<i class="fas fa-arrow-left"></i>Quay lại danh sách ca thi';
+    }
+
+    const banner = document.querySelector(".es-banner");
+    if (banner) {
+      banner.textContent = "Ca thi này đang ở chế độ xem. Nếu ca thi đã được sử dụng hoặc đã tới giờ thi, hệ thống sẽ khóa chỉnh sửa để tránh sai lệch dữ liệu.";
+    }
+
+    const stepLabels = document.querySelectorAll(".es-step-label");
+    if (stepLabels.length >= 3) {
+      stepLabels[0].textContent = "Thông tin chung";
+      stepLabels[1].textContent = "Phòng thi & Trộn";
+      stepLabels[2].textContent = "Phân bố sinh viên";
+    }
+
+    const panelOne = document.querySelector('[data-step-panel="1"]');
+    if (panelOne) {
+      panelOne.querySelector(".es-card-title").textContent = "Thông tin chung";
+      panelOne.querySelector(".es-card-subtitle").textContent = "Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.";
+    }
+
+    const panelTwo = document.querySelector('[data-step-panel="2"]');
+    if (panelTwo) {
+      panelTwo.querySelector(".es-card-title").textContent = "Phòng thi & Trộn";
+      panelTwo.querySelector(".es-card-subtitle").textContent = "Cấu hình từng phòng thi, số lượng sinh viên, mật khẩu và bộ đề - mã đề tương ứng.";
+      const summaryItem = panelTwo.querySelector(".es-summary-item");
+      if (summaryItem) {
+        summaryItem.innerHTML = `
+          <small>Kỳ thi & Môn học</small>
+          <strong id="summaryExamName" style="font-size: 1.15rem; line-height: 1.4; margin-top: 0.3rem;">${escapeHtml(wizardState.groupName) || "(Chưa nhập tên kỳ thi)"}</strong>
+          <small style="margin-top:0.4rem;">Môn: ${escapeHtml(sessionCatalog.subject.name)} (${escapeHtml(sessionCatalog.subject.subject_code)})</small>
+        `;
+      }
+      const noteStrong = panelTwo.querySelector(".es-section-note strong");
+      const noteSpan = panelTwo.querySelector(".es-section-note span");
+      if (noteStrong) {
+        noteStrong.textContent = "Danh sách phân phòng và cấu hình bảo mật";
+      }
+      if (noteSpan) {
+        noteSpan.textContent = "Mỗi phòng có thể được gán bộ đề riêng và một hoặc nhiều mã đề đã duyệt.";
+      }
+      const addRoom = document.getElementById("addRoomButton");
+      if (addRoom) {
+        addRoom.innerHTML = '<i class="fas fa-plus-circle"></i>Thêm phòng thi';
+      }
+    }
+
+    const panelThree = document.querySelector('[data-step-panel="3"]');
+    if (panelThree) {
+      panelThree.innerHTML = `
+        <div class="es-card-head">
+          <h2 class="es-card-title">Phân bố sinh viên</h2>
+          <div class="es-card-subtitle">Chọn nguồn danh sách lớp và random sinh viên vào từng phòng theo cấu hình đã thiết lập.</div>
+        </div>
+        <div class="es-card-body">
+          <div class="es-summary-item es-subject-card">
+            <small>Môn học</small>
+            <strong>${escapeHtml(sessionCatalog.subject.name)}</strong>
+            <small>Mã môn: ${escapeHtml(sessionCatalog.subject.subject_code)}</small>
+          </div>
+
+          <div class="es-hidden">
+            <span id="assignRoomCount">0</span>
+            <span id="assignStudentCount">0</span>
+          </div>
+
+          <div class="es-assign-layout">
+            <div class="es-config-card">
+              <div class="es-config-card-head">Cấu hình phòng thi</div>
+              <div class="es-config-card-body">
+                <div class="es-config-stat">
+                  <span>Số lượng phòng thi</span>
+                  <strong id="assignRoomCountSide">0</strong>
+                </div>
+                <div class="es-config-stat">
+                  <span>Sức chứa tối đa</span>
+                  <strong id="assignCapacityCount">0</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="es-card" style="box-shadow:none;">
+              <div class="es-card-head">
+                <div class="es-section-note" style="margin:0;">
+                  <h3 class="es-card-title" style="font-size: 1.3rem;">Nguồn danh sách SV</h3>
+                  <span id="assignStudentCountChip" class="es-source-count">0 SV</span>
+                </div>
+              </div>
+              <div class="es-card-body">
+                <div class="es-grid" style="align-items: end; margin-bottom: 1rem;">
+                  <div class="es-field es-col-9">
+                    <label for="rosterPicker">Chọn danh sách lớp</label>
+                    <select id="rosterPicker" class="es-select"></select>
+                  </div>
+                  <div class="es-col-3">
+                    <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="width: 100%;">
+                      <i class="fas fa-plus"></i>
+                      Thêm nguồn
+                    </button>
+                  </div>
+                </div>
+
+                <div class="es-table-wrap">
+                  <table class="es-table">
+                    <thead>
+                      <tr>
+                        <th>Tên file</th>
+                        <th>Năm học</th>
+                        <th>Học kì</th>
+                        <th>Số SV</th>
+                        <th>Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody id="selectedRosterTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="es-card" style="box-shadow:none;">
+            <div class="es-card-head">
+              <div class="es-section-note" style="margin: 0;">
+                <div>
+                  <h3 class="es-card-title" style="font-size: 1.3rem;">Phân bố sinh viên theo phòng</h3>
+                </div>
+                <button type="button" id="randomAssignButton" class="es-btn es-btn-ghost">
+                  <i class="fas fa-random"></i>
+                  Random lại toàn bộ
+                </button>
+              </div>
+            </div>
+            <div class="es-card-body">
+              <div id="distributionSummary" style="margin-bottom: 1rem; color: var(--es-muted);"></div>
+              <div id="roomAssignmentsGrid" class="es-room-grid"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    const cancelLink = document.querySelector('.es-actions-right a.es-btn-secondary');
+    if (cancelLink) {
+      cancelLink.textContent = "Hủy bỏ";
+    }
+
+    const draftButton = document.getElementById("saveDraftButton");
+    if (draftButton) {
+      draftButton.textContent = "Lưu nháp";
+    }
+
+    const nextButton = document.getElementById("wizardNextButton");
+    if (nextButton) {
+      nextButton.innerHTML = 'Tiếp theo <i class="fas fa-arrow-right"></i>';
+    }
+
+    const submitButton = document.getElementById("wizardSubmitButton");
+    if (submitButton) {
+      submitButton.textContent = "Xác nhận";
+    }
+
+    const viewBackButton = document.getElementById("wizardViewBackButton");
+    if (viewBackButton) {
+      viewBackButton.textContent = "Quay lại danh sách";
+    }
+
+    const toastStack = document.getElementById("toastStack");
+    if (toastStack && document.getElementById("examPickerBackdrop")) {
+      document.getElementById("examPickerBackdrop").innerHTML = `
+        <div class="es-modal">
+          <div class="es-modal-head">
+            <div>
+              <h2 class="es-modal-title">Chọn mã đề cho phòng thi</h2>
+              <div class="es-card-subtitle">Chọn bộ đề và mã đề muốn gán cho phòng thi hiện tại.</div>
+            </div>
+            <button type="button" class="es-modal-close" id="closeExamPickerButton" aria-label="Đóng">&times;</button>
+          </div>
+          <div class="es-modal-body">
+            <div class="es-summary-grid" style="margin-bottom: 1rem;">
+              <div class="es-summary-item">
+                <small>Phòng thi</small>
+                <strong id="pickerRoomName">-</strong>
+                <small style="margin-top:0.45rem;">Số lượng SV: <span id="pickerRoomCountInline">0</span></small>
+              </div>
+              <div class="es-summary-item">
+                <small>Môn học</small>
+                <strong>${escapeHtml(sessionCatalog.subject.name)}</strong>
+                <small style="margin-top:0.45rem;">Mã môn: ${escapeHtml(sessionCatalog.subject.subject_code)}</small>
+              </div>
+              <div class="es-summary-item">
+                <small>Số mã đề đã chọn</small>
+                <strong id="pickerSelectedCount">0</strong>
+              </div>
+            </div>
+
+            <div class="es-filter-grid">
+              <div class="es-field">
+                <label for="pickerAcademicYear">Năm học</label>
+                <select id="pickerAcademicYear" class="es-select"></select>
+              </div>
+              <div class="es-field">
+                <label for="pickerSemester">Học kì</label>
+                <select id="pickerSemester" class="es-select"></select>
+              </div>
+              <div class="es-field" style="grid-column: span 2;">
+                <label for="pickerExamSet">Bộ đề</label>
+                <select id="pickerExamSet" class="es-select"></select>
+              </div>
+            </div>
+
+            <div class="es-section-note" style="margin-bottom: 1rem;">
+              <div class="es-field" style="margin:0; flex:1 1 420px;">
+                <label for="pickerSearch">Tìm theo mã đề</label>
+                <input id="pickerSearch" class="es-input" type="search" placeholder="Tìm theo mã đề...">
+              </div>
+              <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; padding-top:1.6rem;">
+                <label style="display:flex; align-items:center; gap:0.55rem; color:var(--es-text); font-weight:600; cursor:pointer;">
+                  <input id="pickerSelectAll" type="checkbox">
+                  <span>Chọn tất cả</span>
+                </label>
+                <span id="pickerSelectionMeta" style="color: var(--es-muted); font-weight: 600;">Đã chọn 0 mã đề</span>
+              </div>
+            </div>
+
+            <div class="es-table-wrap">
+              <table class="es-table">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;"></th>
+                    <th>Mã đề</th>
+                    <th>Số câu</th>
+                    <th>Tổng điểm</th>
+                  </tr>
+                </thead>
+                <tbody id="pickerCodeTableBody"></tbody>
+              </table>
+            </div>
+
+            <div class="es-selected-tags" id="pickerSelectedTags"></div>
+          </div>
+          <div class="es-modal-actions">
+            <button type="button" class="es-btn es-btn-secondary" id="cancelExamPickerButton">Hủy</button>
+            <button type="button" class="es-btn es-btn-primary" id="confirmExamPickerButton">Xác nhận</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (!document.getElementById("confirmBackdrop")) {
+      document.body.insertAdjacentHTML("beforeend", `
+        <div id="confirmBackdrop" class="es-confirm-backdrop">
+          <div class="es-confirm-box">
+            <h3 id="confirmTitle" class="es-confirm-title">Bạn có chắc chắn muốn tiếp tục?</h3>
+            <div id="confirmDescription" class="es-confirm-description"></div>
+            <div class="es-confirm-actions">
+              <button type="button" id="confirmCancelButton" class="es-btn es-btn-secondary">
+                <i class="fas fa-times"></i>
+                Hủy bỏ
+              </button>
+              <button type="button" id="confirmAcceptButton" class="es-btn es-btn-primary">Xác nhận</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+  }
+
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let index = 0; index < cookies.length; index += 1) {
+        const cookie = cookies[index].trim();
+        if (cookie.substring(0, name.length + 1) === `${name}=`) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  function removeToast(toast) {
+    if (toast && toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }
+
+  function clearToasts(type = null) {
+    const selector = type ? `.es-toast.${type}` : ".es-toast";
+    document.querySelectorAll(selector).forEach((toast) => removeToast(toast));
+  }
+
+  function pushToast(message, type = "error") {
+    const stack = document.getElementById("toastStack");
+    const toast = document.createElement("div");
+    toast.className = `es-toast ${type}`;
+    toast.innerHTML = `
+      <span>${escapeHtml(message)}</span>
+      <button type="button" aria-label="Đóng">&times;</button>
+    `;
+    toast.querySelector("button").addEventListener("click", () => removeToast(toast));
+    stack.appendChild(toast);
+    window.setTimeout(() => {
+      removeToast(toast);
+    }, 3500);
+  }
+
+  function openConfirmModal(title, description, onAccept) {
+    if (!confirmBackdrop) {
+      return;
+    }
+    confirmTitle.textContent = title;
+    confirmDescription.textContent = description || "";
+    confirmAction = onAccept;
+    confirmBackdrop.classList.add("open");
+  }
+
+  function closeConfirmModal() {
+    if (!confirmBackdrop) {
+      return;
+    }
+    confirmBackdrop.classList.remove("open");
+    confirmAction = null;
+  }
+
+  function updateStatusLabel() {
+    const field = document.getElementById("sessionStatusLabel");
+    field.value = sessionMode === "view" ? (sessionInitialState.status_label || wizardState.statusLabel) : "Lưu nháp / Sắp diễn ra";
+  }
+
+  function populateGeneralFields() {
+    document.getElementById("sessionGroupName").value = wizardState.groupName;
+    document.getElementById("sessionAcademicYear").value = wizardState.academicYear;
+    document.getElementById("sessionSemester").value = wizardState.semester;
+    document.getElementById("sessionExamDate").value = wizardState.examDate;
+    document.getElementById("sessionStartTime").value = wizardState.startTime;
+    document.getElementById("sessionEndTime").value = wizardState.endTime;
+    document.getElementById("sessionDuration").value = wizardState.durationMinutes;
+    document.getElementById("sessionPassword").value = wizardState.examPassword;
+    document.getElementById("sessionDescription").value = wizardState.description;
+    updateStatusLabel();
+    syncDateTimeConstraints();
+
+    if (isViewMode()) {
+      document.querySelectorAll("#sessionGroupName, #sessionAcademicYear, #sessionSemester, #sessionExamDate, #sessionStartTime, #sessionEndTime, #sessionDuration, #sessionPassword, #sessionDescription").forEach((element) => {
+        if (element.tagName === "SELECT") {
+          element.disabled = true;
+        } else if (element.tagName === "TEXTAREA") {
+          element.readOnly = true;
+        } else {
+          element.readOnly = true;
+        }
+      });
+    }
+  }
+
+  function timeToMinutes(value) {
+    if (!value || !value.includes(":")) {
+      return null;
+    }
+    const [hours, minutes] = value.split(":").map((item) => Number(item));
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return null;
+    }
+    return (hours * 60) + minutes;
+  }
+
+  function minutesToTime(value) {
+    const hours = Math.floor(value / 60) % 24;
+    const minutes = value % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  function getCurrentLocalDateTime() {
+    return new Date();
+  }
+
+  function formatDateInputValue(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatTimeInputValue(date) {
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function buildLocalDateTime(dateValue, timeValue) {
+    if (!dateValue || !timeValue) {
+      return null;
+    }
+    const dateTime = new Date(`${dateValue}T${timeValue}:00`);
+    return Number.isNaN(dateTime.getTime()) ? null : dateTime;
+  }
+
+  function syncDateTimeConstraints() {
+    const dateField = document.getElementById("sessionExamDate");
+    const startField = document.getElementById("sessionStartTime");
+    const endField = document.getElementById("sessionEndTime");
+    if (!dateField || !startField || !endField || isViewMode()) {
+      return;
+    }
+
+    const now = getCurrentLocalDateTime();
+    const today = formatDateInputValue(now);
+    const minNowTime = formatTimeInputValue(now);
+    dateField.min = today;
+
+    if (wizardState.examDate === today) {
+      startField.min = minNowTime;
+      if (wizardState.startTime && wizardState.startTime < minNowTime) {
+        wizardState.startTime = minNowTime;
+        startField.value = wizardState.startTime;
+        syncEndTimeFromDuration();
+      }
+    } else {
+      startField.removeAttribute("min");
+    }
+
+    const endMin = wizardState.startTime || (wizardState.examDate === today ? minNowTime : "");
+    if (endMin) {
+      endField.min = endMin;
+    } else {
+      endField.removeAttribute("min");
+    }
+  }
+
+  function syncDurationFromTimes() {
+    const startMinutes = timeToMinutes(wizardState.startTime);
+    const endMinutes = timeToMinutes(wizardState.endTime);
+    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+      return;
+    }
+    wizardState.durationMinutes = endMinutes - startMinutes;
+    document.getElementById("sessionDuration").value = wizardState.durationMinutes;
+  }
+
+  function syncEndTimeFromDuration() {
+    const startMinutes = timeToMinutes(wizardState.startTime);
+    const duration = Number(wizardState.durationMinutes || 0);
+    if (startMinutes === null || duration <= 0) {
+      return;
+    }
+    wizardState.endTime = minutesToTime(startMinutes + duration);
+    document.getElementById("sessionEndTime").value = wizardState.endTime;
+  }
+
+  function bindGeneralFields() {
+    const nameField = document.getElementById("sessionGroupName");
+    const yearField = document.getElementById("sessionAcademicYear");
+    const semesterField = document.getElementById("sessionSemester");
+    const dateField = document.getElementById("sessionExamDate");
+    const startField = document.getElementById("sessionStartTime");
+    const endField = document.getElementById("sessionEndTime");
+    const durationField = document.getElementById("sessionDuration");
+    const passwordField = document.getElementById("sessionPassword");
+    const descriptionField = document.getElementById("sessionDescription");
+
+    nameField.addEventListener("input", () => {
+        wizardState.groupName = nameField.value;
+        const summaryExamName = document.getElementById("summaryExamName");
+        if (summaryExamName) {
+            summaryExamName.textContent = wizardState.groupName || "(Chưa nhập tên kỳ thi)";
+        }
+    });
+    yearField.addEventListener("input", () => {
+      wizardState.academicYear = yearField.value;
+      renderRooms();
+    });
+    semesterField.addEventListener("change", () => {
+      wizardState.semester = semesterField.value;
+      renderRooms();
+    });
+    dateField.addEventListener("change", () => {
+      wizardState.examDate = dateField.value;
+      syncDateTimeConstraints();
+    });
+    startField.addEventListener("change", () => {
+      wizardState.startTime = startField.value;
+      syncEndTimeFromDuration();
+      syncDateTimeConstraints();
+    });
+    endField.addEventListener("change", () => {
+      wizardState.endTime = endField.value;
+      syncDurationFromTimes();
+      syncDateTimeConstraints();
+    });
+    durationField.addEventListener("input", () => {
+      wizardState.durationMinutes = Number(durationField.value || 0);
+      syncEndTimeFromDuration();
+      syncDateTimeConstraints();
+    });
+    passwordField.addEventListener("input", () => { wizardState.examPassword = passwordField.value; });
+    descriptionField.addEventListener("input", () => { wizardState.description = descriptionField.value; });
+  }
+
+  function setStep(step) {
+    wizardState.step = step;
+    stepPanels.forEach((panel) => {
+      panel.classList.toggle("es-hidden", Number(panel.dataset.stepPanel) !== step);
+    });
+    stepMarkers.forEach((marker) => {
+      const markerStep = Number(marker.dataset.stepMarker);
+      marker.classList.toggle("active", markerStep === step);
+      marker.classList.toggle("done", markerStep < step);
+    });
+
+    if (!isViewMode()) {
+      wizardBackButton.classList.toggle("es-hidden", step === 1);
+      wizardNextButton.classList.toggle("es-hidden", step === 3);
+      wizardSubmitButton.classList.toggle("es-hidden", step !== 3);
+      saveDraftButton.classList.toggle("es-hidden", step !== 3);
+    }
+  }
+
+  function getExamSetById(examSetId) {
+    return sessionCatalog.exam_sets.find((item) => item.id === Number(examSetId)) || null;
+  }
+
+  function getExamCodesForSet(examSetId) {
+    const examSet = getExamSetById(examSetId);
+    return examSet ? examSet.codes : [];
+  }
+
+  function hydrateRoomLabels(room) {
+    const examSet = getExamSetById(room.exam_set_id);
+    room.exam_set_name = examSet ? examSet.name : "";
+    room.exam_code_names = getExamCodesForSet(room.exam_set_id)
+      .filter((item) => room.exam_code_ids.includes(item.id))
+      .map((item) => item.code_name);
+  }
+
+  function buildDefaultRoomPassword(index, roomCode = "") {
+    const compactRoomCode = String(roomCode || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (compactRoomCode.length >= 5) {
+      return compactRoomCode.slice(0, 5);
+    }
+    return `${compactRoomCode}${String(index + 1).padStart(5, "0")}`.slice(0, 5);
+  }
+
+  function updateRoomStudentCount(roomIndex, nextValue) {
+    const room = wizardState.roomConfigs[roomIndex];
+    if (!room) {
+      return;
+    }
+    const normalizedCount = Math.max(0, Number(nextValue || 0));
+    room.student_count = normalizedCount;
+    if (room.assignments.length > normalizedCount) {
+      room.assignments = room.assignments.slice(0, normalizedCount).map((assignment, index) => ({
+        ...assignment,
+        display_order: index + 1,
+      }));
+    }
+  }
+
+  function addRoom() {
+    const suggestions = sessionCatalog.room_suggestions || [];
+    const suggestion = suggestions[wizardState.roomConfigs.length % Math.max(suggestions.length, 1)] || {};
+    wizardState.roomConfigs.push({
+      client_id: `room-${Date.now()}-${wizardState.roomConfigs.length + 1}`,
+      room_name: suggestion.room_name || `Phòng ${wizardState.roomConfigs.length + 1}`,
+      student_count: suggestion.capacity || 0,
+      password: "",
+      exam_set_id: null,
+      exam_set_name: "",
+      exam_code_ids: [],
+      exam_code_names: [],
+      assignments: [],
+      display_order: wizardState.roomConfigs.length + 1,
+    });
+    renderRooms();
+    renderDistribution();
+  }
+
+  function removeRoom(index) {
+    const room = wizardState.roomConfigs[index];
+    if (!room) {
+      return;
+    }
+    openConfirmModal(
+      "Bạn có chắc chắn muốn xóa phòng thi khỏi cấu hình không?",
+      "Phòng thi này sẽ bị gỡ khỏi ca thi hiện tại.",
+      () => {
+        wizardState.roomConfigs.splice(index, 1);
+        wizardState.roomConfigs.forEach((item, itemIndex) => { item.display_order = itemIndex + 1; });
+        closeConfirmModal();
+        renderRooms();
+        renderDistribution();
+      }
+    );
+  }
+
+  function clearAllAssignments() {
+    wizardState.roomConfigs.forEach((room) => {
+      room.assignments = [];
+    });
+  }
+
+  function renderRooms() {
+    if (!roomTableBody) {
+      return;
+    }
+
+    const totalCapacity = wizardState.roomConfigs.reduce((sum, room) => sum + Number(room.student_count || 0), 0);
+    const roomCountSummary = document.getElementById("roomCountSummary");
+    const roomCapacitySummary = document.getElementById("roomCapacitySummary");
+    const assignRoomCount = document.getElementById("assignRoomCount");
+    const assignCapacityCount = document.getElementById("assignCapacityCount");
+    const summaryExamName = document.getElementById("summaryExamName");
+
+    if (roomCountSummary) roomCountSummary.textContent = wizardState.roomConfigs.length;
+    if (roomCapacitySummary) roomCapacitySummary.textContent = totalCapacity;
+    if (assignRoomCount) assignRoomCount.textContent = wizardState.roomConfigs.length;
+    if (assignCapacityCount) assignCapacityCount.textContent = totalCapacity;
+    if (summaryExamName) summaryExamName.textContent = wizardState.groupName || "(Chưa nhập tên kỳ thi)";
+
+    const assignRoomCountSide = document.getElementById("assignRoomCountSide");
+    if (assignRoomCountSide) {
+      assignRoomCountSide.textContent = String(wizardState.roomConfigs.length).padStart(2, "0");
+    }
+
+    if (!wizardState.roomConfigs.length) {
+      roomTableBody.innerHTML = `
+        <tr>
+          <td colspan="5">
+            <div class="es-empty">
+              <i class="fas fa-door-open"></i>
+              Chưa có phòng thi nào. Hãy thêm ít nhất một phòng để gắn bộ đề và mã đề.
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    roomTableBody.innerHTML = wizardState.roomConfigs.map((room, index) => {
+      hydrateRoomLabels(room);
+      const actionLabel = room.exam_code_ids.length ? "Chỉnh sửa bộ đề" : "Thêm đề";
+      const assignedCount = room.assignments.length;
+
+      const selectedSummary = room.exam_set_name
+        ? `<strong style="color: var(--es-text); font-size: 0.95rem; display: block;">${escapeHtml(room.exam_set_name)}</strong><span style="font-size: 0.84rem; color: var(--es-muted);">Mã đề: ${escapeHtml(room.exam_code_names.join(", "))}</span>`
+        : "";
+
+      return `
+        <tr>
+          <td><input class="es-input" type="text" value="${escapeHtml(room.room_name)}" data-room-field="room_name" data-room-index="${index}" ${isViewMode() ? "readonly" : ""}></td>
+          <td>
+            <div class="es-field es-room-count-field">
+              <input class="es-input es-room-count-input" type="number" min="0" step="1" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" inputmode="numeric" ${isViewMode() ? "readonly" : ""}>
+            </div>
+          </td>
+          <td>
+            <input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Nhập 5 ký tự" autocomplete="off" ${isViewMode() ? "readonly" : ""}>
+          </td>
+          <td>
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.45rem;">
+              <div class="room-exam-summary">${selectedSummary}</div>
+              <button type="button" class="es-btn ${isViewMode() ? "es-btn-secondary" : "es-btn-primary"}" data-open-exam-picker="${index}">
+                <i class="fas fa-file-alt"></i>
+                ${actionLabel}
+              </button>
+            </div>
+          </td>
+          <td>
+            ${isViewMode() ? '<span style="color:#94a3b8;"><i class="fas fa-lock"></i></span>' : `<button type="button" class="es-btn es-btn-danger" data-remove-room="${index}"><i class="fas fa-trash"></i></button>`}
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    roomTableBody.querySelectorAll("[data-open-exam-picker]").forEach((button) => {
+      const roomIndex = Number(button.dataset.openExamPicker);
+      const room = wizardState.roomConfigs[roomIndex];
+      const summary = button.parentElement ? button.parentElement.querySelector(".room-exam-summary") : null;
+      if (room && summary) {
+        summary.innerHTML = room.exam_set_name
+          ? `<strong style="color: var(--es-text); font-size: 0.95rem; display: block;">${escapeHtml(room.exam_set_name)}</strong><span style="font-size: 0.84rem; color: var(--es-muted);">Mã đề: ${escapeHtml(room.exam_code_names.join(", "))}</span>`
+          : "";
+      }
+      if (room && room.exam_code_ids.length) {
+        button.className = "es-room-action-link";
+        button.innerHTML = "Chỉnh sửa bộ đề";
+      } else {
+        button.className = "es-room-add-btn";
+        button.innerHTML = '<i class="fas fa-plus"></i>Thêm đề';
+      }
+    });
+
+    roomTableBody.querySelectorAll("[data-remove-room]").forEach((button) => {
+      button.className = "es-room-delete-btn";
+      button.setAttribute("aria-label", "Xóa phòng");
+    });
+
+    roomTableBody.querySelectorAll("[data-room-field]").forEach((input) => {
+      input.addEventListener("input", (event) => {
+        const target = event.currentTarget;
+        const roomIndex = Number(target.dataset.roomIndex);
+        const room = wizardState.roomConfigs[roomIndex];
+        if (!room) {
+          return;
+        }
+        if (target.dataset.roomField === "student_count") {
+          const rawValue = String(target.value || "").trim();
+          const parsedValue = rawValue === "" ? 0 : Number(rawValue);
+          room.student_count = Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : 0;
+          renderDistribution();
+          return;
+        }
+        if (target.dataset.roomField === "password") {
+          room.password = String(target.value || "").slice(0, 5);
+          if (target.value !== room.password) {
+            target.value = room.password;
+          }
+          return;
+        }
+        room[target.dataset.roomField] = target.value;
+        if (target.dataset.roomField === "room_name") {
+          renderDistribution();
+        }
+      });
+
+      if (input.dataset.roomField === "student_count") {
+        input.addEventListener("change", (event) => {
+          const target = event.currentTarget;
+          const roomIndex = Number(target.dataset.roomIndex);
+          updateRoomStudentCount(roomIndex, target.value);
+          target.value = wizardState.roomConfigs[roomIndex]?.student_count ?? 0;
+          renderRooms();
+          renderDistribution();
+        });
+      }
+    });
+
+    roomTableBody.querySelectorAll("[data-room-step]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const roomIndex = Number(button.dataset.roomIndex);
+        const room = wizardState.roomConfigs[roomIndex];
+        if (!room) {
+          return;
+        }
+        const delta = button.dataset.roomStep === "increase" ? 1 : -1;
+        updateRoomStudentCount(roomIndex, Number(room.student_count || 0) + delta);
+        renderRooms();
+        renderDistribution();
+      });
+    });
+
+    roomTableBody.querySelectorAll("[data-open-exam-picker]").forEach((button) => {
+      button.addEventListener("click", () => openExamPicker(Number(button.dataset.openExamPicker)));
+    });
+
+    roomTableBody.querySelectorAll("[data-remove-room]").forEach((button) => {
+      button.addEventListener("click", () => removeRoom(Number(button.dataset.removeRoom)));
+    });
+  }
+
+  function getSelectedRosters() {
+    return sessionCatalog.rosters.filter((roster) => wizardState.rosterIds.includes(roster.id));
+  }
+
+  function populateRosterPicker() {
+    if (!rosterPicker) {
+      return;
+    }
+    const selectedIds = new Set(wizardState.rosterIds);
+    const available = sessionCatalog.rosters.filter((roster) => !selectedIds.has(roster.id));
+    rosterPicker.innerHTML = available.length
+      ? `<option value="">-- Chọn danh sách lớp --</option>${available.map((roster) => `<option value="${roster.id}">${roster.title} (${roster.student_count} SV)</option>`).join("")}`
+      : `<option value="">Không còn danh sách nào chưa chọn</option>`;
+  }
+
+  function addRoster() {
+    const rosterId = Number(rosterPicker.value || 0);
+    if (!rosterId) {
+      pushToast("Vui lòng chọn một danh sách lớp để thêm.", "error");
+      return;
+    }
+    if (!wizardState.rosterIds.includes(rosterId)) {
+      wizardState.rosterIds.push(rosterId);
+      clearAllAssignments();
+    }
+    populateRosterPicker();
+    renderSelectedRosters();
+    renderDistribution();
+  }
+
+  function removeRoster(rosterId) {
+    openConfirmModal(
+      "Bạn có chắc chắn muốn xóa danh sách này ra khỏi nguồn danh sách sinh viên không?",
+      "Sinh viên thuộc danh sách bị xóa sẽ được gỡ khỏi các phòng thi hiện tại.",
+      () => {
+        wizardState.rosterIds = wizardState.rosterIds.filter((item) => item !== rosterId);
+        clearAllAssignments();
+        closeConfirmModal();
+        populateRosterPicker();
+        renderSelectedRosters();
+        renderDistribution();
+      }
+    );
+  }
+
+  function getUniqueSelectedStudents() {
+    const map = new Map();
+    getSelectedRosters().forEach((roster) => {
+      (roster.students || []).forEach((student) => {
+        const key = String(student.student_code || "").trim().toUpperCase();
+        if (key && !map.has(key)) {
+          map.set(key, student);
+        }
+      });
+    });
+    return Array.from(map.values());
+  }
+
+  function renderSelectedRosters() {
+    const selectedRosters = getSelectedRosters();
+    const selectedStudentsCount = getUniqueSelectedStudents().length;
+    const assignStudentCount = document.getElementById("assignStudentCount");
+    const assignStudentCountChip = document.getElementById("assignStudentCountChip");
+    if (assignStudentCount) {
+      assignStudentCount.textContent = selectedStudentsCount;
+    }
+    if (assignStudentCountChip) {
+      assignStudentCountChip.textContent = `${selectedStudentsCount} SV`;
+    }
+
+    if (!selectedRosters.length) {
+      selectedRosterTableBody.innerHTML = `
+        <tr>
+          <td colspan="5">
+            <div class="es-empty">
+              <i class="fas fa-users"></i>
+              Chưa chọn nguồn danh sách sinh viên cho ca thi.
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    selectedRosterTableBody.innerHTML = selectedRosters.map((roster) => `
+      <tr>
+        <td><strong>${roster.title}</strong></td>
+        <td>${roster.academic_year}</td>
+        <td>${roster.semester_label}</td>
+        <td>${roster.student_count}</td>
+        <td>
+          ${isViewMode() ? '<span style="color:#94a3b8;"><i class="fas fa-lock"></i></span>' : `<button type="button" class="es-room-delete-btn" data-remove-roster="${roster.id}" aria-label="Xóa nguồn"><i class="fas fa-trash"></i></button>`}
+        </td>
+      </tr>
+    `).join("");
+
+    selectedRosterTableBody.querySelectorAll("[data-remove-roster]").forEach((button) => {
+      button.addEventListener("click", () => removeRoster(Number(button.dataset.removeRoster)));
+    });
+  }
+
+  function randomAssignAllStudents() {
+    const students = getUniqueSelectedStudents();
+    const totalSeats = wizardState.roomConfigs.reduce((sum, room) => sum + Number(room.student_count || 0), 0);
+
+    if (!wizardState.roomConfigs.length) {
+      pushToast("Vui lòng thêm phòng thi trước khi phân bổ sinh viên.", "error");
+      return;
+    }
+    if (!students.length) {
+      pushToast("Vui lòng chọn ít nhất một nguồn danh sách sinh viên.", "error");
+      return;
+    }
+    if (students.length > totalSeats) {
+      pushToast(`Tổng sinh viên (${students.length}) đang lớn hơn tổng sức chứa đã cấu hình (${totalSeats}).`, "error");
+      return;
+    }
+
+    const roomsWithoutCodes = wizardState.roomConfigs.filter((room) => !room.exam_code_ids.length);
+    if (roomsWithoutCodes.length) {
+      pushToast("Tất cả phòng thi phải được gắn mã đề trước khi random sinh viên.", "error");
+      return;
+    }
+
+    const shuffled = students.slice().sort(() => Math.random() - 0.5);
+    let cursor = 0;
+
+    wizardState.roomConfigs.forEach((room) => {
+      room.assignments = [];
+      const roomCodes = getExamCodesForSet(room.exam_set_id).filter((item) => room.exam_code_ids.includes(item.id));
+      const roomCapacity = Number(room.student_count || 0);
+      for (let index = 0; index < roomCapacity && cursor < shuffled.length; index += 1) {
+        const student = shuffled[cursor];
+        const examCode = roomCodes[index % roomCodes.length];
+        room.assignments.push({
+          roster_student_id: student.roster_student_id || null,
+          student_code: student.student_code || "",
+          full_name: student.full_name || "",
+          linked_user_id: student.linked_user_id || null,
+          exam_code_id: examCode ? examCode.id : null,
+          exam_code_name: examCode ? examCode.code_name : "",
+          display_order: index + 1,
+        });
+        cursor += 1;
+      }
+    });
+
+    renderDistribution();
+    const spareSeats = Math.max(totalSeats - students.length, 0);
+    pushToast(
+      spareSeats
+        ? `Đã random ${students.length} sinh viên. Còn trống ${spareSeats} chỗ trong các phòng thi.`
+        : "Đã random sinh viên và mã đề theo phòng thi.",
+      "success"
+    );
+  }
+
+  function renderDistribution() {
+    const totalSeats = wizardState.roomConfigs.reduce((sum, room) => sum + Number(room.student_count || 0), 0);
+    const totalStudents = getUniqueSelectedStudents().length;
+    const assignedStudents = wizardState.roomConfigs.reduce((sum, room) => sum + room.assignments.length, 0);
+    distributionSummary.textContent = `Tổng sinh viên đang chọn: ${totalStudents} • Đã phân bổ: ${assignedStudents} • Tổng sức chứa: ${totalSeats}`;
+
+    if (!wizardState.roomConfigs.length) {
+      roomAssignmentsGrid.innerHTML = `
+        <div class="es-empty" style="grid-column: 1 / -1;">
+          <i class="fas fa-door-open"></i>
+          Chưa có phòng thi nào để hiển thị phân bổ.
+        </div>
+      `;
+      return;
+    }
+
+    roomAssignmentsGrid.innerHTML = wizardState.roomConfigs.map((room) => {
+      const roomCodes = room.exam_code_names.length ? room.exam_code_names.join(", ") : "";
+      const items = room.assignments && room.assignments.length
+        ? `
+            <div class="es-room-students-head">
+              <span>MSSV</span>
+              <span>Họ tên</span>
+              <span style="text-align:right;">Mã đề</span>
+            </div>
+            <div class="es-room-students-list">
+              ${room.assignments.map((assignment) => `
+                <div class="es-room-student-row">
+                  <span>${assignment.student_code}</span>
+                  <strong>${assignment.full_name}</strong>
+                  <span class="es-room-code-badge">${assignment.exam_code_name || "-"}</span>
+                </div>
+              `).join("")}
+            </div>
+          `
+        : `<div class="es-empty" style="padding: 1.6rem 0.8rem;"><i class="fas fa-random"></i>Chưa phân bổ sinh viên cho phòng này.</div>`;
+
+      return `
+        <div class="es-room-card">
+          <div class="es-room-card-head">
+            <div>
+              <div class="es-room-card-title">${room.room_name || "Chưa đặt tên phòng"}</div>
+              ${roomCodes ? `<div class="es-room-card-meta">Mã đề: ${roomCodes}</div>` : ""}
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 1.2rem; font-weight: 800; color: var(--es-text);">${room.assignments.length}/${room.student_count || 0}</div>
+              <div style="color: var(--es-muted); font-size: 0.85rem;">Đã phân bổ</div>
+            </div>
+          </div>
+          <div class="es-room-card-body">
+            ${items}
+            ${room.assignments && room.assignments.length > 8 ? `<div class="es-room-more">Cuộn để xem thêm ${room.assignments.length - 8} sinh viên còn lại.</div>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function getExamPickerYearOptions() {
+    if (sessionCatalog.year_options && sessionCatalog.year_options.length > 0) {
+      return sessionCatalog.year_options;
+    }
+    return Array.from(new Set(sessionCatalog.exam_sets.map((item) => item.academic_year).filter(Boolean))).sort().reverse();
+  }
+
+  function populateExamPickerFilters(room) {
+    const currentSet = getExamSetById(room?.exam_set_id);
+    const yearOptions = getExamPickerYearOptions();
+
+    const semesterOptions = sessionCatalog.semester_options || [
+      {value: "HK1", label: "Học kỳ 1"},
+      {value: "HK2", label: "Học kỳ 2"},
+      {value: "SUMMER", label: "Học kỳ hè"}
+    ];
+
+    const selectedYear = currentSet?.academic_year || "";
+    const selectedSemester = currentSet?.semester || "";
+
+    pickerAcademicYear.innerHTML = ['<option value="">Tất cả năm học</option>']
+      .concat(yearOptions.map((year) => `<option value="${year}">${year}</option>`))
+      .join("");
+
+    pickerSemester.innerHTML = ['<option value="">Tất cả học kỳ</option>']
+      .concat(semesterOptions.map((item) => `<option value="${item.value}">${item.label}</option>`))
+      .join("");
+
+    pickerAcademicYear.value = selectedYear;
+    pickerSemester.value = selectedSemester;
+  }
+
+  function getFilteredExamSetsForPicker(room) {
+    const academicYear = pickerAcademicYear?.value || "";
+    const semester = pickerSemester?.value || "";
+    let options = sessionCatalog.exam_sets.filter((item) => {
+      const matchYear = !academicYear || item.academic_year === academicYear;
+      const matchSemester = !semester || item.semester === semester;
+      return matchYear && matchSemester;
+    });
+
+    const currentSet = getExamSetById(room?.exam_set_id);
+    if (currentSet && !options.some((item) => item.id === currentSet.id)) {
+      options = [currentSet, ...options];
+    }
+    return options;
+  }
+
+  function renderExamPickerSets() {
+    const room = wizardState.roomConfigs[examPickerRoomIndex];
+    if (!room) {
+      return [];
+    }
+
+    const options = getFilteredExamSetsForPicker(room);
+    const currentSetId = Number(pickerExamSet?.value || room.exam_set_id || 0);
+    pickerExamSet.innerHTML = options.length
+      ? options.map((item) => `
+          <option value="${item.id}" ${item.id === currentSetId ? "selected" : ""}>
+            ${item.name} • ${item.academic_year} • ${item.semester_label}
+          </option>
+        `).join("")
+      : '<option value="">Không có bộ đề đã duyệt phù hợp</option>';
+
+    if (options.length) {
+      const activeOption = options.find((item) => item.id === currentSetId) || options[0];
+      pickerExamSet.value = String(activeOption.id);
+    }
+    return options;
+  }
+
+  function openExamPicker(roomIndex) {
+    examPickerRoomIndex = roomIndex;
+    const room = wizardState.roomConfigs[roomIndex];
+    if (!room) {
+      return;
+    }
+
+    examPickerOriginalSetId = room.exam_set_id;
+    examPickerOriginalSelection = room.exam_code_ids.slice();
+    examPickerSelection = room.exam_code_ids.slice();
+
+    document.getElementById("pickerRoomName").textContent = room.room_name || "Chưa đặt tên";
+    const pickerRoomCount = document.getElementById("pickerRoomCount");
+    if (pickerRoomCount) {
+      pickerRoomCount.textContent = room.student_count || 0;
+    }
+    const pickerRoomCountInline = document.getElementById("pickerRoomCountInline");
+    if (pickerRoomCountInline) {
+      pickerRoomCountInline.textContent = room.student_count || 0;
+    }
+    pickerSearch.value = "";
+
+    populateExamPickerFilters(room);
+    renderExamPickerSets();
+    renderExamPickerCodes();
+    examPickerBackdrop.classList.add("open");
+
+    if (isViewMode()) {
+      document.getElementById("confirmExamPickerButton").classList.add("es-hidden");
+      document.getElementById("cancelExamPickerButton").textContent = "Đóng";
+    } else {
+      document.getElementById("confirmExamPickerButton").classList.remove("es-hidden");
+      document.getElementById("cancelExamPickerButton").textContent = "Hủy";
+    }
+  }
+
+  function closeExamPicker(forceClose = false) {
+    const currentSetId = Number(pickerExamSet?.value || 0) || null;
+    const originalSelection = examPickerOriginalSelection.slice().sort((a, b) => a - b).join(",");
+    const currentSelection = examPickerSelection.slice().sort((a, b) => a - b).join(",");
+    const changed = !forceClose && !isViewMode() && (currentSetId !== examPickerOriginalSetId || currentSelection !== originalSelection);
+
+    if (changed) {
+      const hadOriginal = examPickerOriginalSelection.length > 0;
+      openConfirmModal(
+        hadOriginal
+          ? "Bạn có chắc chắn muốn hủy thao tác chỉnh sửa?"
+          : "Bạn có chắc chắn muốn hủy thao tác thêm bộ đề cho phòng thi không?",
+        hadOriginal
+          ? "Phòng thi sẽ được giữ nguyên bộ đề và mã đề."
+          : "Phòng thi sẽ không được gắn bộ đề.",
+        () => {
+          closeConfirmModal();
+          closeExamPicker(true);
+        }
+      );
+      return;
+    }
+
+    examPickerBackdrop.classList.remove("open");
+    examPickerRoomIndex = null;
+    examPickerSelection = [];
+    examPickerOriginalSelection = [];
+    examPickerOriginalSetId = null;
+  }
+
+  function renderExamPickerCodes() {
+    const room = wizardState.roomConfigs[examPickerRoomIndex];
+    if (!room) {
+      return;
+    }
+
+    const selectedSetId = Number(pickerExamSet.value || room.exam_set_id || 0);
+    const examSet = getExamSetById(selectedSetId);
+    const keyword = String(pickerSearch.value || "").trim().toLowerCase();
+    const codes = (examSet ? examSet.codes : []).filter((code) => code.code_name.toLowerCase().includes(keyword));
+
+    pickerCodeTableBody.innerHTML = codes.length ? codes.map((code) => `
+      <tr>
+        <td><input type="checkbox" data-code-pick="${code.id}" ${examPickerSelection.includes(code.id) ? "checked" : ""} ${isViewMode() ? "disabled" : ""}></td>
+        <td><strong>${code.code_name}</strong></td>
+        <td>${code.total_questions}</td>
+        <td>${code.total_score}</td>
+      </tr>
+    `).join("") : `
+      <tr>
+        <td colspan="4">
+          <div class="es-empty">
+            <i class="fas fa-file-alt"></i>
+            Không tìm thấy mã đề đã duyệt phù hợp.
+          </div>
+        </td>
+      </tr>
+    `;
+
+    pickerSelectedTags.innerHTML = examPickerSelection.map((codeId) => {
+      const code = (examSet ? examSet.codes : []).find((item) => item.id === codeId);
+      return code ? `<span class="es-selected-tag">${code.code_name}</span>` : "";
+    }).join("");
+    document.getElementById("pickerSelectedCount").textContent = examPickerSelection.length;
+    if (pickerSelectionMeta) {
+      pickerSelectionMeta.textContent = `Đã chọn ${examPickerSelection.length} mã đề`;
+    }
+    if (pickerSelectAll) {
+      pickerSelectAll.checked = codes.length ? codes.every((code) => examPickerSelection.includes(code.id)) : false;
+    }
+
+    pickerCodeTableBody.querySelectorAll("[data-code-pick]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const codeId = Number(checkbox.dataset.codePick);
+        if (checkbox.checked) {
+          if (!examPickerSelection.includes(codeId)) {
+            examPickerSelection.push(codeId);
+          }
+        } else {
+          examPickerSelection = examPickerSelection.filter((item) => item !== codeId);
+        }
+        renderExamPickerCodes();
+      });
+    });
+  }
+
+  function confirmExamPicker() {
+    const room = wizardState.roomConfigs[examPickerRoomIndex];
+    if (!room) {
+      return;
+    }
+
+    const examSet = getExamSetById(Number(pickerExamSet.value || 0));
+    if (!examSet) {
+      pushToast("Vui lòng chọn bộ đề đã duyệt cho phòng thi.", "error");
+      return;
+    }
+    if (!examPickerSelection.length) {
+      pushToast("Vui lòng chọn ít nhất một mã đề cho phòng thi.", "error");
+      return;
+    }
+
+    room.exam_set_id = examSet.id;
+    room.exam_set_name = examSet.name;
+    room.exam_code_ids = examPickerSelection.slice();
+    room.exam_code_names = examSet.codes.filter((code) => examPickerSelection.includes(code.id)).map((code) => code.code_name);
+
+    if (room.assignments.length) {
+      const roomCodes = examSet.codes.filter((code) => room.exam_code_ids.includes(code.id));
+      room.assignments = room.assignments.map((assignment, index) => ({
+        ...assignment,
+        exam_code_id: roomCodes[index % roomCodes.length]?.id || null,
+        exam_code_name: roomCodes[index % roomCodes.length]?.code_name || "",
+      }));
+    }
+
+    renderRooms();
+    renderDistribution();
+    closeExamPicker(true);
+  }
+
+  function validateStep(step) {
+    clearToasts("error");
+
+    if (step === 1) {
+      const errors = [];
+      const durationValue = Number(wizardState.durationMinutes || 0);
+      const startDateTime = buildLocalDateTime(wizardState.examDate, wizardState.startTime);
+      const endDateTime = buildLocalDateTime(wizardState.examDate, wizardState.endTime);
+      const now = getCurrentLocalDateTime();
+
+      if (!wizardState.groupName.trim()) {
+        errors.push("Vui lòng nhập tên kỳ thi");
+      }
+      if (!wizardState.academicYear.trim()) {
+        errors.push("Vui lòng chọn năm học");
+      } else if (!/^\d{4}-\d{4}$/.test(wizardState.academicYear.trim())) {
+        errors.push("Năm học phải theo định dạng YYYY-YYYY");
+      }
+      if (!wizardState.examDate) {
+        errors.push("Vui lòng chọn ngày thi");
+      }
+      if (!wizardState.startTime || !wizardState.endTime) {
+        errors.push("Vui lòng nhập thời gian thi");
+      }
+      if (!durationValue) {
+        errors.push("Vui lòng nhập thời gian làm bài");
+      } else if (durationValue <= 0) {
+        errors.push("Thời gian làm bài phải lớn hơn 0 phút");
+      }
+      if (startDateTime && startDateTime < now) {
+        errors.push("Không thể đặt thời gian bắt đầu nhỏ hơn thời điểm hiện tại");
+      }
+      if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+        errors.push("Thời gian kết thúc phải sau thời gian bắt đầu");
+      }
+
+      if (errors.length) {
+        errors.forEach((message) => pushToast(message, "error"));
+        return false;
+      }
+      return true;
+    }
+
+    if (step === 2) {
+      const errors = [];
+      if (!wizardState.roomConfigs.length) {
+        errors.push("Vui lòng thêm ít nhất một phòng thi");
+      }
+      const seenNames = new Set();
+      for (let index = 0; index < wizardState.roomConfigs.length; index += 1) {
+        const room = wizardState.roomConfigs[index];
+        const roomName = room.room_name.trim();
+        if (!roomName) {
+          errors.push(`Phòng ở dòng ${index + 1} chưa có tên phòng`);
+          continue;
+        }
+        if (seenNames.has(roomName.toLowerCase())) {
+          errors.push(`Tên phòng ${roomName} đang bị trùng`);
+          continue;
+        }
+        seenNames.add(roomName.toLowerCase());
+        if (Number(room.student_count || 0) <= 0) {
+          errors.push(`Phòng ${roomName} phải có số lượng sinh viên lớn hơn 0`);
+        }
+        if (!room.password.trim()) {
+          errors.push(`Phòng ${roomName} chưa có mật khẩu phòng`);
+        } else if (room.password.trim().length !== 5) {
+          errors.push(`Phòng ${roomName} phải có mật khẩu đúng 5 ký tự`);
+        }
+        if (!room.exam_set_id || !room.exam_code_ids.length) {
+          errors.push(`Phòng ${roomName} chưa chọn bộ đề và mã đề`);
+        }
+      }
+      if (errors.length) {
+        errors.forEach((message) => pushToast(message, "error"));
+        return false;
+      }
+      return true;
+    }
+
+    if (step === 3) {
+      const errors = [];
+      const students = getUniqueSelectedStudents();
+      const totalSeats = wizardState.roomConfigs.reduce((sum, room) => sum + Number(room.student_count || 0), 0);
+      if (!wizardState.rosterIds.length) {
+        errors.push("Vui lòng chọn ít nhất một nguồn danh sách sinh viên");
+      }
+      if (!students.length) {
+        errors.push("Nguồn danh sách sinh viên hiện không có dữ liệu để phân bổ");
+      }
+      if (students.length > totalSeats) {
+        errors.push(`Tổng số sinh viên (${students.length}) đang lớn hơn tổng sức chứa (${totalSeats})`);
+      }
+
+      const expectedStudentCodes = new Set(
+        students
+          .map((student) => String(student.student_code || "").trim().toUpperCase())
+          .filter(Boolean)
+      );
+      const assignedStudentCodes = new Set();
+      const duplicateStudentCodes = new Set();
+
+      wizardState.roomConfigs.forEach((room) => {
+        if (room.assignments.length > Number(room.student_count || 0)) {
+          errors.push(`Phòng ${room.room_name || "chưa đặt tên"} đang vượt quá sức chứa đã cấu hình`);
+        }
+        room.assignments.forEach((assignment) => {
+          const studentCode = String(assignment.student_code || "").trim().toUpperCase();
+          if (!studentCode) {
+            return;
+          }
+          if (assignedStudentCodes.has(studentCode)) {
+            duplicateStudentCodes.add(studentCode);
+          }
+          assignedStudentCodes.add(studentCode);
+        });
+      });
+
+      if (duplicateStudentCodes.size) {
+        errors.push("Có sinh viên đang bị phân bổ trùng nhiều phòng");
+      }
+      const missingStudentCount = Array.from(expectedStudentCodes).filter((code) => !assignedStudentCodes.has(code)).length;
+      if (missingStudentCount) {
+        errors.push(`Còn ${missingStudentCount} sinh viên chưa được phân bổ vào phòng thi`);
+      }
+
+      if (errors.length) {
+        errors.forEach((message) => pushToast(message, "error"));
+        return false;
+      }
+      return true;
+    }
+
+    return true;
+  }
+
+  function buildPayload(submitAction) {
+    return {
+      subject_id: sessionCatalog.subject.id,
+      group_name: wizardState.groupName.trim(),
+      academic_year: wizardState.academicYear.trim(),
+      semester: wizardState.semester,
+      exam_date: wizardState.examDate,
+      start_time: wizardState.startTime,
+      end_time: wizardState.endTime,
+      description: wizardState.description.trim(),
+      exam_password: wizardState.examPassword.trim(),
+      roster_ids: wizardState.rosterIds.slice(),
+      submit_action: submitAction,
+      rooms: wizardState.roomConfigs.map((room, index) => ({
+        client_id: room.client_id,
+        room_name: room.room_name.trim(),
+        student_count: Number(room.student_count || 0),
+        password: room.password.trim(),
+        exam_set_id: room.exam_set_id,
+        exam_code_ids: room.exam_code_ids.slice(),
+        assignments: room.assignments.map((assignment, assignmentIndex) => ({
+          roster_student_id: assignment.roster_student_id,
+          student_code: assignment.student_code,
+          full_name: assignment.full_name,
+          linked_user_id: assignment.linked_user_id,
+          exam_code_id: assignment.exam_code_id,
+          display_order: assignmentIndex + 1,
+        })),
+        display_order: index + 1,
+      })),
+    };
+  }
+
+  async function saveSession(submitAction) {
+    if (submitAction === "CONFIRM" && !validateStep(3)) {
+      return;
+    }
+    if (submitAction !== "CONFIRM" && !validateStep(1)) {
+      return;
+    }
+
+    const targetUrl = wizardState.sessionId
+      ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
+      : createSessionUrl;
+
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      body: JSON.stringify(buildPayload(submitAction)),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+      pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
+      return;
+    }
+
+    window.location.href = payload.redirect_url || sessionListUrl;
+  }
+
+  function bindWizardActions() {
+    if (addRoomButton) {
+      addRoomButton.addEventListener("click", addRoom);
+      if (isViewMode()) {
+        addRoomButton.classList.add("es-hidden");
+      }
+    }
+    if (addRosterButton) {
+      addRosterButton.addEventListener("click", addRoster);
+      if (isViewMode()) {
+        addRosterButton.classList.add("es-hidden");
+      }
+    }
+    if (randomAssignButton) {
+      randomAssignButton.addEventListener("click", randomAssignAllStudents);
+      if (isViewMode()) {
+        randomAssignButton.classList.add("es-hidden");
+      }
+    }
+    if (wizardBackButton) {
+      wizardBackButton.addEventListener("click", () => setStep(Math.max(1, wizardState.step - 1)));
+    }
+    if (wizardNextButton) {
+      wizardNextButton.addEventListener("click", () => {
+        if (validateStep(wizardState.step)) {
+          setStep(Math.min(3, wizardState.step + 1));
+        }
+      });
+    }
+    if (wizardSubmitButton) {
+      wizardSubmitButton.addEventListener("click", () => saveSession("CONFIRM"));
+    }
+    if (saveDraftButton) {
+      saveDraftButton.addEventListener("click", () => saveSession("DRAFT"));
+    }
+    if (wizardViewBackButton) {
+      wizardViewBackButton.addEventListener("click", () => {
+        window.location.href = sessionListUrl;
+      });
+    }
+  }
+
+  function bindConfirmModal() {
+    if (confirmCancelButton) {
+      confirmCancelButton.addEventListener("click", closeConfirmModal);
+    }
+    if (confirmAcceptButton) {
+      confirmAcceptButton.addEventListener("click", () => {
+        if (typeof confirmAction === "function") {
+          confirmAction();
+        } else {
+          closeConfirmModal();
+        }
+      });
+    }
+    if (confirmBackdrop) {
+      confirmBackdrop.addEventListener("click", (event) => {
+        if (event.target === confirmBackdrop) {
+          closeConfirmModal();
+        }
+      });
+    }
+  }
+
+  function bindExamPicker() {
+    document.getElementById("closeExamPickerButton").addEventListener("click", closeExamPicker);
+    document.getElementById("cancelExamPickerButton").addEventListener("click", closeExamPicker);
+    document.getElementById("confirmExamPickerButton").addEventListener("click", confirmExamPicker);
+    if (pickerAcademicYear) {
+      pickerAcademicYear.addEventListener("change", () => {
+        examPickerSelection = [];
+        renderExamPickerSets();
+        renderExamPickerCodes();
+      });
+    }
+    if (pickerSemester) {
+      pickerSemester.addEventListener("change", () => {
+        examPickerSelection = [];
+        renderExamPickerSets();
+        renderExamPickerCodes();
+      });
+    }
+    pickerExamSet.addEventListener("change", () => {
+      examPickerSelection = [];
+      renderExamPickerCodes();
+    });
+    pickerSearch.addEventListener("input", renderExamPickerCodes);
+    if (pickerSelectAll) {
+      pickerSelectAll.addEventListener("change", () => {
+        const selectedSetId = Number(pickerExamSet.value || 0);
+        const examSet = getExamSetById(selectedSetId);
+        const keyword = String(pickerSearch.value || "").trim().toLowerCase();
+        const codes = (examSet ? examSet.codes : []).filter((code) => code.code_name.toLowerCase().includes(keyword));
+        const visibleIds = codes.map((code) => code.id);
+        if (pickerSelectAll.checked) {
+          visibleIds.forEach((id) => {
+            if (!examPickerSelection.includes(id)) {
+              examPickerSelection.push(id);
+            }
+          });
+        } else {
+          examPickerSelection = examPickerSelection.filter((id) => !visibleIds.includes(id));
+        }
+        renderExamPickerCodes();
+      });
+    }
+    examPickerBackdrop.addEventListener("click", (event) => {
+      if (event.target === examPickerBackdrop) {
+        closeExamPicker();
+      }
+    });
+  }
+
+  function initializeWizard() {
+    upgradeWizardMarkup();
+    bindDomRefs();
+    populateGeneralFields();
+    bindGeneralFields();
+    bindWizardActions();
+    bindExamPicker();
+    bindConfirmModal();
+    populateRosterPicker();
+    renderRooms();
+    renderSelectedRosters();
+    renderDistribution();
+    setStep(1);
+  }
+
+  initializeWizard();
+</script>
+{% endblock %}

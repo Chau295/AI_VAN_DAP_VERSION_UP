@@ -1,177 +1,532 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Xem Bài làm Sinh viên - {{ subject.name }}{% endblock %}
+{% block title %}Xem bài làm sinh viên - {{ selected_subject.name|default:subject.name }}{% endblock %}
 
 {% block content %}
 <style>
-    .score-high { color: #10b981; }
-    .score-medium { color: #f59e0b; }
-    .score-low { color: #ef4444; }
+  :root {
+    --rv-bg: #f5f7fb;
+    --rv-panel: #ffffff;
+    --rv-border: #e5ebf3;
+    --rv-text: #132238;
+    --rv-muted: #7b8798;
+    --rv-blue: #2346a6;
+    --rv-blue-dark: #173887;
+    --rv-blue-soft: #dbeafe;
+    --rv-blue-text: #2563eb;
+    --rv-green-soft: #eaf8ef;
+    --rv-green: #16a34a;
+    --rv-amber-soft: #fff7ed;
+    --rv-amber: #f59e0b;
+    --rv-red-soft: #fef2f2;
+    --rv-red: #ef4444;
+    --rv-gray-soft: #e2e8f0;
+    --rv-gray-text: #64748b;
+    --rv-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+    --rv-radius-xl: 28px;
+    --rv-radius-lg: 22px;
+    --rv-radius-md: 16px;
+    --rv-radius-sm: 12px;
+  }
+
+  * { box-sizing: border-box; }
+
+  .rv-page {
+    background: var(--rv-bg);
+    min-height: calc(100vh - 80px);
+    padding: 28px 24px 34px;
+  }
+
+  .rv-shell {
+    max-width: 1380px;
+    margin: 0 auto;
+  }
+
+  .rv-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .rv-title {
+    margin: 0;
+    font-size: 28px;
+    line-height: 1.2;
+    font-weight: 800;
+    color: var(--rv-text);
+    letter-spacing: -0.02em;
+  }
+
+  .rv-subtitle {
+    margin: 8px 0 0;
+    font-size: 15px;
+    color: var(--rv-muted);
+    line-height: 1.6;
+  }
+
+  .rv-btn-group {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .rv-btn {
+    border: 0;
+    outline: 0;
+    text-decoration: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 46px;
+    padding: 0 20px;
+    border-radius: 16px;
+    font-size: 14px;
+    font-weight: 700;
+    transition: .18s ease;
+    white-space: nowrap;
+  }
+
+  .rv-btn:hover {
+    transform: translateY(-1px);
+    text-decoration: none;
+  }
+
+  .rv-btn-green {
+    background: #16a34a;
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(22, 163, 74, .18);
+  }
+
+  .rv-btn-green:hover {
+    background: #15803d;
+    color: #fff;
+  }
+
+  .rv-btn-secondary {
+    background: #fff;
+    color: #475569;
+    border: 1px solid var(--rv-border);
+  }
+
+  .rv-btn-secondary:hover {
+    background: #f8fafc;
+    color: var(--rv-text);
+  }
+
+  .rv-card {
+    background: var(--rv-panel);
+    border: 1px solid var(--rv-border);
+    border-radius: var(--rv-radius-xl);
+    box-shadow: var(--rv-shadow);
+    overflow: hidden;
+  }
+
+  .rv-filter-card {
+    margin-bottom: 22px;
+    padding: 18px 22px;
+  }
+
+  .rv-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .rv-filter-label {
+    color: #334155;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .rv-select {
+    flex: 1;
+    min-width: 280px;
+    height: 46px;
+    border: 1px solid #dbe3ee;
+    border-radius: 14px;
+    background: #fff;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 0 14px;
+    outline: none;
+    transition: .18s ease;
+  }
+
+  .rv-select:focus {
+    border-color: #b7c8ea;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, .08);
+  }
+
+  .rv-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .rv-stat-card {
+    background: var(--rv-panel);
+    border: 1px solid var(--rv-border);
+    border-radius: var(--rv-radius-lg);
+    box-shadow: var(--rv-shadow);
+    padding: 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .rv-stat-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex: 0 0 52px;
+  }
+
+  .rv-stat-icon.blue { background: var(--rv-blue-soft); color: var(--rv-blue-text); }
+  .rv-stat-icon.green { background: var(--rv-green-soft); color: var(--rv-green); }
+  .rv-stat-icon.amber { background: var(--rv-amber-soft); color: var(--rv-amber); }
+  .rv-stat-icon.red { background: var(--rv-red-soft); color: var(--rv-red); }
+
+  .rv-stat-label {
+    display: block;
+    color: var(--rv-muted);
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .rv-stat-value {
+    display: block;
+    color: var(--rv-text);
+    font-size: 30px;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .rv-panel-head {
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .rv-panel-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--rv-text);
+  }
+
+  .rv-panel-subtitle {
+    margin: 6px 0 0;
+    color: var(--rv-muted);
+    font-size: 13px;
+  }
+
+  .rv-panel-body {
+    padding: 20px 24px 24px;
+  }
+
+  .rv-table-wrap {
+    overflow-x: auto;
+  }
+
+  .rv-table {
+    width: 100%;
+    min-width: 920px;
+    border-collapse: collapse;
+  }
+
+  .rv-table thead th {
+    padding: 14px 18px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: left;
+    border-bottom: 1px solid var(--rv-border);
+  }
+
+  .rv-table tbody td {
+    padding: 16px 18px;
+    border-bottom: 1px solid #eef2f7;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .rv-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .rv-table tbody tr:hover {
+    background: #fbfdff;
+  }
+
+  .rv-student-name {
+    color: var(--rv-text);
+    font-weight: 800;
+  }
+
+  .rv-score-high { color: #10b981; font-weight: 800; }
+  .rv-score-medium { color: #f59e0b; font-weight: 800; }
+  .rv-score-low { color: #ef4444; font-weight: 800; }
+
+  .rv-pill {
+    min-width: 120px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .01em;
+  }
+
+  .rv-pill-complete {
+    background: var(--rv-green-soft);
+    color: var(--rv-green);
+  }
+
+  .rv-pill-progress {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  .rv-action-link {
+    color: var(--rv-blue-text);
+    font-size: 16px;
+    transition: .18s ease;
+  }
+
+  .rv-action-link:hover {
+    color: var(--rv-blue-dark);
+  }
+
+  .rv-empty {
+    text-align: center;
+    padding: 56px 20px;
+    color: #94a3b8;
+  }
+
+  .rv-empty i {
+    font-size: 42px;
+    margin-bottom: 12px;
+  }
+
+  @media (max-width: 1100px) {
+    .rv-stat-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
+    .rv-page {
+      padding: 18px 14px 24px;
+    }
+
+    .rv-topbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .rv-btn-group {
+      width: 100%;
+    }
+
+    .rv-btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .rv-stat-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .rv-filter-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .rv-select {
+      min-width: 0;
+    }
+  }
 </style>
 
-<div class="bg-gray-50 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800">Xem Bài làm Sinh viên</h1>
-                <p class="text-lg text-gray-500">{{ subject.name }}</p>
-            </div>
-            <div class="flex gap-2">
-                <a href="{% url 'qna:lecturer_export_reports_screen' %}?subject_id={{ selected_subject.id }}" class="bg-green-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors">
-                    <i class="fas fa-file-excel mr-2"></i>Xuất Báo cáo
-                </a>
-                <a href="{% url 'qna:lecturer_dashboard' %}" class="bg-white text-gray-700 font-semibold py-2 px-4 border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
-                    <i class="fas fa-arrow-left mr-2"></i>Về danh sách môn
-                </a>
-            </div>
-        </div>
+<div class="rv-page">
+  <div class="rv-shell">
+    <div class="rv-topbar">
+      <div>
+        <h1 class="rv-title">Xem bài làm sinh viên</h1>
+        <p class="rv-subtitle">{{ selected_subject.name|default:subject.name }}</p>
+      </div>
 
-        <!-- Subject Selector -->
-        <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-            <div class="flex items-center gap-4">
-                <label for="subject-select" class="text-gray-700 font-medium">Chọn môn học:</label>
-                <select id="subject-select" onchange="window.location.href=`?subject_id=${this.value}`" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {% for subj in subjects %}
-                        <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>{{ subj.name }} ({{ subj.subject_code }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-
-        <!-- Thống kê -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex items-center">
-                    <div class="bg-blue-100 text-blue-500 p-3 rounded-lg mr-4">
-                        <i class="fas fa-users fa-lg"></i>
-                    </div>
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800">Xem Bài làm Sinh viên</h1>
-                <p class="text-lg text-gray-500">{{ selected_subject.name }}</p>
-            </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex items-center">
-                    <div class="bg-green-100 text-green-500 p-3 rounded-lg mr-4">
-                        <i class="fas fa-check-circle fa-lg"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">Đã hoàn thành</p>
-                        <p class="text-2xl font-bold text-gray-800">{{ sessions|length }}</p>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex items-center">
-                    <div class="bg-yellow-100 text-yellow-500 p-3 rounded-lg mr-4">
-                        <i class="fas fa-star fa-lg"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">Điểm trung bình</p>
-                        <p class="text-2xl font-bold text-gray-800">
-                            {% widthratio sessions|length 1 0 as zero %}
-                            {% if sessions|length > 0 %}
-                                {% regroup sessions by user.username as user_sessions %}
-                                {% for user in user_sessions %}
-                                    {% for session in user.list %}
-                                        {% if forloop.first %}
-                                            {% if session.final_score %}
-                                                {% if forloop.parentloop.first %}{{ session.final_score|floatformat:1 }}{% endif %}
-                                            {% endif %}
-                                        {% endif %}
-                                    {% endfor %}
-                                {% endfor %}
-                                N/A
-                            {% else %}
-                                0.0
-                            {% endif %}
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-xl shadow-md p-6">
-                <div class="flex items-center">
-                    <div class="bg-red-100 text-red-500 p-3 rounded-lg mr-4">
-                        <i class="fas fa-user-times fa-lg"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">Vắng thi</p>
-                        <p class="text-2xl font-bold text-gray-800">0</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Danh sách bài làm -->
-        <div class="bg-white rounded-xl shadow-md">
-            <div class="p-6 border-b border-gray-200">
-                <h2 class="text-xl font-bold text-gray-800">
-                    <i class="fas fa-clipboard-list mr-2 text-blue-500"></i>Danh sách Bài làm
-                </h2>
-                <p class="text-gray-600 text-sm mt-1">Xem chi tiết bài làm và điểm số của sinh viên</p>
-            </div>
-            <div class="p-6">
-                {% if sessions %}
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-gray-600">
-                            <thead class="bg-gray-50 text-xs uppercase">
-                                <tr>
-                                    <th scope="col" class="py-3 px-4">Sinh viên</th>
-                                    <th scope="col" class="py-3 px-4">Lớp</th>
-                                    <th scope="col" class="py-3 px-4">Ngày thi</th>
-                                    <th scope="col" class="py-3 px-4">Điểm</th>
-                                    <th scope="col" class="py-3 px-4">Trạng thái</th>
-                                    <th scope="col" class="py-3 px-4 text-center">Hành động</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for session in sessions %}
-                                    <tr class="border-b hover:bg-gray-50">
-                                        <td class="py-4 px-4 font-medium">
-                                            {{ session.user.userprofile.full_name|default:session.user.username }}
-                                        </td>
-                                        <td class="py-4 px-4">
-                                            {{ session.user.userprofile.class_name|default:'-' }}
-                                        </td>
-                                        <td class="py-4 px-4">
-                                            {{ session.created_at|date:"d/m/Y H:i" }}
-                                        </td>
-                                        <td class="py-4 px-4">
-                                            {% if session.final_score %}
-                                                <span class="font-bold {% if session.final_score >= 8 %}score-high{% elif session.final_score >= 5 %}score-medium{% else %}score-low{% endif %}">
-                                                    {{ session.final_score|floatformat:1 }}
-                                                </span>
-                                            {% else %}
-                                                <span class="text-gray-400">-</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="py-4 px-4">
-                                            {% if session.is_completed %}
-                                                <span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Đã hoàn thành</span>
-                                            {% else %}
-                                                <span class="bg-yellow-100 text-yellow-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Đang thực hiện</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="py-4 px-4 text-center">
-                                            <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="text-blue-500 hover:text-blue-700 mx-1" title="Xem chi tiết">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="text-center py-8 text-gray-500">
-                        <i class="fas fa-inbox text-4xl mb-3"></i>
-                        <p>Chưa có bài làm nào.</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
+      <div class="rv-btn-group">
+        <a href="{% url 'qna:lecturer_export_reports_screen' %}?subject_id={{ selected_subject.id }}" class="rv-btn rv-btn-green">
+          <i class="fas fa-file-excel"></i>
+          Xuất báo cáo
+        </a>
+        <a href="{% url 'qna:lecturer_dashboard' %}" class="rv-btn rv-btn-secondary">
+          <i class="fas fa-arrow-left"></i>
+          Về danh sách môn
+        </a>
+      </div>
     </div>
+
+    <div class="rv-card rv-filter-card">
+      <div class="rv-filter-row">
+        <label for="subject-select" class="rv-filter-label">Chọn môn học:</label>
+        <select
+          id="subject-select"
+          onchange="window.location.href=`?subject_id=${this.value}`"
+          class="rv-select"
+        >
+          {% for subj in subjects %}
+            <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>
+              {{ subj.name }} ({{ subj.subject_code }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="rv-stat-grid">
+      <div class="rv-stat-card">
+        <span class="rv-stat-icon blue"><i class="fas fa-users"></i></span>
+        <div>
+          <span class="rv-stat-label">Tổng bài làm</span>
+          <span class="rv-stat-value">{{ sessions|length }}</span>
+        </div>
+      </div>
+
+      <div class="rv-stat-card">
+        <span class="rv-stat-icon green"><i class="fas fa-check-circle"></i></span>
+        <div>
+          <span class="rv-stat-label">Đã hoàn thành</span>
+          <span class="rv-stat-value">
+            {% with completed_count=0 %}
+              {{ sessions|length }}
+            {% endwith %}
+          </span>
+        </div>
+      </div>
+
+      <div class="rv-stat-card">
+        <span class="rv-stat-icon amber"><i class="fas fa-star"></i></span>
+        <div>
+          <span class="rv-stat-label">Điểm trung bình</span>
+          <span class="rv-stat-value">
+            {% with scored_count=0 %}
+              {% for session in sessions %}
+                {% if session.final_score != None %}
+                  {% if forloop.first %}{{ session.final_score|floatformat:1 }}{% endif %}
+                {% endif %}
+              {% empty %}
+                0.0
+              {% endfor %}
+              {% if not sessions %}0.0{% endif %}
+            {% endwith %}
+          </span>
+        </div>
+      </div>
+
+      <div class="rv-stat-card">
+        <span class="rv-stat-icon red"><i class="fas fa-user-times"></i></span>
+        <div>
+          <span class="rv-stat-label">Đang thực hiện</span>
+          <span class="rv-stat-value">
+            {% with in_progress=0 %}
+              0
+              {% for session in sessions %}
+                {% if not session.is_completed %}
+                  {% if forloop.first %}{% endif %}
+                {% endif %}
+              {% endfor %}
+            {% endwith %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rv-card">
+      <div class="rv-panel-head">
+        <h2 class="rv-panel-title">
+          <i class="fas fa-clipboard-list" style="color: var(--rv-blue-text); margin-right: 8px;"></i>
+          Danh sách bài làm
+        </h2>
+        <div class="rv-panel-subtitle">Xem chi tiết bài làm và điểm số của sinh viên.</div>
+      </div>
+
+      <div class="rv-panel-body">
+        {% if sessions %}
+          <div class="rv-table-wrap">
+            <table class="rv-table">
+              <thead>
+                <tr>
+                  <th>Sinh viên</th>
+                  <th>Lớp</th>
+                  <th>Ngày thi</th>
+                  <th>Điểm</th>
+                  <th>Trạng thái</th>
+                  <th style="text-align:center;">Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for session in sessions %}
+                  <tr>
+                    <td class="rv-student-name">
+                      {{ session.user.userprofile.full_name|default:session.user.username }}
+                    </td>
+                    <td>{{ session.user.userprofile.class_name|default:'-' }}</td>
+                    <td>{{ session.created_at|date:"d/m/Y H:i" }}</td>
+                    <td>
+                      {% if session.final_score != None %}
+                        <span class="{% if session.final_score >= 8 %}rv-score-high{% elif session.final_score >= 5 %}rv-score-medium{% else %}rv-score-low{% endif %}">
+                          {{ session.final_score|floatformat:1 }}
+                        </span>
+                      {% else %}
+                        <span style="color:#94a3b8;">-</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if session.is_completed %}
+                        <span class="rv-pill rv-pill-complete">Đã hoàn thành</span>
+                      {% else %}
+                        <span class="rv-pill rv-pill-progress">Đang thực hiện</span>
+                      {% endif %}
+                    </td>
+                    <td style="text-align:center;">
+                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="rv-action-link" title="Xem chi tiết">
+                        <i class="fas fa-eye"></i>
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="rv-empty">
+            <i class="fas fa-inbox"></i>
+            <div>Chưa có bài làm nào.</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
