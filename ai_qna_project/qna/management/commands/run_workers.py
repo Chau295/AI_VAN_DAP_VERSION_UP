@@ -33,10 +33,7 @@ from django.utils import timezone
 
 def _is_exam_group_open(exam_group):
     """Check if exam group is currently open for taking exam"""
-    if not exam_group:
-        return False
-    now = timezone.now()
-    return exam_group.status != "CANCELLED" and exam_group.start_at <= now <= exam_group.end_at
+    return bool(exam_group and exam_group.computed_status == "ONGOING")
 
 logger = logging.getLogger(__name__)
 

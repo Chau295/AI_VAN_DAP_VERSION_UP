@@ -60,6 +60,7 @@
   .result-table thead th { padding: 18px 22px; background: #fafafa; color: #4b5563; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; white-space: nowrap; }
   .result-table tbody td { padding: 22px; color: var(--review-text); border-top: 1px solid #eef2f7; vertical-align: middle; }
   .result-table tbody tr:hover { background: #fcfdff; }
+  .session-row.is-clickable { cursor: pointer; }
   .student-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: #0f2b57; }
   .student-id { display: block; margin-top: 8px; font-size: 0.9rem; color: #6b7280; }
   .warning-icon { color: #dc2626; font-size: 1rem; }
@@ -69,10 +70,8 @@
   .status-absent { color: #ef4444; background: #fee2e2; }
   .score-value { color: #0f2b57; font-size: 1.85rem; font-weight: 800; }
   .action-cell { text-align: center; }
-  .detail-link, .detail-link-disabled { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; text-decoration: none; }
-  .detail-link { color: var(--review-blue); background: var(--review-blue-soft); }
-  .detail-link:hover { background: var(--review-blue); color: #fff; }
-  .detail-link-disabled { color: #cbd5e1; background: #f1f5f9; cursor: not-allowed; }
+  .detail-flag-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+  .detail-flag-link:hover .warning-icon { color: #b91c1c; }
   .table-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 18px 8px 18px 6px; color: #64748b; font-size: 0.98rem; }
   .table-footer strong { color: #334155; }
   .empty-state { padding: 50px 18px 56px; text-align: center; color: #64748b; }
@@ -170,46 +169,35 @@
                 <th></th>
               </tr>
             </thead>
-            <tbody>
-              {% for session in sessions %}
-                <tr>
+              <tbody>
+                {% for session in sessions %}
+                <tr class="session-row{% if session.can_view_detail %} is-clickable{% endif %}"{% if session.can_view_detail %} data-detail-url="{% url 'qna:lecturer_session_detail' session.id %}" onclick="window.location.href=this.dataset.detailUrl;"{% endif %}>
                   <td>
-                    <span class="student-name">
-                      {{ session.student_name }}
-                      {% if session.has_violation_warning %}
-                        <i class="fas fa-exclamation-triangle warning-icon" title="Có cảnh báo gian lận"></i>
-                      {% endif %}
-                    </span>
+                    <span class="student-name">{{ session.student_name }}</span>
                     <span class="student-id">{{ session.student_identifier }}</span>
                   </td>
                   <td>{{ session.student_class_name }}</td>
                   <td>{{ session.exam_group.group_name|default:"-" }}</td>
                   <td>{{ session.exam_date_display|date:"d/m/Y" }}</td>
                   <td>
-                    {% if session.exam_group.start_time and session.exam_group.end_time %}
-                      {{ session.exam_group.start_time|time:"H:i" }} - {{ session.exam_group.end_time|time:"H:i" }}
+                    {% if session.exam_group.start_at and session.exam_group.end_at %}
+                      {{ session.exam_group.start_at|date:"H:i" }} - {{ session.exam_group.end_at|date:"H:i" }}
                     {% else %}
                       -
                     {% endif %}
                   </td>
                   <td>
-                    {% if session.is_completed %}
-                      <span class="status-pill status-completed">Đã hoàn thành</span>
-                    {% elif session.exam_group and session.exam_group.end_time and session.exam_group.exam_date and not session.can_view_detail %}
-                      <span class="status-pill status-in-progress">Đang thực hiện</span>
-                    {% else %}
-                      <span class="status-pill status-in-progress">Đang thực hiện</span>
-                    {% endif %}
+                    <span class="status-pill {{ session.review_status_class }}">{{ session.review_status_label }}</span>
                   </td>
                   <td><span class="score-value">{% if session.is_completed %}{{ session.calculated_final_score|floatformat:1 }}{% else %}-{% endif %}</span></td>
                   <td class="action-cell">
-                    {% if session.can_view_detail %}
-                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-link" title="Xem chi tiết">
-                        <i class="fas fa-exclamation-triangle {% if session.has_violation_warning %}warning-icon{% endif %}"></i>
+                    {% if session.has_violation_warning and session.can_view_detail %}
+                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-flag-link" title="Có cảnh báo gian lận" onclick="event.stopPropagation();">
+                        <i class="fas fa-exclamation-triangle warning-icon"></i>
                       </a>
-                    {% else %}
-                      <span class="detail-link-disabled" title="Chỉ được xem khi bài thi đã kết thúc">
-                        <i class="fas fa-exclamation-triangle {% if session.has_violation_warning %}warning-icon{% endif %}"></i>
+                    {% elif session.has_violation_warning %}
+                      <span title="Có cảnh báo gian lận">
+                        <i class="fas fa-exclamation-triangle warning-icon"></i>
                       </span>
                     {% endif %}
                   </td>

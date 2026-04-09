@@ -41,7 +41,10 @@
   .student-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
   .meta-label { color: var(--detail-muted); font-size: 0.92rem; margin-bottom: 4px; }
   .meta-value { color: #111827; font-size: 1.05rem; font-weight: 700; }
-  .status-pill { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: 999px; background: var(--detail-green-soft); color: var(--detail-green); font-size: 0.84rem; font-weight: 700; }
+  .status-pill { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: 999px; font-size: 0.84rem; font-weight: 700; }
+  .status-completed { background: var(--detail-green-soft); color: var(--detail-green); }
+  .status-in-progress { background: #ffedd5; color: #d97706; }
+  .status-absent { background: var(--detail-red-soft); color: var(--detail-red); }
   .exam-info-card { padding: 20px 22px; }
   .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--detail-text); font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
   .section-head i { color: #0f172a; }
@@ -141,15 +144,15 @@
               </div>
               <div>
                 <div class="meta-label">Trạng thái</div>
-                <div><span class="status-pill">Đã hoàn thành</span></div>
+                <div><span class="status-pill {{ session.detail_status_class }}">{{ session.detail_status_label }}</span></div>
               </div>
               <div>
                 <div class="meta-label">Thời gian thi</div>
                 <div class="meta-value">
-                  {% if session.exam_group.start_time and session.exam_group.end_time %}
-                    {{ session.exam_group.start_time|time:"H:i" }}-{{ session.exam_group.end_time|time:"H:i" }}
+                  {% if session.exam_group.start_at and session.exam_group.end_at %}
+                    {{ session.exam_group.start_at|date:"H:i" }}-{{ session.exam_group.end_at|date:"H:i" }}
                   {% else %}
-                    08:00 -09:00
+                    -
                   {% endif %}
                 </div>
               </div>

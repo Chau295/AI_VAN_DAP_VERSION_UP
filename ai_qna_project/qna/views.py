@@ -14,6 +14,7 @@ from base64 import b64encode
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any, Dict, List
 from uuid import uuid4
 from django.conf import settings
@@ -171,10 +172,7 @@ def _get_student_active_room_for_subject(user, subject):
 
 
 def _is_exam_group_open(exam_group):
-    if not exam_group:
-        return False
-    now = timezone.now()
-    return exam_group.status != "CANCELLED" and exam_group.start_at <= now <= exam_group.end_at
+    return bool(exam_group and exam_group.computed_status == "ONGOING")
 
 
 def _get_room_assignment_for_user(exam_group, user):
@@ -184,6 +182,28 @@ def _get_room_assignment_for_user(exam_group, user):
             if str(assignment.get("linked_user_id")) == str(user.id):
                 return room_cfg, assignment
     return None, None
+
+
+def _student_exam_entry_session_key(exam_group_id):
+    return f"exam_entry_session_{exam_group_id}"
+
+
+def _get_student_exam_session(user, subject, exam_group):
+    if not exam_group:
+        return None
+    return (
+        ExamSession.objects.filter(
+            user_id=user,
+            subject_id=subject,
+            exam_session_group_id=exam_group,
+        )
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+
+
+def _student_has_started_exam(session):
+    return bool(session and (session.is_completed or session.questions.exists()))
 
 
 # =========================================================
@@ -747,7 +767,81 @@ def _build_material_context(materials) -> str:
     return "\n\n" + ("\n\n" + "=" * 80 + "\n\n").join(blocks)
 
 
-def _generate_questions_from_ai(subject: Subject, materials, total_count: int, level_config: dict):
+def _normalize_requested_question_counts(total_count: int, level_config: dict) -> dict[str, int]:
+    level_config = level_config or {}
+    total_count = int(total_count or 0)
+
+    easy_count = max(int(level_config.get("easy", 0) or 0), 0)
+    medium_count = max(int(level_config.get("medium", 0) or 0), 0)
+    hard_count = max(int(level_config.get("hard", 0) or 0), 0)
+
+    if easy_count + medium_count + hard_count != total_count:
+        raise ValueError("Phân bổ độ khó không khớp với tổng số lượng câu hỏi yêu cầu.")
+
+    return {
+        "EASY": easy_count,
+        "MEDIUM": medium_count,
+        "HARD": hard_count,
+    }
+
+
+def _question_generation_level_config(target_counts: dict[str, int]) -> dict[str, int]:
+    return {
+        "easy": int(target_counts.get("EASY", 0) or 0),
+        "medium": int(target_counts.get("MEDIUM", 0) or 0),
+        "hard": int(target_counts.get("HARD", 0) or 0),
+    }
+
+
+def _remaining_question_counts(target_counts: dict[str, int], questions) -> dict[str, int]:
+    remaining_counts = dict(target_counts)
+    for item in questions:
+        difficulty = item.get("difficulty")
+        if difficulty in remaining_counts and remaining_counts[difficulty] > 0:
+            remaining_counts[difficulty] -= 1
+    return remaining_counts
+
+
+def _normalize_ai_generated_questions(raw_questions, excluded_question_keys=None):
+    excluded_question_keys = set(excluded_question_keys or [])
+    seen_question_keys = set(excluded_question_keys)
+    normalized_questions = []
+
+    for item in raw_questions or []:
+        if not isinstance(item, dict):
+            continue
+
+        content = (item.get("content") or "").strip()
+        if not content:
+            continue
+
+        content_key = normalize_question_text(content)
+        if not content_key or content_key in seen_question_keys:
+            continue
+
+        difficulty = (item.get("difficulty") or "MEDIUM").strip().upper()
+        if difficulty not in {"EASY", "MEDIUM", "HARD"}:
+            difficulty = "MEDIUM"
+
+        seen_question_keys.add(content_key)
+        normalized_questions.append(
+            {
+                "content": content,
+                "difficulty": difficulty,
+                "source": (item.get("source") or "").strip(),
+            }
+        )
+
+    return normalized_questions
+
+
+def _generate_questions_from_ai(
+        subject: Subject,
+        materials,
+        total_count: int,
+        level_config: dict,
+        excluded_question_texts=None,
+):
     api_key = getattr(settings, "OPENAI_API_KEY", None)
     if not api_key:
         api_key = os.getenv("OPENAI_API_KEY", "")
@@ -758,11 +852,20 @@ def _generate_questions_from_ai(subject: Subject, materials, total_count: int, l
     if not context_text.strip():
         raise Exception("Không trích xuất được nội dung từ tài liệu tải lên.")
 
-    easy_count = int(level_config.get("easy", 0))
-    medium_count = int(level_config.get("medium", 0))
-    hard_count = int(level_config.get("hard", 0))
+    target_counts = _normalize_requested_question_counts(total_count, level_config)
 
     client = OpenAI(api_key=api_key)
+
+    excluded_question_texts = [
+        (text or "").strip()
+        for text in (excluded_question_texts or [])
+        if (text or "").strip()
+    ]
+    excluded_question_keys = {
+        normalize_question_text(text)
+        for text in excluded_question_texts
+        if normalize_question_text(text)
+    }
 
     system_prompt = """
 Bạn là trợ lý tạo câu hỏi vấn đáp cho giảng viên đại học.
@@ -792,68 +895,90 @@ Trả về JSON hợp lệ theo đúng format:
   ]
 }
 Không thêm markdown, không thêm giải thích ngoài JSON.
+Phải tuân thủ chính xác số lượng từng mức độ được yêu cầu.
+Không được trả về câu hỏi trùng lặp hoặc gần như trùng lặp.
 """
 
-    user_prompt = f"""
+    collected_questions = []
+    collected_question_keys = set()
+
+    for _ in range(3):
+        remaining_counts = _remaining_question_counts(target_counts, collected_questions)
+        remaining_total = sum(remaining_counts.values())
+        if remaining_total <= 0:
+            break
+
+        excluded_items = list(
+            dict.fromkeys(excluded_question_texts + [item["content"] for item in collected_questions])
+        )[-20:]
+        excluded_block = ""
+        if excluded_items:
+            excluded_block = "\n\nCÁC CÂU KHÔNG ĐƯỢC LẶP LẠI:\n" + "\n".join(
+                f"- {item}" for item in excluded_items
+            )
+
+        user_prompt = f"""
 Môn học: {subject.name}
 Mã môn: {subject.subject_code}
 
-Hãy tạo tổng cộng {total_count} câu hỏi vấn đáp dựa trên nội dung tài liệu bên dưới.
+Hãy tạo chính xác {remaining_total} câu hỏi vấn đáp mới dựa trên nội dung tài liệu bên dưới.
 
-YÊU CẦU SỐ LƯỢNG:
-- EASY: {easy_count}
-- MEDIUM: {medium_count}
-- HARD: {hard_count}
+YÊU CẦU SỐ LƯỢNG BẮT BUỘC:
+- EASY: {remaining_counts['EASY']}
+- MEDIUM: {remaining_counts['MEDIUM']}
+- HARD: {remaining_counts['HARD']}
 
 YÊU CẦU CHẤT LƯỢNG:
 - Câu hỏi phải bám sát tài liệu
 - Câu hỏi ngắn gọn, rõ ràng, có chiều sâu
 - Không lặp lại nội dung giữa các câu
+- Tổng số phần tử trong mảng questions phải đúng bằng {remaining_total}
+- Không được trả về câu hỏi thừa so với từng mức độ yêu cầu{excluded_block}
 
 TÀI LIỆU:
 {context_text}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.4,
-        response_format={"type": "json_object"},
-    )
-
-    raw = response.choices[0].message.content
-    data = json.loads(raw)
-
-    questions = data.get("questions", [])
-    if not isinstance(questions, list) or not questions:
-        raise Exception("AI không trả về danh sách câu hỏi hợp lệ.")
-
-    normalized = []
-    for item in questions:
-        content = (item.get("content") or "").strip()
-        difficulty = (item.get("difficulty") or "MEDIUM").strip().upper()
-        source = (item.get("source") or "").strip()
-
-        if not content:
-            continue
-        if difficulty not in ["EASY", "MEDIUM", "HARD"]:
-            difficulty = "MEDIUM"
-
-        normalized.append(
-            {
-                "content": content,
-                "difficulty": difficulty,
-                "source": source,
-            }
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
         )
 
-    if not normalized:
-        raise Exception("AI không sinh được câu hỏi hợp lệ.")
+        raw = response.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        questions = data.get("questions", [])
+        if not isinstance(questions, list):
+            questions = []
 
-    return normalized
+        normalized_questions = _normalize_ai_generated_questions(
+            questions,
+            excluded_question_keys=excluded_question_keys | collected_question_keys,
+        )
+
+        for item in normalized_questions:
+            difficulty = item["difficulty"]
+            if remaining_counts.get(difficulty, 0) <= 0:
+                continue
+            collected_questions.append(item)
+            collected_question_keys.add(normalize_question_text(item["content"]))
+            remaining_counts[difficulty] -= 1
+
+    remaining_counts = _remaining_question_counts(target_counts, collected_questions)
+    if sum(remaining_counts.values()) > 0:
+        shortage_parts = [
+            f"{difficulty}: {count}"
+            for difficulty, count in remaining_counts.items()
+            if count > 0
+        ]
+        shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
+        raise Exception(f"AI không tạo đủ câu hỏi theo số lượng yêu cầu ({shortage_text}).")
+
+    return collected_questions
 
 
 # =========================================================
@@ -1569,6 +1694,11 @@ def api_generate_questions(request):
     if total_count <= 0 or total_count > 100:
         return JsonResponse({"status": "FAIL", "message": "Số lượng câu hỏi không hợp lệ."}, status=400)
 
+    try:
+        requested_counts = _normalize_requested_question_counts(total_count, level_config)
+    except ValueError as exc:
+        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+
     materials = list(
         LectureMaterial.objects.filter(
             subject_id=subject,
@@ -1585,32 +1715,74 @@ def api_generate_questions(request):
     job_id = uuid4().hex
 
     try:
-        ai_questions = _generate_questions_from_ai(
-            subject=subject,
-            materials=materials,
-            total_count=total_count,
-            level_config=level_config,
-        )
-
-        created_questions = []
         skipped_duplicates = 0
+        prepared_questions = []
+        retry_excluded_texts = []
+        known_question_keys = {
+            item
+            for item in Question.objects.filter(subject_id=subject, is_exam_clone=False).values_list(
+                "question_text_normalized",
+                flat=True,
+            )
+            if item
+        }
         draft_prefix = _draft_prefix(workspace_id)
 
-        for item in ai_questions:
-            if _question_exists_in_subject(subject, item["content"]):
-                skipped_duplicates += 1
-                continue
+        for _ in range(3):
+            remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+            remaining_total = sum(remaining_counts.values())
+            if remaining_total <= 0:
+                break
 
-            q = Question.objects.create(
-                subject_id=subject,
-                question_text=item["content"],
-                difficulty=item["difficulty"],
-                question_id_in_barem=f"{draft_prefix}{uuid4().hex[:8]}",
+            ai_questions = _generate_questions_from_ai(
+                subject=subject,
+                materials=materials,
+                total_count=remaining_total,
+                level_config=_question_generation_level_config(remaining_counts),
+                excluded_question_texts=retry_excluded_texts,
             )
 
-            q_data = _serialize_question(q)
-            q_data["source"] = item.get("source") or "AI từ tài liệu"
-            created_questions.append(q_data)
+            for item in ai_questions:
+                content_key = normalize_question_text(item["content"])
+                if not content_key:
+                    continue
+                if content_key in known_question_keys:
+                    skipped_duplicates += 1
+                    retry_excluded_texts.append(item["content"])
+                    continue
+
+                difficulty = item.get("difficulty")
+                if remaining_counts.get(difficulty, 0) <= 0:
+                    retry_excluded_texts.append(item["content"])
+                    continue
+
+                prepared_questions.append(item)
+                known_question_keys.add(content_key)
+                remaining_counts[difficulty] -= 1
+
+        remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+        if sum(remaining_counts.values()) > 0:
+            shortage_parts = [
+                f"{difficulty}: {count}"
+                for difficulty, count in remaining_counts.items()
+                if count > 0
+            ]
+            shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
+            raise Exception(f"AI không tạo đủ câu hỏi hợp lệ theo yêu cầu ({shortage_text}).")
+
+        created_questions = []
+        with transaction.atomic():
+            for item in prepared_questions:
+                q = Question.objects.create(
+                    subject_id=subject,
+                    question_text=item["content"],
+                    difficulty=item["difficulty"],
+                    question_id_in_barem=f"{draft_prefix}{uuid4().hex[:8]}",
+                )
+
+                q_data = _serialize_question(q)
+                q_data["source"] = item.get("source") or "AI từ tài liệu"
+                created_questions.append(q_data)
 
         summary = {
             "all": len(created_questions),
@@ -1635,8 +1807,8 @@ def api_generate_questions(request):
                 "status": "SUCCESS",
                 "job_id": job_id,
                 "message": (
-                    f"Đã tạo {len(created_questions)}/{total_count} câu hỏi. "
-                    f"Bỏ qua {skipped_duplicates} câu bị trùng."
+                    f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công. "
+                    f"Hệ thống đã tự sinh bù {skipped_duplicates} câu bị trùng."
                     if skipped_duplicates
                     else f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công."
                 ),
@@ -1908,6 +2080,67 @@ def _compute_scores(session: ExamSession) -> tuple[float, float]:
     return main_avg, final_total
 
 
+def _apply_review_status(row):
+    row.has_violation_warning = bool(getattr(row, "cheating_flag", False))
+    row.review_status_label = "Đang thực hiện"
+    row.review_status_class = "status-in-progress"
+
+    exam_group = getattr(row, "exam_group", None)
+    if getattr(row, "is_completed", False):
+        row.review_status_label = "Đã hoàn thành"
+        row.review_status_class = "status-completed"
+    elif exam_group and exam_group.computed_status == "COMPLETED":
+        row.review_status_label = "Vắng thi"
+        row.review_status_class = "status-absent"
+    elif exam_group and exam_group.computed_status == "CANCELLED":
+        row.review_status_label = "Đã hủy"
+        row.review_status_class = "status-absent"
+
+
+def _can_view_review_detail(row):
+    if not getattr(row, "id", None):
+        return False
+
+    exam_group = getattr(row, "exam_group", None)
+    if getattr(row, "is_completed", False):
+        return True
+
+    return not (exam_group and exam_group.computed_status == "ONGOING")
+
+
+def _build_missing_review_rows(exam_groups, existing_session_keys):
+    from .session_management import _build_exam_group_student_rows
+
+    rows = []
+    for exam_group in exam_groups:
+        if exam_group.computed_status not in {"COMPLETED", "CANCELLED"}:
+            continue
+
+        for student_row in _build_exam_group_student_rows(exam_group):
+            student_identifier = student_row.get("student_code") or "-"
+            student_key = normalize_student_code(student_identifier)
+            if student_key and (exam_group.pk, student_key) in existing_session_keys:
+                continue
+
+            row = SimpleNamespace(
+                id=None,
+                exam_group=exam_group,
+                is_completed=False,
+                cheating_flag=False,
+                student_identifier=student_identifier,
+                student_name=student_row.get("full_name") or student_identifier,
+                student_class_name=student_row.get("class_name") or "-",
+                exam_date_display=exam_group.exam_date,
+                calculated_final_score=None,
+                created_at=exam_group.end_at,
+            )
+            _apply_review_status(row)
+            row.can_view_detail = _can_view_review_detail(row)
+            rows.append(row)
+
+    return rows
+
+
 @login_required
 def lecturer_student_review_screen(request):
     if not request.user.userprofile.is_lecturer:
@@ -1927,18 +2160,22 @@ def lecturer_student_review_screen(request):
             selected_subject = subjects.first()
 
     exam_groups = ExamSessionGroup.objects.filter(subject_id=selected_subject).order_by("-exam_date")
-    sessions = ExamSession.objects.filter(subject_id=selected_subject).select_related("user_id", "user_id__userprofile")
+    sessions = ExamSession.objects.filter(
+        subject_id=selected_subject,
+        exam_session_group_id__isnull=False,
+    ).select_related(
+        "user_id",
+        "user_id__userprofile",
+        "exam_session_group_id",
+    )
 
     if exam_group_id:
         sessions = sessions.filter(exam_session_group_id=exam_group_id)
-    if student_filter:
-        sessions = sessions.filter(user_id__username__icontains=student_filter)
 
+    selected_exam_groups = list(exam_groups.filter(pk=exam_group_id)) if exam_group_id else list(exam_groups)
+    review_rows = []
+    existing_session_keys = set()
     sessions = sessions.order_by("-created_at")
-    completed_count = 0
-    absent_count = 0
-    total_score = 0.0
-    flagged_count = 0
 
     for session in sessions:
         main_avg, final_total = _compute_scores(session)
@@ -1955,18 +2192,44 @@ def lecturer_student_review_screen(request):
             session.exam_date_display = session.completed_at.date()
         else:
             session.exam_date_display = session.created_at.date()
-        session.can_view_detail = bool(session.is_completed)
-        session.has_violation_warning = bool(session.cheating_flag)
+        _apply_review_status(session)
+        session.can_view_detail = _can_view_review_detail(session)
+        review_rows.append(session)
 
-        if session.cheating_flag:
+        if session.exam_group:
+            session_key = normalize_student_code(session.student_identifier)
+            if session_key:
+                existing_session_keys.add((session.exam_group.pk, session_key))
+
+    review_rows.extend(_build_missing_review_rows(selected_exam_groups, existing_session_keys))
+
+    if student_filter:
+        keyword = student_filter.lower()
+        review_rows = [
+            row
+            for row in review_rows
+            if keyword in (row.student_identifier or "").lower()
+            or keyword in (row.student_name or "").lower()
+            or keyword in (row.student_class_name or "").lower()
+            or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
+        ]
+
+    default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
+    review_rows.sort(key=lambda item: getattr(item, "created_at", None) or default_sort_time, reverse=True)
+
+    completed_count = 0
+    absent_count = 0
+    total_score = 0.0
+    flagged_count = 0
+
+    for session in review_rows:
+        if session.has_violation_warning:
             flagged_count += 1
         if session.is_completed:
             completed_count += 1
-            total_score += final_total or 0.0
-        elif session.exam_group and session.exam_group.end_time and session.exam_group.exam_date:
-            exam_end = timezone.make_aware(datetime.combine(session.exam_group.exam_date, session.exam_group.end_time))
-            if exam_end < timezone.now():
-                absent_count += 1
+            total_score += session.calculated_final_score or 0.0
+        elif session.review_status_label == "Vắng thi":
+            absent_count += 1
 
     average_score = round(total_score / completed_count, 1) if completed_count else 0
 
@@ -1979,7 +2242,7 @@ def lecturer_student_review_screen(request):
             "subject": selected_subject,
             "exam_groups": exam_groups,
             "selected_exam_group_id": int(exam_group_id) if exam_group_id else None,
-            "sessions": sessions,
+            "sessions": review_rows,
             "student_filter": student_filter,
             "average_score": average_score,
             "completed_count": completed_count,
@@ -2021,12 +2284,22 @@ def lecturer_session_detail(request, session_id):
     if session.subject not in request.user.userprofile.subjects_taught.all():
         raise PermissionDenied("Bạn không có quyền")
 
-    # YÊU CẦU 5: Chặn không cho xem chi tiết khi đang thi
-    if not session.is_completed:
-        messages.warning(request, "Sinh viên đang làm bài, chưa thể xem chi tiết.")
+    if not session.is_completed and session.exam_group and session.exam_group.computed_status == "ONGOING":
+        messages.warning(request, "Phiên thi đang diễn ra, chưa thể xem chi tiết.")
         return redirect("qna:lecturer_student_review_screen")
 
     main_avg, final_total = _compute_scores(session)
+    session.detail_status_label = "Đang thực hiện"
+    session.detail_status_class = "status-in-progress"
+    if session.is_completed:
+        session.detail_status_label = "Đã hoàn thành"
+        session.detail_status_class = "status-completed"
+    elif session.exam_group and session.exam_group.computed_status == "COMPLETED":
+        session.detail_status_label = "Vắng thi"
+        session.detail_status_class = "status-absent"
+    elif session.exam_group and session.exam_group.computed_status == "CANCELLED":
+        session.detail_status_label = "Đã hủy"
+        session.detail_status_class = "status-absent"
 
     # Lấy danh sách ảnh gian lận
     violation_images = []
@@ -2268,6 +2541,7 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
         active_room = _get_student_active_room_for_subject(request.user, subject)
         active_group = active_room.exam_session_group_id if active_room else None
         is_open = _is_exam_group_open(active_group)
+        group_status = active_group.computed_status if active_group else None
         subject_cards.append(
             {
                 "subject": subject,
@@ -2276,8 +2550,12 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
                 "can_enter_exam": is_open and bool(active_room and (active_room.room_password or "").strip()),
                 "status_label": (
                     "Đang trong ca thi"
-                    if is_open
-                    else ("Chưa đến giờ thi" if active_group and timezone.now() < active_group.start_at else "Ngoài thời gian thi")
+                    if group_status == "ONGOING"
+                    else "Chưa đến giờ thi"
+                    if group_status == "SCHEDULED"
+                    else "Ca thi đã hủy"
+                    if group_status == "CANCELLED"
+                    else "Ngoài thời gian thi"
                     if active_group
                     else "Chưa có ca thi"
                 ),
@@ -2393,10 +2671,7 @@ def exam_view(request: HttpRequest, subject_code: str) -> HttpResponse:
     subject = get_object_or_404(Subject, subject_code=subject_code)
 
     # 1. Tìm phòng thi và ca thi hiện tại của sinh viên
-    active_room = ExamSessionRoom.objects.filter(
-        exam_session_group_id__subject_id=subject,
-        students=request.user
-    ).select_related('exam_session_group_id').order_by('-exam_session_group_id__exam_date').first()
+    active_room = _get_student_active_room_for_subject(request.user, subject)
 
     if not active_room:
         messages.error(request, f"Bạn chưa được xếp vào phòng thi nào của môn {subject.name}.")
@@ -2425,18 +2700,27 @@ def exam_view(request: HttpRequest, subject_code: str) -> HttpResponse:
     if not main_questions:
         main_questions = list(Question.objects.filter(subject_id=subject, is_exam_clone=False).order_by("?")[:3])
 
-    # 4. Khởi tạo phiên làm bài
-    session, created = ExamSession.objects.get_or_create(
-        user_id=request.user,
-        subject_id=subject,
-        exam_session_group_id=exam_group,
-        defaults={'verification_status': 'ALLOW'}
-    )
+    # 4. Chỉ cho phép vào ca thi đúng 1 lần sau bước xác thực
+    session = _get_student_exam_session(request.user, subject, exam_group)
+    if not session:
+        messages.error(request, "Bạn cần hoàn thành xác thực trước khi vào thi.")
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
 
-    if created or not session.questions.exists():
+    entry_session_key = _student_exam_entry_session_key(exam_group.pk)
+    allowed_session_id = request.session.get(entry_session_key)
+    if allowed_session_id != session.pk and _student_has_started_exam(session):
+        messages.error(request, "Bạn chỉ được phép vào ca thi 1 lần.")
+        return redirect("qna:dashboard")
+    if allowed_session_id != session.pk:
+        messages.error(request, "Bạn cần hoàn thành xác thực trước khi vào thi.")
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+
+    if not session.questions.exists():
         session.questions.set(main_questions)
     else:
         main_questions = list(session.questions.all())
+
+    request.session.pop(entry_session_key, None)
 
     # Trả về kèm theo thời gian làm bài của giảng viên (duration_minutes)
     return render(
@@ -2595,14 +2879,38 @@ def verify_student_face(request: HttpRequest) -> JsonResponse:
 
     try:
         subject = get_object_or_404(Subject, subject_code=subject_code)
+        active_room = _get_student_active_room_for_subject(request.user, subject)
+        if not active_room:
+            return JsonResponse({"status": "error", "message": "Bạn chưa được phân vào phòng thi của môn này."}, status=400)
+
+        exam_group = active_room.exam_session_group_id
+        if not _is_exam_group_open(exam_group):
+            return JsonResponse({"status": "error", "message": "Hiện chưa trong thời gian ca thi nên không thể vào thi."}, status=400)
+
         format_part, imgstr = face_image_data.split(";base64,")
-        session = ExamSession.objects.create(
-            user_id=request.user,
-            subject_id=subject,
-            face_image_blob=base64.b64decode(imgstr),
-            face_image_mime=f"image/{format_part.split('/')[-1]}",
-            verification_status="ALLOW",
-        )
+        session = _get_student_exam_session(request.user, subject, exam_group)
+        if _student_has_started_exam(session):
+            return JsonResponse({"status": "error", "message": "Bạn chỉ được phép vào ca thi 1 lần."}, status=400)
+
+        image_blob = base64.b64decode(imgstr)
+        image_mime = f"image/{format_part.split('/')[-1]}"
+
+        if not session:
+            session = ExamSession.objects.create(
+                user_id=request.user,
+                subject_id=subject,
+                exam_session_group_id=exam_group,
+                face_image_blob=image_blob,
+                face_image_mime=image_mime,
+                verification_status="ALLOW",
+            )
+        else:
+            session.face_image_blob = image_blob
+            session.face_image_mime = image_mime
+            session.verification_status = "ALLOW"
+            session.save(update_fields=["face_image_blob", "face_image_mime", "verification_status"])
+
+        request.session[_student_exam_entry_session_key(exam_group.pk)] = session.pk
         return JsonResponse(
             {
                 "status": "success",

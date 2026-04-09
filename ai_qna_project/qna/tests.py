@@ -16,6 +16,7 @@ from .models import (
     DifficultyLevel,
     ExamCode,
     ExamCodeQuestion,
+    ExamSession,
     ExamSessionGroup,
     ExamSet,
     ExamSetStatus,
@@ -1410,6 +1411,99 @@ class StudentExamAccessTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("qna:pre_exam_verification", args=[self.subject.subject_code]), response.url)
 
+    def test_student_dashboard_shows_finished_exam_as_outside_exam_window(self):
+        self.exam_group.exam_date = timezone.now() - timedelta(hours=2)
+        self.exam_group.duration_minutes = 30
+        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        self.client.force_login(self.student)
+
+        response = self.client.get(reverse("qna:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ngoài thời gian thi")
+        self.assertNotContains(response, "Đang mở ca thi")
+
+    def test_verify_face_creates_only_one_exam_session_for_exam_group(self):
+        self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
+        self.exam_group.duration_minutes = 30
+        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        self.client.force_login(self.student)
+
+        response = self.client.post(
+            reverse("qna:verify_face"),
+            {
+                "face_image": "data:image/jpeg;base64,ZmFrZQ==",
+                "subject_code": self.subject.subject_code,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ExamSession.objects.filter(subject=self.subject).count(), 1)
+        session = ExamSession.objects.get(subject=self.subject)
+        self.assertEqual(session.exam_group, self.exam_group)
+
+    def test_student_can_only_enter_exam_page_once(self):
+        self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
+        self.exam_group.duration_minutes = 30
+        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        Question.objects.create(
+            subject=self.subject,
+            question_text="Cau hoi thi 1",
+            question_id_in_barem="Q1",
+            difficulty=DifficultyLevel.EASY,
+        )
+        self.client.force_login(self.student)
+
+        verify_response = self.client.post(
+            reverse("qna:verify_face"),
+            {
+                "face_image": "data:image/jpeg;base64,ZmFrZQ==",
+                "subject_code": self.subject.subject_code,
+            },
+        )
+        self.assertEqual(verify_response.status_code, 200)
+
+        first_entry = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]))
+        self.assertEqual(first_entry.status_code, 200)
+
+        second_entry = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]))
+        self.assertEqual(second_entry.status_code, 302)
+        self.assertEqual(second_entry.url, reverse("qna:dashboard"))
+        self.assertEqual(ExamSession.objects.filter(subject=self.subject, exam_group=self.exam_group).count(), 1)
+
+    def test_verify_face_rejects_reentry_after_student_started_exam(self):
+        self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
+        self.exam_group.duration_minutes = 30
+        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        Question.objects.create(
+            subject=self.subject,
+            question_text="Cau hoi thi 2",
+            question_id_in_barem="Q2",
+            difficulty=DifficultyLevel.EASY,
+        )
+        self.client.force_login(self.student)
+
+        self.client.post(
+            reverse("qna:verify_face"),
+            {
+                "face_image": "data:image/jpeg;base64,ZmFrZQ==",
+                "subject_code": self.subject.subject_code,
+            },
+        )
+        self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]))
+
+        reentry_response = self.client.post(
+            reverse("qna:verify_face"),
+            {
+                "face_image": "data:image/jpeg;base64,ZmFrZQ==",
+                "subject_code": self.subject.subject_code,
+            },
+        )
+
+        self.assertEqual(reentry_response.status_code, 400)
+        self.assertEqual(reentry_response.json()["status"], "error")
+        self.assertIn("1 lần", reentry_response.json()["message"])
+
     def _post_json(self, route_name, payload, args=None):
         return self.client.post(
             reverse(route_name, args=args or []),
@@ -1715,6 +1809,113 @@ class StudentExamAccessTests(TestCase):
         )
 
         self.assertEqual(room_counts, [2, 3])
+
+    def test_student_review_shows_only_one_red_triangle_for_flagged_session(self):
+        exam_group = self._create_exam_group()
+        flagged_session = ExamSession.objects.create(
+            user=self.student_user_1,
+            subject=self.subject,
+            exam_group=exam_group,
+            cheating_flag=True,
+        )
+        ExamSession.objects.create(
+            user=self.student_user_2,
+            subject=self.subject,
+            exam_group=exam_group,
+            cheating_flag=False,
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_student_review_screen"),
+            {"subject_id": self.subject.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn(reverse("qna:lecturer_session_detail", args=[flagged_session.id]), html)
+        self.assertEqual(html.count('class="detail-flag-link"'), 1)
+        self.assertEqual(html.count("fa-exclamation-triangle"), 1)
+        self.assertNotIn("detail-link-disabled", html)
+
+    def test_lecturer_can_open_incomplete_session_detail_after_exam_ends(self):
+        exam_group = self._create_exam_group()
+        exam_group.exam_date = timezone.now() - timedelta(hours=2)
+        exam_group.duration_minutes = 60
+        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        session = ExamSession.objects.create(
+            user=self.student_user_1,
+            subject=self.subject,
+            exam_group=exam_group,
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_session_detail", args=[session.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Vắng thi")
+
+    def test_lecturer_cannot_open_ongoing_session_detail(self):
+        exam_group = self._create_exam_group()
+        exam_group.exam_date = timezone.now() - timedelta(minutes=10)
+        exam_group.duration_minutes = 60
+        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        session = ExamSession.objects.create(
+            user=self.student_user_1,
+            subject=self.subject,
+            exam_group=exam_group,
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_session_detail", args=[session.id])
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("qna:lecturer_student_review_screen"))
+
+    def test_student_review_does_not_link_ongoing_session_detail(self):
+        exam_group = self._create_exam_group()
+        exam_group.exam_date = timezone.now() - timedelta(minutes=10)
+        exam_group.duration_minutes = 60
+        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+        session = ExamSession.objects.create(
+            user=self.student_user_1,
+            subject=self.subject,
+            exam_group=exam_group,
+            cheating_flag=True,
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_student_review_screen"),
+            {"subject_id": self.subject.id, "exam_group_id": exam_group.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertNotIn(f'data-detail-url="{reverse("qna:lecturer_session_detail", args=[session.id])}"', html)
+        self.assertEqual(html.count("fa-exclamation-triangle"), 1)
+
+    def test_student_review_marks_assigned_student_without_session_as_absent(self):
+        exam_group = self._create_exam_group()
+        exam_group.exam_date = timezone.now() - timedelta(hours=2)
+        exam_group.duration_minutes = 60
+        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+
+        ExamSession.objects.create(
+            user=self.student_user_1,
+            subject=self.subject,
+            exam_group=exam_group,
+            is_completed=True,
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_student_review_screen"),
+            {"subject_id": self.subject.id, "exam_group_id": exam_group.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "SV9002")
+        self.assertContains(response, '<span class="status-pill status-absent">Vắng thi</span>', html=True)
 
     def test_create_exam_group_screen_rejects_room_password_not_exactly_five_characters(self):
         payload = self._build_session_payload()
@@ -2127,24 +2328,33 @@ class LecturerGenerateQuestionsTests(TestCase):
         self.assertEqual(Question.objects.filter(subject=self.subject).count(), 0)
 
     @patch("qna.views._generate_questions_from_ai")
-    def test_generate_questions_reports_duplicate_items_that_were_skipped(self, mock_generate_questions):
+    def test_generate_questions_regenerates_when_ai_returns_duplicate_items(self, mock_generate_questions):
         Question.objects.create(
             subject=self.subject,
             question_text="Cau trung lap",
             question_id_in_barem="MAN_EXISTING_DUP",
             difficulty=DifficultyLevel.MEDIUM,
         )
-        mock_generate_questions.return_value = [
-            {
-                "content": "Cau trung lap",
-                "difficulty": "MEDIUM",
-                "source": "Bai giang chuong 1",
-            },
-            {
-                "content": "Cau moi hop le",
-                "difficulty": "HARD",
-                "source": "Bai giang chuong 1",
-            },
+        mock_generate_questions.side_effect = [
+            [
+                {
+                    "content": "Cau trung lap",
+                    "difficulty": "MEDIUM",
+                    "source": "Bai giang chuong 1",
+                },
+                {
+                    "content": "Cau moi hop le",
+                    "difficulty": "HARD",
+                    "source": "Bai giang chuong 1",
+                },
+            ],
+            [
+                {
+                    "content": "Cau moi bo sung",
+                    "difficulty": "MEDIUM",
+                    "source": "Bai giang chuong 1",
+                },
+            ],
         ]
 
         response = self.client.post(
@@ -2161,11 +2371,11 @@ class LecturerGenerateQuestionsTests(TestCase):
             content_type="application/json",
             HTTP_ACCEPT="application/json",
         )
-
+        
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["created_count"], 2)
         self.assertEqual(payload["requested_count"], 2)
         self.assertEqual(payload["skipped_duplicates"], 1)
-        self.assertIn("Bỏ qua 1 câu bị trùng", payload["message"])
+        self.assertIn("tự sinh bù 1 câu bị trùng", payload["message"])
 

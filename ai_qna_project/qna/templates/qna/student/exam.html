@@ -646,7 +646,8 @@ document.addEventListener('DOMContentLoaded', () => {
     isMonitoring: false,
     violations: { noFace: 0, multipleFaces: 0 },
     lastViolationTime: 0,
-    warningCooldown: 5000
+    warningCooldown: 5000,
+    cameraInterrupted: false
   };
 
   const PROCTORING_CONFIG = {
@@ -704,6 +705,11 @@ document.addEventListener('DOMContentLoaded', () => {
   async function initializeCamera() {
     try {
       proctoringState.stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } });
+      const [videoTrack] = proctoringState.stream.getVideoTracks();
+      if (videoTrack) {
+        videoTrack.onended = () => handleCameraInterrupted();
+        videoTrack.onmute = () => handleCameraInterrupted();
+      }
       proctoringState.video.srcObject = proctoringState.stream;
       await proctoringState.video.play();
       return true;
@@ -744,6 +750,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function handleCameraInterrupted() {
+    if (proctoringState.cameraInterrupted) return;
+    proctoringState.cameraInterrupted = true;
+    if (noFaceTimeout) { clearTimeout(noFaceTimeout); noFaceTimeout = null; }
+    proctoringState.violations.noFace++;
+    updateViolationDisplay('noface', proctoringState.violations.noFace);
+    showProctoringWarning('Camera đã bị tắt hoặc ngắt kết nối. Vui lòng bật lại camera ngay.');
+    sendProctoringViolation('CAMERA_OFF', 0);
+  }
+
   // --- HÀM GỬI ẢNH GIAN LẬN QUA WEBSOCKET ---
   function sendProctoringViolation(violationType, detectedCount = 0) {
     if (state.socket && state.socket.readyState === WebSocket.OPEN) {
@@ -778,6 +794,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const monitor = async () => {
       if (!proctoringState.isMonitoring) return;
       try {
+        const videoTrack = proctoringState.stream?.getVideoTracks?.()[0] || null;
+        if (!videoTrack || videoTrack.readyState !== 'live' || videoTrack.muted || videoTrack.enabled === false) {
+          handleCameraInterrupted();
+          requestAnimationFrame(monitor);
+          return;
+        }
+
         const detections = await detectFaces();
         const ctx = proctoringState.canvas.getContext('2d');
         ctx.clearRect(0, 0, proctoringState.canvas.width, proctoringState.canvas.height);
