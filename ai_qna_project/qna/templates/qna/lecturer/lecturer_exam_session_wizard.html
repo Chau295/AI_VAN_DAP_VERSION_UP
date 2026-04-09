@@ -242,7 +242,7 @@
           </div>
           <div class="es-field es-col-3">
             <label for="sessionAcademicYear">Năm học <span class="es-required">*</span></label>
-            <input id="sessionAcademicYear" class="es-input" type="text" placeholder="Ví dụ: 2024-2025">
+            <select id="sessionAcademicYear" class="es-select"></select>
           </div>
           <div class="es-field es-col-3">
             <label for="sessionSemester">Học kì <span class="es-required">*</span></label>
@@ -611,6 +611,43 @@
     })),
     rosterIds: (sessionInitialState.roster_configs || []).map((item) => item.id),
   };
+
+  function buildAcademicYearOptions(baseYear) {
+    const options = [];
+    const safeBaseYear = Number(baseYear) || new Date().getFullYear();
+    for (let offset = -2; offset <= 3; offset += 1) {
+      const startYear = safeBaseYear + offset;
+      options.push(`${startYear}-${startYear + 1}`);
+    }
+    return options;
+  }
+
+  function populateAcademicYearSelect() {
+    const yearField = document.getElementById("sessionAcademicYear");
+    if (!yearField) return;
+
+    const currentValue = wizardState.academicYear || sessionInitialState.academic_year || "";
+    const matched = /^\d{4}-\d{4}$/.test(currentValue) ? Number(currentValue.slice(0, 4)) : null;
+    const options = buildAcademicYearOptions(matched || new Date().getFullYear());
+
+    if (currentValue && !options.includes(currentValue)) {
+      options.push(currentValue);
+      options.sort((a, b) => b.localeCompare(a));
+    }
+
+    yearField.innerHTML = options.map((value) => `<option value="${value}">${value}</option>`).join("");
+    yearField.value = currentValue || options[0] || "";
+    wizardState.academicYear = yearField.value;
+  }
+
+  function generateRoomPassword(length = 5) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let output = '';
+    for (let index = 0; index < length; index += 1) {
+      output += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return output;
+  }
 
   let examPickerRoomIndex = null;
   let examPickerSelection = [];
@@ -1040,7 +1077,7 @@
 
   function populateGeneralFields() {
     document.getElementById("sessionGroupName").value = wizardState.groupName;
-    document.getElementById("sessionAcademicYear").value = wizardState.academicYear;
+    populateAcademicYearSelect();
     document.getElementById("sessionSemester").value = wizardState.semester;
     document.getElementById("sessionExamDate").value = wizardState.examDate;
     document.getElementById("sessionStartTime").value = wizardState.startTime;
@@ -1174,7 +1211,7 @@
             summaryExamName.textContent = wizardState.groupName || "(Chưa nhập tên kỳ thi)";
         }
     });
-    yearField.addEventListener("input", () => {
+    yearField.addEventListener("change", () => {
       wizardState.academicYear = yearField.value;
       renderRooms();
     });
@@ -1271,7 +1308,7 @@
       client_id: `room-${Date.now()}-${wizardState.roomConfigs.length + 1}`,
       room_name: suggestion.room_name || `Phòng ${wizardState.roomConfigs.length + 1}`,
       student_count: suggestion.capacity || 0,
-      password: "",
+      password: generateRoomPassword(),
       exam_set_id: null,
       exam_set_name: "",
       exam_code_ids: [],
@@ -1362,7 +1399,7 @@
             </div>
           </td>
           <td>
-            <input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Nhập 5 ký tự" autocomplete="off" ${isViewMode() ? "readonly" : ""}>
+            <input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Mật khẩu tự random" autocomplete="off" ${isViewMode() ? "readonly" : ""}>
           </td>
           <td>
             <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.45rem;">
@@ -1419,7 +1456,7 @@
           return;
         }
         if (target.dataset.roomField === "password") {
-          room.password = String(target.value || "").slice(0, 5);
+          room.password = String(target.value || "").toUpperCase().slice(0, 5);
           if (target.value !== room.password) {
             target.value = room.password;
           }

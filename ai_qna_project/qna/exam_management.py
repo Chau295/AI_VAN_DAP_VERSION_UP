@@ -74,7 +74,6 @@ def _clone_question_for_exam(source_question: Question) -> Question:
         question_text=source_question.question_text,
         question_id_in_barem=f"EC_{uuid4().hex[:8]}",
         difficulty=source_question.difficulty,
-        is_supplementary=False,
         is_exam_clone=True,
     )
 
@@ -542,6 +541,7 @@ def lecturer_exam_codes_screen(request):
     academic_year = (request.GET.get("academic_year") or "").strip()
     semester = (request.GET.get("semester") or "").strip()
     status_filter = (request.GET.get("status") or "").strip()
+    linked_filter = (request.GET.get("linked") or "").strip().upper()
     keyword = (request.GET.get("q") or "").strip()
 
     exam_sets = ExamSet.objects.filter(subject_id__in=subjects)
@@ -563,6 +563,10 @@ def lecturer_exam_codes_screen(request):
     rows = []
     for es in exam_sets:
         summary = _exam_set_summary(es)
+        if linked_filter == "USED" and summary["used_codes_count"] <= 0:
+            continue
+        if linked_filter == "UNUSED" and summary["used_codes_count"] > 0:
+            continue
         rows.append(
             {
                 "id": es.exam_set_id,
@@ -645,6 +649,7 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
         "exam_codes_json": json.dumps(codes_data),
         "exam_set_is_linked": exam_set.is_linked,
         "publish_disabled": exam_codes.filter(is_approved=False).exists() or exam_codes.count() == 0,
+        "can_edit_exam_set": not exam_set.is_linked,
     }
     return render(request, "qna/lecturer/lecturer_exam_code_detail.html", context)
 

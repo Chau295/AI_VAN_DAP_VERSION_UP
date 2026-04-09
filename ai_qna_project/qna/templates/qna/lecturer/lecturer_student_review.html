@@ -6,526 +6,227 @@
 {% block content %}
 <style>
   :root {
-    --rv-bg: #f5f7fb;
-    --rv-panel: #ffffff;
-    --rv-border: #e5ebf3;
-    --rv-text: #132238;
-    --rv-muted: #7b8798;
-    --rv-blue: #2346a6;
-    --rv-blue-dark: #173887;
-    --rv-blue-soft: #dbeafe;
-    --rv-blue-text: #2563eb;
-    --rv-green-soft: #eaf8ef;
-    --rv-green: #16a34a;
-    --rv-amber-soft: #fff7ed;
-    --rv-amber: #f59e0b;
-    --rv-red-soft: #fef2f2;
-    --rv-red: #ef4444;
-    --rv-gray-soft: #e2e8f0;
-    --rv-gray-text: #64748b;
-    --rv-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
-    --rv-radius-xl: 28px;
-    --rv-radius-lg: 22px;
-    --rv-radius-md: 16px;
-    --rv-radius-sm: 12px;
+    --review-bg: #f4f6fb;
+    --review-card: #ffffff;
+    --review-border: #e5e7eb;
+    --review-text: #1e293b;
+    --review-muted: #64748b;
+    --review-blue: #2563eb;
+    --review-blue-soft: #dbeafe;
+    --review-green: #16a34a;
+    --review-green-soft: #dcfce7;
+    --review-orange: #f97316;
+    --review-orange-soft: #ffedd5;
+    --review-red: #ef4444;
+    --review-red-soft: #fee2e2;
+    --review-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+    --review-radius: 26px;
   }
 
-  * { box-sizing: border-box; }
+  .student-review-page { min-height: calc(100vh - 80px); background: radial-gradient(circle at top left, #ffffff 0%, #f4f6fb 45%, #eef2ff 100%); padding: 28px 22px 36px; }
+  .student-review-shell { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .student-review-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .student-review-title { margin: 0; color: var(--review-text); font-size: 2.15rem; font-weight: 800; letter-spacing: -0.03em; }
+  .student-review-back { display: inline-flex; align-items: center; gap: 10px; padding: 0 18px; height: 42px; border-radius: 10px; border: 1px solid #cbd5e1; background: #7c8697; color: #fff; text-decoration: none; font-weight: 600; }
+  .student-review-back:hover { background: #667085; }
+  .student-review-panel { background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(226, 232, 240, 0.95); border-radius: var(--review-radius); box-shadow: var(--review-shadow); }
+  .subject-filter-panel { padding: 16px 22px; }
+  .subject-filter-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .subject-filter-label { font-size: 1rem; font-weight: 700; color: #0f172a; min-width: 144px; }
+  .subject-filter-control, .table-filter-input, .table-filter-select { height: 50px; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; color: var(--review-text); padding: 0 18px; font-size: 1rem; }
+  .subject-filter-control { flex: 1 1 420px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+  .stat-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 98px; padding: 18px 22px; background: var(--review-card); border-radius: 18px; box-shadow: 0 12px 28px rgba(148, 163, 184, 0.16); overflow: hidden; }
+  .stat-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: 999px; }
+  .stat-card-average::before { background: #3b82f6; }
+  .stat-card-complete::before { background: #22c55e; }
+  .stat-card-absent::before { background: #f97316; }
+  .stat-meta { display: flex; flex-direction: column; gap: 4px; }
+  .stat-label { color: #6b7280; font-size: 0.95rem; }
+  .stat-value { color: #1f2937; font-size: 2rem; font-weight: 700; line-height: 1; }
+  .stat-icon { width: 42px; height: 42px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+  .stat-card-average .stat-icon { background: var(--review-blue-soft); color: var(--review-blue); }
+  .stat-card-complete .stat-icon { background: var(--review-green-soft); color: var(--review-green); }
+  .stat-card-absent .stat-icon { background: var(--review-red-soft); color: var(--review-red); }
+  .list-title { margin: 8px 0 0; color: #0f2b57; font-size: 1.95rem; font-weight: 800; }
+  .table-panel { padding: 18px 18px 0; }
+  .table-filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 0 6px 18px; }
+  .table-search { position: relative; flex: 1 1 340px; max-width: 420px; }
+  .table-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
+  .table-filter-input { width: 100%; padding-left: 44px; }
+  .table-filter-select { min-width: 180px; }
+  .result-table-wrap { overflow-x: auto; border-top: 1px solid #edf2f7; }
+  .result-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+  .result-table thead th { padding: 18px 22px; background: #fafafa; color: #4b5563; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; white-space: nowrap; }
+  .result-table tbody td { padding: 22px; color: var(--review-text); border-top: 1px solid #eef2f7; vertical-align: middle; }
+  .result-table tbody tr:hover { background: #fcfdff; }
+  .student-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: #0f2b57; }
+  .student-id { display: block; margin-top: 8px; font-size: 0.9rem; color: #6b7280; }
+  .warning-icon { color: #dc2626; font-size: 1rem; }
+  .status-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 102px; padding: 8px 14px; border-radius: 999px; font-size: 0.86rem; font-weight: 700; }
+  .status-completed { color: #16a34a; background: #dcfce7; }
+  .status-in-progress { color: #d97706; background: #ffedd5; }
+  .status-absent { color: #ef4444; background: #fee2e2; }
+  .score-value { color: #0f2b57; font-size: 1.85rem; font-weight: 800; }
+  .action-cell { text-align: center; }
+  .detail-link, .detail-link-disabled { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; text-decoration: none; }
+  .detail-link { color: var(--review-blue); background: var(--review-blue-soft); }
+  .detail-link:hover { background: var(--review-blue); color: #fff; }
+  .detail-link-disabled { color: #cbd5e1; background: #f1f5f9; cursor: not-allowed; }
+  .table-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 18px 8px 18px 6px; color: #64748b; font-size: 0.98rem; }
+  .table-footer strong { color: #334155; }
+  .empty-state { padding: 50px 18px 56px; text-align: center; color: #64748b; }
+  .empty-state i { font-size: 2.5rem; color: #cbd5e1; margin-bottom: 14px; }
 
-  .rv-page {
-    background: var(--rv-bg);
-    min-height: calc(100vh - 80px);
-    padding: 28px 24px 34px;
+  @media (max-width: 991px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .student-review-title { font-size: 1.8rem; }
   }
 
-  .rv-shell {
-    max-width: 1380px;
-    margin: 0 auto;
-  }
-
-  .rv-topbar {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 24px;
-    flex-wrap: wrap;
-  }
-
-  .rv-title {
-    margin: 0;
-    font-size: 28px;
-    line-height: 1.2;
-    font-weight: 800;
-    color: var(--rv-text);
-    letter-spacing: -0.02em;
-  }
-
-  .rv-subtitle {
-    margin: 8px 0 0;
-    font-size: 15px;
-    color: var(--rv-muted);
-    line-height: 1.6;
-  }
-
-  .rv-btn-group {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .rv-btn {
-    border: 0;
-    outline: 0;
-    text-decoration: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    min-height: 46px;
-    padding: 0 20px;
-    border-radius: 16px;
-    font-size: 14px;
-    font-weight: 700;
-    transition: .18s ease;
-    white-space: nowrap;
-  }
-
-  .rv-btn:hover {
-    transform: translateY(-1px);
-    text-decoration: none;
-  }
-
-  .rv-btn-green {
-    background: #16a34a;
-    color: #fff;
-    box-shadow: 0 10px 20px rgba(22, 163, 74, .18);
-  }
-
-  .rv-btn-green:hover {
-    background: #15803d;
-    color: #fff;
-  }
-
-  .rv-btn-secondary {
-    background: #fff;
-    color: #475569;
-    border: 1px solid var(--rv-border);
-  }
-
-  .rv-btn-secondary:hover {
-    background: #f8fafc;
-    color: var(--rv-text);
-  }
-
-  .rv-card {
-    background: var(--rv-panel);
-    border: 1px solid var(--rv-border);
-    border-radius: var(--rv-radius-xl);
-    box-shadow: var(--rv-shadow);
-    overflow: hidden;
-  }
-
-  .rv-filter-card {
-    margin-bottom: 22px;
-    padding: 18px 22px;
-  }
-
-  .rv-filter-row {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-  }
-
-  .rv-filter-label {
-    color: #334155;
-    font-size: 14px;
-    font-weight: 700;
-  }
-
-  .rv-select {
-    flex: 1;
-    min-width: 280px;
-    height: 46px;
-    border: 1px solid #dbe3ee;
-    border-radius: 14px;
-    background: #fff;
-    color: #334155;
-    font-size: 14px;
-    font-weight: 600;
-    padding: 0 14px;
-    outline: none;
-    transition: .18s ease;
-  }
-
-  .rv-select:focus {
-    border-color: #b7c8ea;
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, .08);
-  }
-
-  .rv-stat-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 18px;
-    margin-bottom: 24px;
-  }
-
-  .rv-stat-card {
-    background: var(--rv-panel);
-    border: 1px solid var(--rv-border);
-    border-radius: var(--rv-radius-lg);
-    box-shadow: var(--rv-shadow);
-    padding: 22px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .rv-stat-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-    flex: 0 0 52px;
-  }
-
-  .rv-stat-icon.blue { background: var(--rv-blue-soft); color: var(--rv-blue-text); }
-  .rv-stat-icon.green { background: var(--rv-green-soft); color: var(--rv-green); }
-  .rv-stat-icon.amber { background: var(--rv-amber-soft); color: var(--rv-amber); }
-  .rv-stat-icon.red { background: var(--rv-red-soft); color: var(--rv-red); }
-
-  .rv-stat-label {
-    display: block;
-    color: var(--rv-muted);
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-
-  .rv-stat-value {
-    display: block;
-    color: var(--rv-text);
-    font-size: 30px;
-    line-height: 1;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-  }
-
-  .rv-panel-head {
-    padding: 22px 24px 18px;
-    border-bottom: 1px solid #eef2f7;
-  }
-
-  .rv-panel-title {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 800;
-    color: var(--rv-text);
-  }
-
-  .rv-panel-subtitle {
-    margin: 6px 0 0;
-    color: var(--rv-muted);
-    font-size: 13px;
-  }
-
-  .rv-panel-body {
-    padding: 20px 24px 24px;
-  }
-
-  .rv-table-wrap {
-    overflow-x: auto;
-  }
-
-  .rv-table {
-    width: 100%;
-    min-width: 920px;
-    border-collapse: collapse;
-  }
-
-  .rv-table thead th {
-    padding: 14px 18px;
-    background: #f8fafc;
-    color: #475569;
-    font-size: 13px;
-    font-weight: 800;
-    text-align: left;
-    border-bottom: 1px solid var(--rv-border);
-  }
-
-  .rv-table tbody td {
-    padding: 16px 18px;
-    border-bottom: 1px solid #eef2f7;
-    color: #334155;
-    font-size: 14px;
-    font-weight: 600;
-    vertical-align: middle;
-  }
-
-  .rv-table tbody tr:last-child td {
-    border-bottom: 0;
-  }
-
-  .rv-table tbody tr:hover {
-    background: #fbfdff;
-  }
-
-  .rv-student-name {
-    color: var(--rv-text);
-    font-weight: 800;
-  }
-
-  .rv-score-high { color: #10b981; font-weight: 800; }
-  .rv-score-medium { color: #f59e0b; font-weight: 800; }
-  .rv-score-low { color: #ef4444; font-weight: 800; }
-
-  .rv-pill {
-    min-width: 120px;
-    padding: 7px 14px;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: .01em;
-  }
-
-  .rv-pill-complete {
-    background: var(--rv-green-soft);
-    color: var(--rv-green);
-  }
-
-  .rv-pill-progress {
-    background: #fef3c7;
-    color: #b45309;
-  }
-
-  .rv-action-link {
-    color: var(--rv-blue-text);
-    font-size: 16px;
-    transition: .18s ease;
-  }
-
-  .rv-action-link:hover {
-    color: var(--rv-blue-dark);
-  }
-
-  .rv-empty {
-    text-align: center;
-    padding: 56px 20px;
-    color: #94a3b8;
-  }
-
-  .rv-empty i {
-    font-size: 42px;
-    margin-bottom: 12px;
-  }
-
-  @media (max-width: 1100px) {
-    .rv-stat-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 768px) {
-    .rv-page {
-      padding: 18px 14px 24px;
-    }
-
-    .rv-topbar {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .rv-btn-group {
-      width: 100%;
-    }
-
-    .rv-btn {
-      width: 100%;
-      justify-content: center;
-    }
-
-    .rv-stat-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .rv-filter-row {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .rv-select {
-      min-width: 0;
-    }
+  @media (max-width: 640px) {
+    .student-review-page { padding: 18px 12px 26px; }
+    .subject-filter-row, .table-filters, .table-footer { align-items: stretch; }
+    .student-review-back, .subject-filter-control, .table-search, .table-filter-select { width: 100%; max-width: none; }
+    .result-table thead th, .result-table tbody td { padding: 16px 14px; }
   }
 </style>
 
-<div class="rv-page">
-  <div class="rv-shell">
-    <div class="rv-topbar">
-      <div>
-        <h1 class="rv-title">Xem bài làm sinh viên</h1>
-        <p class="rv-subtitle">{{ selected_subject.name|default:subject.name }}</p>
-      </div>
-
-      <div class="rv-btn-group">
-        <a href="{% url 'qna:lecturer_export_reports_screen' %}?subject_id={{ selected_subject.id }}" class="rv-btn rv-btn-green">
-          <i class="fas fa-file-excel"></i>
-          Xuất báo cáo
-        </a>
-        <a href="{% url 'qna:lecturer_dashboard' %}" class="rv-btn rv-btn-secondary">
-          <i class="fas fa-arrow-left"></i>
-          Về danh sách môn
-        </a>
-      </div>
+<div class="student-review-page">
+  <div class="student-review-shell">
+    <div class="student-review-topbar">
+      <h1 class="student-review-title">Xem bài làm sinh viên</h1>
+      <a href="{% url 'qna:lecturer_subject_list' %}" class="student-review-back">
+        <i class="fas fa-arrow-left"></i>
+        Quay lại danh sách môn
+      </a>
     </div>
 
-    <div class="rv-card rv-filter-card">
-      <div class="rv-filter-row">
-        <label for="subject-select" class="rv-filter-label">Chọn môn học:</label>
-        <select
-          id="subject-select"
-          onchange="window.location.href=`?subject_id=${this.value}`"
-          class="rv-select"
-        >
-          {% for subj in subjects %}
-            <option value="{{ subj.id }}" {% if selected_subject.id == subj.id %}selected{% endif %}>
-              {{ subj.name }} ({{ subj.subject_code }})
-            </option>
+    <form method="get" class="student-review-panel subject-filter-panel">
+      <div class="subject-filter-row">
+        <label class="subject-filter-label" for="subject_id">Chọn môn học:</label>
+        <select id="subject_id" name="subject_id" class="subject-filter-control" onchange="this.form.submit()">
+          {% for s in subjects %}
+            <option value="{{ s.id }}" {% if selected_subject and selected_subject.id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.subject_code }})</option>
           {% endfor %}
         </select>
+        {% if selected_exam_group_id %}<input type="hidden" name="exam_group_id" value="{{ selected_exam_group_id }}">{% endif %}
+        {% if student_filter %}<input type="hidden" name="student" value="{{ student_filter }}">{% endif %}
+      </div>
+    </form>
+
+    <div class="stats-grid">
+      <div class="stat-card stat-card-average">
+        <div class="stat-meta">
+          <span class="stat-label">Điểm trung bình</span>
+          <span class="stat-value">{{ average_score|floatformat:1 }}</span>
+        </div>
+        <span class="stat-icon"><i class="fas fa-clipboard-list"></i></span>
+      </div>
+      <div class="stat-card stat-card-complete">
+        <div class="stat-meta">
+          <span class="stat-label">Đã hoàn thành</span>
+          <span class="stat-value">{{ completed_count }}</span>
+        </div>
+        <span class="stat-icon"><i class="fas fa-check"></i></span>
+      </div>
+      <div class="stat-card stat-card-absent">
+        <div class="stat-meta">
+          <span class="stat-label">Vắng thi</span>
+          <span class="stat-value">{{ absent_count }}</span>
+        </div>
+        <span class="stat-icon"><i class="fas fa-times"></i></span>
       </div>
     </div>
 
-    <div class="rv-stat-grid">
-      <div class="rv-stat-card">
-        <span class="rv-stat-icon blue"><i class="fas fa-users"></i></span>
-        <div>
-          <span class="rv-stat-label">Tổng bài làm</span>
-          <span class="rv-stat-value">{{ sessions|length }}</span>
-        </div>
-      </div>
+    <h2 class="list-title">Danh sách Bài làm</h2>
 
-      <div class="rv-stat-card">
-        <span class="rv-stat-icon green"><i class="fas fa-check-circle"></i></span>
-        <div>
-          <span class="rv-stat-label">Đã hoàn thành</span>
-          <span class="rv-stat-value">
-            {% with completed_count=0 %}
-              {{ sessions|length }}
-            {% endwith %}
-          </span>
+    <div class="student-review-panel table-panel">
+      <form method="get" class="table-filters">
+        {% if selected_subject %}<input type="hidden" name="subject_id" value="{{ selected_subject.id }}">{% endif %}
+        <div class="table-search">
+          <i class="fas fa-search"></i>
+          <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm ..." value="{{ student_filter }}">
         </div>
-      </div>
+        <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
+          <option value="">Trạng thái: Tất cả</option>
+          {% for g in exam_groups %}
+            <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}</option>
+          {% endfor %}
+        </select>
+      </form>
 
-      <div class="rv-stat-card">
-        <span class="rv-stat-icon amber"><i class="fas fa-star"></i></span>
-        <div>
-          <span class="rv-stat-label">Điểm trung bình</span>
-          <span class="rv-stat-value">
-            {% with scored_count=0 %}
+      {% if sessions %}
+        <div class="result-table-wrap">
+          <table class="result-table">
+            <thead>
+              <tr>
+                <th>Sinh viên</th>
+                <th>Lớp</th>
+                <th>Kỳ thi</th>
+                <th>Ngày thi</th>
+                <th>Thời gian</th>
+                <th>Trạng thái</th>
+                <th>Điểm</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
               {% for session in sessions %}
-                {% if session.final_score != None %}
-                  {% if forloop.first %}{{ session.final_score|floatformat:1 }}{% endif %}
-                {% endif %}
-              {% empty %}
-                0.0
-              {% endfor %}
-              {% if not sessions %}0.0{% endif %}
-            {% endwith %}
-          </span>
-        </div>
-      </div>
-
-      <div class="rv-stat-card">
-        <span class="rv-stat-icon red"><i class="fas fa-user-times"></i></span>
-        <div>
-          <span class="rv-stat-label">Đang thực hiện</span>
-          <span class="rv-stat-value">
-            {% with in_progress=0 %}
-              0
-              {% for session in sessions %}
-                {% if not session.is_completed %}
-                  {% if forloop.first %}{% endif %}
-                {% endif %}
-              {% endfor %}
-            {% endwith %}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <div class="rv-card">
-      <div class="rv-panel-head">
-        <h2 class="rv-panel-title">
-          <i class="fas fa-clipboard-list" style="color: var(--rv-blue-text); margin-right: 8px;"></i>
-          Danh sách bài làm
-        </h2>
-        <div class="rv-panel-subtitle">Xem chi tiết bài làm và điểm số của sinh viên.</div>
-      </div>
-
-      <div class="rv-panel-body">
-        {% if sessions %}
-          <div class="rv-table-wrap">
-            <table class="rv-table">
-              <thead>
                 <tr>
-                  <th>Sinh viên</th>
-                  <th>Lớp</th>
-                  <th>Ngày thi</th>
-                  <th>Điểm</th>
-                  <th>Trạng thái</th>
-                  <th style="text-align:center;">Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for session in sessions %}
-                  <tr>
-                    <td class="rv-student-name">
-                      {{ session.user.userprofile.full_name|default:session.user.username }}
-                    </td>
-                    <td>{{ session.user.userprofile.class_name|default:'-' }}</td>
-                    <td>{{ session.created_at|date:"d/m/Y H:i" }}</td>
-                    <td>
-                      {% if session.final_score != None %}
-                        <span class="{% if session.final_score >= 8 %}rv-score-high{% elif session.final_score >= 5 %}rv-score-medium{% else %}rv-score-low{% endif %}">
-                          {{ session.final_score|floatformat:1 }}
-                        </span>
-                      {% else %}
-                        <span style="color:#94a3b8;">-</span>
+                  <td>
+                    <span class="student-name">
+                      {{ session.student_name }}
+                      {% if session.has_violation_warning %}
+                        <i class="fas fa-exclamation-triangle warning-icon" title="Có cảnh báo gian lận"></i>
                       {% endif %}
-                    </td>
-                    <td>
-                      {% if session.is_completed %}
-                        <span class="rv-pill rv-pill-complete">Đã hoàn thành</span>
-                      {% else %}
-                        <span class="rv-pill rv-pill-progress">Đang thực hiện</span>
-                      {% endif %}
-                    </td>
-                    <td style="text-align:center;">
-                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="rv-action-link" title="Xem chi tiết">
-                        <i class="fas fa-eye"></i>
+                    </span>
+                    <span class="student-id">{{ session.student_identifier }}</span>
+                  </td>
+                  <td>{{ session.student_class_name }}</td>
+                  <td>{{ session.exam_group.group_name|default:"-" }}</td>
+                  <td>{{ session.exam_date_display|date:"d/m/Y" }}</td>
+                  <td>
+                    {% if session.exam_group.start_time and session.exam_group.end_time %}
+                      {{ session.exam_group.start_time|time:"H:i" }} - {{ session.exam_group.end_time|time:"H:i" }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if session.is_completed %}
+                      <span class="status-pill status-completed">Đã hoàn thành</span>
+                    {% elif session.exam_group and session.exam_group.end_time and session.exam_group.exam_date and not session.can_view_detail %}
+                      <span class="status-pill status-in-progress">Đang thực hiện</span>
+                    {% else %}
+                      <span class="status-pill status-in-progress">Đang thực hiện</span>
+                    {% endif %}
+                  </td>
+                  <td><span class="score-value">{% if session.is_completed %}{{ session.calculated_final_score|floatformat:1 }}{% else %}-{% endif %}</span></td>
+                  <td class="action-cell">
+                    {% if session.can_view_detail %}
+                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-link" title="Xem chi tiết">
+                        <i class="fas fa-exclamation-triangle {% if session.has_violation_warning %}warning-icon{% endif %}"></i>
                       </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <div class="rv-empty">
-            <i class="fas fa-inbox"></i>
-            <div>Chưa có bài làm nào.</div>
-          </div>
-        {% endif %}
-      </div>
+                    {% else %}
+                      <span class="detail-link-disabled" title="Chỉ được xem khi bài thi đã kết thúc">
+                        <i class="fas fa-exclamation-triangle {% if session.has_violation_warning %}warning-icon{% endif %}"></i>
+                      </span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <div>HIỂN THỊ <strong>1-{{ sessions|length }}</strong> TRONG SỐ <strong>{{ sessions|length }} SINH VIÊN</strong></div>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <i class="fas fa-inbox"></i>
+          <div>Chưa có bài làm nào để hiển thị.</div>
+        </div>
+      {% endif %}
     </div>
   </div>
 </div>

@@ -1009,14 +1009,6 @@
               <i class="fas fa-circle-exclamation"></i>
               <span id="passwordValidationText">{{ create_account_modal.error }}</span>
             </div>
-            <div class="mdl-password-rules">
-              <div class="mdl-password-rules-title">Quy tắc đặt mật khẩu</div>
-              <ol class="mdl-password-rule-list">
-                {% for rule in password_rules|slice:":2" %}
-                  <li>{{ rule }}</li>
-                {% endfor %}
-              </ol>
-            </div>
             <div class="mdl-form-row" style="margin-top: 10px;">
               <div class="mdl-form-group">
                 <label>Mật khẩu mặc định <span style="color:#ef4444">*</span></label>
@@ -1076,17 +1068,10 @@
     const password = defaultPasswordInput.value || '';
     const confirmPassword = confirmPasswordInput.value || '';
 
-    const hasLength = password.length >= 8;
-    const isNotNumericOnly = password.length > 0 && !/^\d+$/.test(password);
-
     let errorMessage = '';
 
     if (!password.trim()) {
       errorMessage = 'Vui lòng nhập mật khẩu mặc định.';
-    } else if (!hasLength) {
-      errorMessage = 'Mật khẩu phải có ít nhất 8 ký tự.';
-    } else if (!isNotNumericOnly) {
-      errorMessage = 'Mật khẩu không được chỉ gồm toàn chữ số.';
     } else if (confirmPassword.trim() && password !== confirmPassword) {
       errorMessage = 'Mật khẩu xác nhận không khớp.';
     } else if (showMessage && !confirmPassword.trim()) {

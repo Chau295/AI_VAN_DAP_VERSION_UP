@@ -1152,8 +1152,8 @@
               <h3><i class="far fa-file-alt" style="margin-right:8px;color:#64748b;"></i>Nguồn tài liệu</h3>
             </div>
             <div class="qm2-doc-tools">
-              <button class="qm2-icon-btn" type="button" title="Làm mới tài liệu" id="refreshDocsBtn">
-                <i class="fas fa-rotate"></i>
+              <button class="qm2-icon-btn" type="button" title="Tìm kiếm tài liệu" id="refreshDocsBtn">
+                <i class="fas fa-search"></i>
               </button>
               <button class="qm2-icon-btn plus" type="button" title="Thêm tài liệu" onclick="openUploadModal()">
                 <i class="fas fa-plus"></i>
@@ -1869,8 +1869,12 @@
         </div>
 
         <div>
-            <div class="qm2-view-mode" style="font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; text-align: center; white-space: nowrap; background: ${q.difficulty === 'EASY' ? 'var(--easy-bg)' : (q.difficulty === 'HARD' ? 'var(--hard-bg)' : 'var(--medium-bg)')}; color: ${q.difficulty === 'EASY' ? 'var(--easy-text)' : (q.difficulty === 'HARD' ? 'var(--hard-text)' : 'var(--medium-text)')}">
-                ${q.difficulty === 'EASY' ? 'Dễ' : (q.difficulty === 'HARD' ? 'Khó' : 'Trung bình')}
+            <div class="qm2-view-mode">
+                <select class="qm2-inline-edit-select question-difficulty-select" data-question-id="${q.question_id}" data-original-value="${q.difficulty}">
+                    <option value="EASY" ${q.difficulty === 'EASY' ? 'selected' : ''}>Dễ</option>
+                    <option value="MEDIUM" ${q.difficulty === 'MEDIUM' ? 'selected' : ''}>Trung bình</option>
+                    <option value="HARD" ${q.difficulty === 'HARD' ? 'selected' : ''}>Khó</option>
+                </select>
             </div>
             <div class="qm2-edit-mode" style="display:none;">
                 <select class="qm2-inline-edit-select">
@@ -1918,6 +1922,36 @@
     }
 
     document.querySelectorAll('.question-checkbox').forEach(cb => cb.addEventListener('change', updateQuestionSelectionUI));
+
+    document.querySelectorAll('.question-difficulty-select').forEach(select => {
+      select.addEventListener('change', async function () {
+        const questionId = this.dataset.questionId;
+        const difficulty = this.value;
+        const originalValue = this.dataset.originalValue || this.defaultValue || difficulty;
+        this.disabled = true;
+
+        try {
+          const res = await fetch(`/api/lecturer/questions/${questionId}/update/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ difficulty, workspace_id: workspaceId, view_type: viewType })
+          });
+          const data = await res.json();
+          if (data.status !== 'SUCCESS') throw new Error(data.message || 'Không thể cập nhật mức độ.');
+          this.dataset.originalValue = difficulty;
+          showToast('Đã cập nhật mức độ câu hỏi');
+          await fetchQuestions();
+        } catch (err) {
+          this.value = originalValue;
+          showToast(err.message || 'Không thể cập nhật mức độ.', 'error');
+        } finally {
+          this.disabled = false;
+        }
+      });
+    });
 
     // Kích hoạt chế độ sửa trực tiếp (Inline Edit)
     document.querySelectorAll('.edit-question-inline-btn').forEach(btn => {
@@ -2006,27 +2040,27 @@
     if (countHard) countHard.textContent = summary?.hard ?? 0;
   }
 
-  async function loadBanks(subjectId) {
+  async function loadBanks(subjectId, options = {}) {
     if (!subjectId) return;
     selectedSubjectId = subjectId;
 
-    const url = new URL(window.location);
-    url.searchParams.set('subject_id', subjectId);
-    window.history.pushState({}, '', url);
+    if (options.updateUrl !== false) {
+      const url = new URL(window.location);
+      url.searchParams.set('subject_id', subjectId);
+      window.history.pushState({}, '', url);
+    }
 
     try {
       const res = await fetch(`${apiBanks}?subject_id=${subjectId}`);
       const data = await res.json();
       if (data.status === 'SUCCESS') {
-        showToast('Đã lưu câu hỏi vào ngân hàng thành công!', 'success');
-        hasUnsavedGeneratedQuestions = false; // Tắt cờ cảnh báo
-        toggleModal('saveBankModal', false); // Chỉ đóng Pop-up
-
-        // COMMENT LẠI DÒNG DƯỚI ĐÂY ĐỂ TRÁNH BỊ TẢI LẠI TRANG
-        // window.location.href = `?subject_id=${selectedSubjectId}&bank_id=${bankId}&mode=detail&view=bank`;
-    } else {
+        renderBanks(data.question_banks || []);
+        if (!options.silent && options.successMessage) {
+          showToast(options.successMessage, 'success');
+        }
+      } else {
         showToast(data.message || 'Lưu không thành công', 'error');
-    }
+      }
     } catch (err) {
       showToast('Lỗi kết nối API', 'error');
     }
@@ -2353,9 +2387,18 @@
         const saveData = await saveRes.json();
         if (saveData.status !== 'SUCCESS') throw new Error(saveData.message || 'Cập nhật thất bại.');
 
-        showToast('Cập nhật thành công!');
+        if (workspaceId) {
+          workspaceId = '';
+          if (app) app.dataset.workspaceId = '';
+          const cleanedUrl = `${listUrl}?subject_id=${selectedSubjectId}&bank_id=${currentBankId}&mode=detail&view=bank`;
+          window.history.replaceState({}, '', cleanedUrl);
+        }
+
+        await loadBanks(selectedSubjectId, { silent: true, updateUrl: false });
         clearQuestionSelection();
         await fetchQuestions();
+        await fetchDocs();
+        showToast(`Cập nhật thành công. Ngân hàng hiện có ${saveData.question_count || 0} câu hỏi.`);
       } catch (err) {
         showToast(err.message, 'error');
       }

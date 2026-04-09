@@ -16,7 +16,7 @@ from .models import (
     ExamSessionRoom,
     ExamSession,
     ExamResult,
-    SupplementaryResult,
+    ViolationImage,  # Đã thêm model này để quản lý ảnh gian lận
     StudentRosterUpload,
     StudentRosterStudent,
 )
@@ -81,7 +81,6 @@ class QuestionAdmin(admin.ModelAdmin):
         "question_bank_id",
         "question_id_in_barem",
         "difficulty",
-        "is_supplementary",
         "is_exam_clone",
         "is_draft",
         "created_at",
@@ -90,7 +89,6 @@ class QuestionAdmin(admin.ModelAdmin):
         "subject_id",
         "question_bank_id",
         "difficulty",
-        "is_supplementary",
         "is_exam_clone",
         "is_draft",
     )
@@ -276,9 +274,9 @@ class ExamSessionAdmin(admin.ModelAdmin):
         "is_completed",
         "final_score",
         "verification_status",
-        "needs_manual_review",
+        "cheating_flag",
     )
-    list_filter = ("subject_id", "is_completed", "verification_status", "needs_manual_review")
+    list_filter = ("subject_id", "is_completed", "verification_status", "cheating_flag")
     search_fields = ("user_id__username", "subject_id__name", "subject_id__subject_code")
     date_hierarchy = "created_at"
     filter_horizontal = ("questions",)
@@ -293,19 +291,13 @@ class ExamResultAdmin(admin.ModelAdmin):
     ordering = ("-answered_at",)
 
 
-@admin.register(SupplementaryResult)
-class SupplementaryResultAdmin(admin.ModelAdmin):
-    list_display = (
-        "supplementary_result_id",
-        "exam_session_id",
-        "question_text",
-        "score",
-        "max_score",
-        "created_at",
-    )
-    list_filter = ("exam_session_id__subject_id",)
-    search_fields = ("exam_session_id__user_id__username", "question_text")
-    ordering = ("-created_at",)
+# Đăng ký hiển thị ảnh gian lận trong admin
+@admin.register(ViolationImage)
+class ViolationImageAdmin(admin.ModelAdmin):
+    list_display = ("violation_image_id", "exam_session_id", "violation_type", "timestamp")
+    list_filter = ("violation_type",)
+    search_fields = ("exam_session_id__user_id__username",)
+    ordering = ("-timestamp",)
 
 
 class StudentRosterStudentInline(admin.TabularInline):

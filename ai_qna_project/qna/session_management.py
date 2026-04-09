@@ -5,6 +5,7 @@ import io
 import json
 import random
 import re
+import string
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -88,6 +89,11 @@ def _session_safe_float(value, default=0.0):
         return default
 
 
+def _generate_room_password(length=5):
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(random.choice(alphabet) for _ in range(length))
+
+
 def _session_get_payload(request):
     if request.content_type and "application/json" in request.content_type:
         try:
@@ -118,7 +124,7 @@ def _serialize_exam_code_for_session(exam_code):
         total_qs = exam_code.exam_code_questions.count()
 
     return {
-        "id": exam_code.id,
+        "id": exam_code.pk, # Changed to pk
         "code_name": exam_code.code_name,
         "total_questions": total_qs,
         "total_score": _session_total_score_for_code(exam_code),
@@ -128,15 +134,14 @@ def _serialize_exam_code_for_session(exam_code):
 
 
 def _serialize_exam_set_for_session(exam_set):
-    # CẬP NHẬT: Chỉ lấy ra những mã đề ĐÃ DUYỆT để gửi sang giao diện ca thi
     approved_codes = [
         _serialize_exam_code_for_session(exam_code)
         for exam_code in exam_set.exam_codes.all()
         if exam_code.is_approved
     ]
     return {
-        "id": exam_set.id,
-        "set_code": f"BD-{exam_set.id:04d}",
+        "id": exam_set.pk, # Changed to pk
+        "set_code": f"BD-{exam_set.pk:04d}",
         "name": getattr(exam_set, "display_name", exam_set.name),
         "academic_year": exam_set.academic_year,
         "semester": exam_set.semester,
@@ -153,14 +158,14 @@ def _serialize_roster_for_session(roster):
     for row in roster.students.select_related("linked_user_id").all().order_by("row_number"):
         students.append(
             {
-                "roster_student_id": row.id,
+                "roster_student_id": row.pk, # Changed to pk
                 "student_code": row.student_code,
                 "full_name": row.full_name,
-                "linked_user_id": row.linked_user_id.id if row.linked_user_id else None,
+                "linked_user_id": row.linked_user_id.pk if row.linked_user_id else None,
             }
         )
     return {
-        "id": roster.id,
+        "id": roster.pk, # Changed to pk
         "title": roster.original_file_name or roster.title,
         "academic_year": roster.academic_year,
         "semester": roster.semester,
@@ -171,7 +176,6 @@ def _serialize_roster_for_session(roster):
 
 
 def _build_session_catalog(subject):
-    # CẬP NHẬT: Không filter theo status=APPROVED nữa, cho phép mọi bộ đề
     exam_sets = (
         ExamSet.objects.filter(subject_id=subject)
         .prefetch_related("exam_codes__exam_code_questions")
@@ -193,7 +197,7 @@ def _build_session_catalog(subject):
 
     return {
         "subject": {
-            "id": subject.id,
+            "id": subject.pk, # Changed to pk
             "name": subject.name,
             "subject_code": subject.subject_code,
         },
@@ -202,7 +206,7 @@ def _build_session_catalog(subject):
         "exam_sets": [
             serialized
             for serialized in (_serialize_exam_set_for_session(exam_set) for exam_set in exam_sets)
-            if serialized["approved_codes_count"] > 0 # CẬP NHẬT: Chỉ xuất hiện nếu có ít nhất 1 mã đề đã duyệt
+            if serialized["approved_codes_count"] > 0
         ],
         "rosters": [_serialize_roster_for_session(roster) for roster in rosters],
         "room_suggestions": room_suggestions,
@@ -212,7 +216,7 @@ def _build_session_catalog(subject):
 def _legacy_room_configuration(exam_group):
     room_configs = []
     group_codes = list(exam_group.exam_codes.all().order_by("code_number", "pk"))
-    session_rooms = exam_group.session_rooms.select_related("room_id", "exam_set_id").prefetch_related(
+    session_rooms = exam_group.session_rooms.select_related("exam_room_id", "exam_set_id").prefetch_related(
         "exam_codes", "students__userprofile"
     )
 
@@ -233,8 +237,8 @@ def _legacy_room_configuration(exam_group):
                     "full_name": (
                         profile.full_name if profile and profile.full_name else user.username
                     ),
-                    "linked_user_id": user.id,
-                    "exam_code_id": assigned_code.id if assigned_code else None,
+                    "linked_user_id": user.pk, # Changed to pk
+                    "exam_code_id": assigned_code.pk if assigned_code else None,
                     "exam_code_name": assigned_code.code_name if assigned_code else "",
                     "display_order": assignment_index,
                 }
@@ -242,13 +246,13 @@ def _legacy_room_configuration(exam_group):
 
         room_configs.append(
             {
-                "client_id": f"legacy-room-{session_room.id}",
+                "client_id": f"legacy-room-{session_room.pk}",
                 "room_name": session_room.display_room_name,
                 "student_count": session_room.expected_students or len(assignments),
                 "password": session_room.room_password,
                 "exam_set_id": session_room.exam_set_id_id,
                 "exam_set_name": session_room.exam_set_id.display_name if getattr(session_room.exam_set_id, "display_name", None) else getattr(session_room.exam_set_id, "name", ""),
-                "exam_code_ids": [code.id for code in room_codes],
+                "exam_code_ids": [code.pk for code in room_codes],
                 "exam_code_names": [code.code_name for code in room_codes],
                 "assignments": assignments,
                 "display_order": session_room.display_order or index,
@@ -265,8 +269,8 @@ def _build_session_initial_state(subject, exam_group=None):
         start_at = timezone.localtime(exam_group.exam_date)
         end_at = timezone.localtime(exam_group.end_at)
         return {
-            "session_id": exam_group.id,
-            "subject_id": subject.id,
+            "session_id": exam_group.pk, # Changed to pk
+            "subject_id": subject.pk, # Changed to pk
             "group_name": exam_group.group_name,
             "academic_year": exam_group.academic_year or _student_default_academic_year(),
             "semester": exam_group.semester or SemesterChoices.HK1,
@@ -287,7 +291,7 @@ def _build_session_initial_state(subject, exam_group=None):
     default_end = default_start + timedelta(minutes=90)
     return {
         "session_id": None,
-        "subject_id": subject.id,
+        "subject_id": subject.pk, # Changed to pk
         "group_name": "",
         "academic_year": _student_default_academic_year(),
         "semester": SemesterChoices.HK1,
@@ -357,7 +361,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
     roster_ids = [_session_safe_int(item) for item in payload.get("roster_ids") or [] if _session_safe_int(item)]
     roster_qs = (
-        StudentRosterUpload.objects.filter(subject_id=subject, id__in=roster_ids)
+        StudentRosterUpload.objects.filter(subject_id=subject, pk__in=roster_ids) # Changed to pk__in
         .prefetch_related("students__linked_user_id")
         .order_by("-created_at")
     )
@@ -367,7 +371,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
     for roster in roster_qs:
         roster_configs.append(_serialize_roster_for_session(roster))
         for row in roster.students.select_related("linked_user_id").all():
-            roster_students_by_id[row.id] = row
+            roster_students_by_id[row.pk] = row
             roster_students_by_code[normalize_student_code(row.student_code)] = row
 
     if not is_draft and not roster_configs:
@@ -387,7 +391,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
     for index, raw_room in enumerate(rooms_payload, start=1):
         room_name = (raw_room.get("room_name") or "").strip()
         student_count = _session_safe_int(raw_room.get("student_count"), 0)
-        room_password = (raw_room.get("password") or "").strip()
+        room_password = (raw_room.get("password") or "").strip().upper()
         exam_set_id = _session_safe_int(raw_room.get("exam_set_id"))
         exam_set = ExamSet.objects.filter(pk=exam_set_id, subject_id=subject).first() if exam_set_id else None
 
@@ -401,10 +405,10 @@ def _normalize_session_configuration(request, payload, exam_group=None):
         if exam_set:
             valid_codes = list(
                 ExamCode.objects.filter(
-                    id__in=raw_exam_code_ids,
+                    pk__in=raw_exam_code_ids, # Changed to pk__in
                     subject_id=subject,
                     exam_set_id=exam_set,
-                    is_approved=True, # CẬP NHẬT: Vẫn luôn chỉ lấy mã đã duyệt
+                    is_approved=True,
                 ).order_by("code_number", "pk")
             )
 
@@ -417,7 +421,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
             if student_count <= 0:
                 errors.append(f"Phòng thi dòng {index} phải có số lượng sinh viên lớn hơn 0.")
             if not room_password:
-                errors.append(f"Phòng thi dòng {index} chưa có mật khẩu.")
+                room_password = _generate_room_password()
             elif len(room_password) != 5:
                 errors.append(f"Phòng thi dòng {index} phải có mật khẩu đúng 5 ký tự.")
             if not exam_set:
@@ -425,7 +429,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
             if not valid_codes:
                 errors.append(f"Phòng thi dòng {index} chưa chọn mã đề đã duyệt.")
 
-        valid_code_map = {code.id: code for code in valid_codes}
+        valid_code_map = {code.pk: code for code in valid_codes}
         if isinstance(assignments_payload, list):
             for assignment_index, raw_assignment in enumerate(assignments_payload, start=1):
                 roster_student_id = _session_safe_int(raw_assignment.get("roster_student_id"))
@@ -456,17 +460,17 @@ def _normalize_session_configuration(request, payload, exam_group=None):
                     continue
 
                 seen_student_codes.add(normalized_code)
-                linked_user_id = raw_assignment.get("linked_user_id") or (roster_student.linked_user_id.id if roster_student.linked_user_id else None)
+                linked_user_id = raw_assignment.get("linked_user_id") or (roster_student.linked_user_id.pk if roster_student.linked_user_id else None)
                 linked_user_id = _session_safe_int(linked_user_id) or None
                 selected_code = valid_code_map.get(exam_code_id)
 
                 normalized_assignments.append(
                     {
-                        "roster_student_id": roster_student.id,
+                        "roster_student_id": roster_student.pk,
                         "student_code": roster_student.student_code,
                         "full_name": roster_student.full_name,
                         "linked_user_id": linked_user_id,
-                        "exam_code_id": selected_code.id if selected_code else None,
+                        "exam_code_id": selected_code.pk if selected_code else None,
                         "exam_code_name": selected_code.code_name if selected_code else "",
                         "display_order": assignment_index,
                     }
@@ -477,16 +481,16 @@ def _normalize_session_configuration(request, payload, exam_group=None):
                 f"Phòng {room_name or index} đang có {len(normalized_assignments)} sinh viên, vượt quá sức chứa đã cấu hình {student_count}."
             )
 
-        selected_code_ids.update(code.id for code in valid_codes)
+        selected_code_ids.update(code.pk for code in valid_codes)
         normalized_rooms.append(
             {
                 "client_id": (raw_room.get("client_id") or f"room-{uuid4().hex[:8]}").strip(),
                 "room_name": room_name,
                 "student_count": student_count,
                 "password": room_password,
-                "exam_set_id": exam_set.id if exam_set else None,
+                "exam_set_id": exam_set.pk if exam_set else None,
                 "exam_set_name": getattr(exam_set, "display_name", exam_set.name) if exam_set else "",
-                "exam_code_ids": [code.id for code in valid_codes],
+                "exam_code_ids": [code.pk for code in valid_codes],
                 "exam_code_names": [code.code_name for code in valid_codes],
                 "assignments": normalized_assignments,
                 "display_order": index,
@@ -548,7 +552,7 @@ def _save_session_configuration(normalized, user, exam_group=None):
             target.exam_codes.set(
                 ExamCode.objects.filter(
                     subject_id=normalized["subject"],
-                    id__in=normalized["selected_code_ids"],
+                    pk__in=normalized["selected_code_ids"], # Changed to pk__in
                 )
             )
         else:
@@ -568,7 +572,7 @@ def _save_session_configuration(normalized, user, exam_group=None):
             if room["exam_code_ids"]:
                 session_room.exam_codes.set(
                     ExamCode.objects.filter(
-                        id__in=room["exam_code_ids"],
+                        pk__in=room["exam_code_ids"], # Changed to pk__in
                         subject_id=normalized["subject"],
                     )
                 )
@@ -578,7 +582,7 @@ def _save_session_configuration(normalized, user, exam_group=None):
                 if assignment.get("linked_user_id")
             ]
             if linked_user_ids:
-                session_room.students.set(User.objects.filter(id__in=linked_user_ids))
+                session_room.students.set(User.objects.filter(pk__in=linked_user_ids)) # Changed to pk__in
 
     return target
 
@@ -587,7 +591,7 @@ def _exam_group_base_queryset():
     return ExamSessionGroup.objects.select_related("subject_id", "created_by_user_id").prefetch_related(
         "exam_codes__exam_code_questions",
         "exam_sessions",
-        "session_rooms__room_id",
+        "session_rooms__exam_room_id",
         "session_rooms__exam_set_id",
         "session_rooms__exam_codes",
         "session_rooms__students__userprofile",
@@ -634,7 +638,7 @@ def _build_exam_group_student_rows(exam_group):
     if roster_ids:
         roster_filter |= Q(student_roster_upload_id__in=roster_ids)
     if roster_student_ids:
-        roster_filter |= Q(id__in=roster_student_ids)
+        roster_filter |= Q(pk__in=roster_student_ids) # Changed to pk__in
     if student_codes:
         roster_filter |= Q(student_code__in=student_codes)
 
@@ -647,7 +651,7 @@ def _build_exam_group_student_rows(exam_group):
     roster_rows_by_id = {}
     roster_rows_by_code = {}
     for row in roster_rows:
-        roster_rows_by_id.setdefault(row.id, row)
+        roster_rows_by_id.setdefault(row.pk, row) # Changed to pk
         normalized_code = normalize_student_code(row.student_code)
         if normalized_code and normalized_code not in roster_rows_by_code:
             roster_rows_by_code[normalized_code] = row
@@ -812,7 +816,7 @@ def lecturer_create_exam_group_screen(request):
         {
             "success": True,
             "status": "SUCCESS",
-            "exam_group_id": exam_group.id,
+            "exam_group_id": exam_group.pk, # Changed to pk
             "redirect_url": reverse("qna:lecturer_exam_sessions_list"),
         }
     )
@@ -846,7 +850,7 @@ def lecturer_exam_sessions_list(request):
         base_queryset = base_queryset.filter(semester=semester_filter)
 
     all_groups = list(base_queryset)
-    selected_subject = next((item for item in subjects if str(item.id) == subject_id), None)
+    selected_subject = next((item for item in subjects if str(item.pk) == subject_id), None) # Changed to pk
 
     summary = {
         "total": len(all_groups),
@@ -915,9 +919,9 @@ def lecturer_exam_session_detail_screen(request, exam_group_id):
         "exam_group": exam_group,
         "detail": detail_context,
         "list_url": reverse("qna:lecturer_exam_sessions_list"),
-        "common_list_url": reverse("qna:lecturer_exam_session_common_list_screen", args=[exam_group.id]),
-        "edit_url": f"{reverse('qna:lecturer_create_session_screen')}?session_id={exam_group.id}&mode=edit",
-        "delete_url": reverse("qna:lecturer_delete_exam_group", args=[exam_group.id]),
+        "common_list_url": reverse("qna:lecturer_exam_session_common_list_screen", args=[exam_group.pk]),
+        "edit_url": f"{reverse('qna:lecturer_create_session_screen')}?session_id={exam_group.pk}&mode=edit",
+        "delete_url": reverse("qna:lecturer_delete_exam_group", args=[exam_group.pk]),
     }
     return render(request, "qna/lecturer/lecturer_exam_session_detail.html", context)
 
@@ -961,8 +965,8 @@ def lecturer_exam_session_common_list_screen(request, exam_group_id):
         },
         "room_options": room_options,
         "list_url": reverse("qna:lecturer_exam_sessions_list"),
-        "detail_url": reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.id]),
-        "export_url": reverse("qna:lecturer_exam_session_common_list_export", args=[exam_group.id]),
+        "detail_url": reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.pk]),
+        "export_url": reverse("qna:lecturer_exam_session_common_list_export", args=[exam_group.pk]),
     }
     return render(request, "qna/lecturer/lecturer_exam_session_common_list.html", context)
 
@@ -1022,7 +1026,7 @@ def lecturer_exam_session_common_list_export(request, exam_group_id):
 def lecturer_delete_exam_group(request, exam_group_id):
     _ensure_lecturer(request)
     exam_group = _get_lecturer_exam_group_or_404(request, exam_group_id)
-    detail_url = reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.id])
+    detail_url = reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.pk])
 
     if not exam_group.can_modify:
         messages.error(request, "Ca thi này đã khóa chỉnh sửa nên không thể xóa.")
@@ -1037,7 +1041,7 @@ def lecturer_delete_exam_group(request, exam_group_id):
 def lecturer_create_exam_session(request, subject_code):
     _ensure_lecturer(request)
     subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
-    return redirect(f"{reverse('qna:lecturer_create_session_screen')}?subject_id={subject.id}")
+    return redirect(f"{reverse('qna:lecturer_create_session_screen')}?subject_id={subject.pk}")
 
 
 @login_required
@@ -1046,14 +1050,14 @@ def lecturer_create_exam_group(request, subject_code):
     _ensure_lecturer(request)
     subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
     payload = request.POST.copy()
-    payload["subject_id"] = str(subject.id)
+    payload["subject_id"] = str(subject.pk)
     normalized = _normalize_session_configuration(request, payload)
     if normalized["errors"]:
         return JsonResponse({"success": False, "error": normalized["errors"][0]}, status=400)
 
     exam_group = _save_session_configuration(normalized, request.user)
     messages.success(request, "Đã tạo ca thi thành công.")
-    return JsonResponse({"success": True, "exam_group_id": exam_group.id})
+    return JsonResponse({"success": True, "exam_group_id": exam_group.pk})
 
 
 @login_required
@@ -1069,7 +1073,7 @@ def lecturer_update_exam_group(request, exam_group_id):
                 "success": False,
                 "status": "FAIL",
                 "message": "Ca thi này đã khóa chỉnh sửa.",
-                "redirect_url": reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.id]),
+                "redirect_url": reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.pk]),
             },
             status=400,
         )
@@ -1095,8 +1099,8 @@ def lecturer_update_exam_group(request, exam_group_id):
         {
             "success": True,
             "status": "SUCCESS",
-            "exam_group_id": updated_group.id,
-            "redirect_url": f"{reverse('qna:lecturer_exam_sessions_list')}?subject_id={updated_group.subject_id}",
+            "exam_group_id": updated_group.pk,
+            "redirect_url": f"{reverse('qna:lecturer_exam_sessions_list')}?subject_id={updated_group.subject_id_id}",
         }
     )
 

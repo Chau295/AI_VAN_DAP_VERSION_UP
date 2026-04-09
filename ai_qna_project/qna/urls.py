@@ -24,9 +24,7 @@ urlpatterns = [
 
     # APIs
     path("api/save_exam_result/", views.save_exam_result, name="save_exam_result"),
-    path("api/save_supplementary_result/", views.save_supplementary_result, name="save_supplementary_result"),
-    path("api/get_supplementary/<int:session_id>/", views.get_supplementary_for_session,
-         name="get_supplementary_for_session"),
+    path("api/save_violation_image/", views.save_violation_image, name="save_violation_image"),
     path("api/finalize_session/<int:session_id>/", views.finalize_session_view, name="finalize_session"),
 
     # Face Verification APIs

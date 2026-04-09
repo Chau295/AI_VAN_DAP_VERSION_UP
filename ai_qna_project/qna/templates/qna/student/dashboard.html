@@ -6,29 +6,41 @@
 <p class="text-gray-500 mb-8">Hãy chọn môn học bên dưới để bắt đầu bài thi của bạn.</p>
 
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    {% for subject in subjects %}
+    {% for item in subject_cards %}
     <div class="bg-white p-6 rounded-xl shadow-md hover:shadow-xl transition-shadow">
         <div class="flex items-start justify-between">
             <div class="flex-1">
-                <h3 class="text-xl font-bold text-gray-800">{{ subject.name }}</h3>
-                <p class="text-gray-500 text-sm mt-1">Mã HP: {{ subject.subject_code }}</p>
+                <h3 class="text-xl font-bold text-gray-800">{{ item.subject.name }}</h3>
+                <p class="text-gray-500 text-sm mt-1">Mã HP: {{ item.subject.subject_code }}</p>
             </div>
-            {% if subject.exam_password %}
-            <div class="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center">
+            {% if item.can_enter_exam %}
+            <div class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center">
+                <i class="fas fa-circle-play mr-1"></i>
+                Đang mở ca thi
+            </div>
+            {% elif item.active_group %}
+            <div class="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center">
                 <i class="fas fa-lock mr-1"></i>
-                Có mật khẩu
+                {{ item.status_label }}
             </div>
             {% endif %}
         </div>
+        <div class="mt-4 text-sm text-gray-500 min-h-[48px]">
+            {% if item.active_group %}
+            <p><i class="fas fa-clock mr-2"></i>{{ item.active_group.start_at|date:"H:i d/m/Y" }} - {{ item.active_group.end_at|date:"H:i d/m/Y" }}</p>
+            {% else %}
+            <p><i class="fas fa-calendar-xmark mr-2"></i>Hiện chưa có ca thi khả dụng</p>
+            {% endif %}
+        </div>
         <div class="mt-4">
-            {% if subject.exam_password %}
-            <a href="{% url 'qna:exam_password' subject.subject_code %}" class="w-full text-center block bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition-colors">
+            {% if item.can_enter_exam %}
+            <a href="{% url 'qna:exam_password' item.subject.subject_code %}" class="w-full text-center block bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition-colors">
                 <i class="fas fa-unlock-alt mr-2"></i>Vào thi
             </a>
             {% else %}
-            <a href="{% url 'qna:pre_exam_verification' subject.subject_code %}" class="w-full text-center block bg-orange-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition-colors">
-                <i class="fas fa-play mr-2"></i>Vào thi
-            </a>
+            <span class="w-full text-center block bg-gray-300 text-gray-600 font-bold py-2 px-4 rounded-lg cursor-not-allowed">
+                <i class="fas fa-ban mr-2"></i>Vào thi
+            </span>
             {% endif %}
         </div>
     </div>

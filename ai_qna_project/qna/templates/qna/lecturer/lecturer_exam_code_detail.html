@@ -706,7 +706,7 @@
           onclick="createManualCode()"
           {% if exam_set_is_linked %}disabled{% endif %}
         >
-          <i class="fas fa-pen-to-square"></i> Tạo thủ công
+          <i class="fas fa-pen-to-square"></i> Thêm mã đề
         </button>
         <button
           type="button"
@@ -715,7 +715,7 @@
           onclick="publishExamSet()"
           {% if publish_disabled or exam_set_is_linked %}disabled{% endif %}
         >
-          <i class="fas fa-save"></i> Lưu
+          <i class="fas fa-save"></i> Lưu bộ đề
         </button>
       </div>
     </div>
@@ -750,7 +750,7 @@
   <div class="drawer-panel">
     <div class="drawer-head">
       <div>
-        <h3 id="drawerTitle">Biên tập Mã đề</h3>
+          <h3 id="drawerTitle">Chỉnh sửa mã đề</h3>
         <small>{{ exam_set.subject.name }}</small>
       </div>
       <button type="button" class="drawer-close" onclick="closeDrawer()">
@@ -986,7 +986,7 @@
     container.innerHTML = '';
 
     if (isCreatingNewCode) {
-        document.getElementById('drawerTitle').textContent = "Soạn thảo mã đề mới";
+        document.getElementById('drawerTitle').textContent = "Thêm mã đề mới";
         syncDrawerActions(null);
         let index = 1;
         ['easy', 'medium', 'hard'].forEach(diff => {
@@ -1001,7 +1001,7 @@
         });
     } else {
         const code = getCodeById(codeId); if (!code) return;
-        document.getElementById('drawerTitle').textContent = "Biên tập Mã đề: " + code.code_name;
+        document.getElementById('drawerTitle').textContent = "Chỉnh sửa mã đề: " + code.code_name;
         syncDrawerActions(code);
         sortExamItems(code.items).forEach((item, index) => {
             const block = document.createElement('div'); block.className = 'question-block';

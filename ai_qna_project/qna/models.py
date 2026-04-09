@@ -184,7 +184,6 @@ class Question(models.Model):
         default=DifficultyLevel.EASY,
         verbose_name="Độ khó",
     )
-    is_supplementary = models.BooleanField(default=False, verbose_name="Là câu hỏi phụ")
     is_exam_clone = models.BooleanField(default=False, verbose_name="Bản sao dùng cho mã đề")
     is_draft = models.BooleanField(default=False, verbose_name="Bản nháp chưa lưu")
     created_at = models.DateTimeField(auto_now_add=True, null=True, verbose_name="Ngày tạo")
@@ -202,7 +201,6 @@ class Question(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        # Bỏ qua kiểm tra trùng lặp nếu câu hỏi đó là câu hỏi được nhân bản cho Mã đề
         if self.is_exam_clone:
             import uuid
             self.question_text_normalized = f"clone_{uuid.uuid4().hex}"
@@ -853,6 +851,7 @@ class ExamSession(models.Model):
         verbose_name="Trạng thái xác thực",
     )
     needs_manual_review = models.BooleanField(default=False, verbose_name="Cần kiểm tra thủ công")
+    cheating_flag = models.BooleanField(default=False, verbose_name="Cảnh báo gian lận") # Đã thêm đánh dấu gian lận
 
     class Meta:
         db_table = "exam_session"
@@ -908,6 +907,12 @@ class ExamResult(models.Model):
     score = models.FloatField(verbose_name="Điểm số")
     feedback = models.TextField(verbose_name="Nhận xét của AI", null=True, blank=True)
     analysis = models.JSONField(verbose_name="Phân tích chi tiết", null=True, blank=True)
+    audio_file = models.FileField(
+        upload_to="student_audio/%Y/%m/",
+        null=True,
+        blank=True,
+        verbose_name="File ghi âm MP3"
+    ) # Đã thêm file ghi âm
     answered_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -945,36 +950,33 @@ class ExamResult(models.Model):
         self.question_id = value
 
 
-class SupplementaryResult(models.Model):
-    supplementary_result_id = models.AutoField(primary_key=True, db_column="supplementary_result_id")
+class ViolationImage(models.Model):
+    """Lưu hình ảnh gian lận (vd: TWO_FACES) trong quá trình thi"""
+    violation_image_id = models.AutoField(primary_key=True, db_column="violation_image_id")
     exam_session_id = models.ForeignKey(
         ExamSession,
         on_delete=models.CASCADE,
         db_column="exam_session_id",
-        related_name="supplementary_results",
+        related_name="violation_images",
+        verbose_name="Phiên thi"
     )
-    question_text = models.TextField()
-    transcript = models.TextField(blank=True, null=True)
-    score = models.FloatField(default=0.0)
-    max_score = models.FloatField(default=1.0)
-    feedback = models.TextField(blank=True, null=True)
-    analysis = models.JSONField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    image_blob = models.BinaryField(verbose_name="Ảnh gian lận")
+    image_mime = models.CharField(max_length=100, default="image/jpeg", verbose_name="MIME type ảnh")
+    violation_type = models.CharField(max_length=50, default="TWO_FACES", verbose_name="Loại gian lận")
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Thời điểm ghi nhận")
 
     class Meta:
-        db_table = "supplementary_result"
-        verbose_name = "Kết quả bổ sung"
-        verbose_name_plural = "Kết quả bổ sung"
+        db_table = "violation_image"
+        ordering = ["-timestamp"]
+        verbose_name = "Hình ảnh gian lận"
+        verbose_name_plural = "Hình ảnh gian lận"
 
     def __str__(self):
-        return (
-            f"Supplementary result for "
-            f"{self.exam_session_id.user_id.username} - Score: {self.score}/{self.max_score}"
-        )
+        return f"Gian lận {self.violation_type} - Session {self.exam_session_id.exam_session_id}"
 
     @property
     def id(self):
-        return self.supplementary_result_id
+        return self.violation_image_id
 
     @property
     def session(self):
@@ -983,6 +985,13 @@ class SupplementaryResult(models.Model):
     @session.setter
     def session(self, value):
         self.exam_session_id = value
+
+    @property
+    def get_image_data_url(self):
+        from base64 import b64encode
+        if self.image_blob:
+            return f"data:{self.image_mime};base64,{b64encode(self.image_blob).decode('ascii')}"
+        return ""
 
 
 class StudentRosterUpload(models.Model):
