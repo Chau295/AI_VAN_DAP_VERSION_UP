@@ -13,9 +13,11 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.urls import reverse
 
+from .exam_guards import subject_has_active_exam_group
 from .models import (
     DifficultyLevel,
     ExamCode,
@@ -44,8 +46,25 @@ def _lecturer_subjects(request):
     return request.user.userprofile.subjects_taught.all().order_by("name")
 
 
+def _subject_has_ongoing_exam_group(subject: Subject) -> bool:
+    return subject_has_active_exam_group(subject, now=timezone.now())
+
+
+def _locked_subject_mutation_response():
+    return JsonResponse(
+        {"status": "FAIL", "message": "Không thể chỉnh sửa khi ca thi đang diễn ra."},
+        status=403,
+    )
+
+
 def _validate_academic_year(value: str) -> bool:
     return bool(re.match(r"^\d{4}-\d{4}$", (value or "").strip()))
+
+
+def _validate_exam_set_total_score(exam_set: ExamSet) -> None:
+    total = exam_set.total_score
+    if abs(float(total) - 10.0) > 0.001:
+        raise ValueError("Tổng điểm bộ đề phải bằng 10.")
 
 
 def _parse_int_field(raw_value, field_label: str) -> int:
@@ -602,12 +621,13 @@ def lecturer_exam_codes_screen(request):
 @require_GET
 def lecturer_generate_codes_screen(request):
     _ensure_lecturer(request)
-    subjects = list(_lecturer_subjects(request))
+    subjects_qs = _lecturer_subjects(request)
+    subjects = list(subjects_qs)
     selected_subject_id = request.GET.get("subject_id")
 
     selected_subject = None
     if selected_subject_id:
-        selected_subject = get_object_or_404(subjects, pk=selected_subject_id)
+        selected_subject = get_object_or_404(subjects_qs, pk=selected_subject_id)
     elif subjects:
         selected_subject = subjects[0]
 
@@ -661,6 +681,8 @@ def lecturer_create_exam_set(request):
     payload = json.loads(request.body)
 
     subject = get_object_or_404(_lecturer_subjects(request), pk=payload.get("subject_id"))
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
 
     try:
         num_v = _parse_int_field(payload.get("number_of_versions"), "Số lượng mã đề")
@@ -709,8 +731,9 @@ def lecturer_create_exam_set(request):
 
     return JsonResponse({
         "status": "SUCCESS",
-        "message": "Tạo bộ đề thành công.",
-        "detail_url": f"/lecturer/exam-codes/{es.exam_set_id}/"
+        "message": "T?o b? ?? th?nh c?ng.",
+        "exam_set_id": es.exam_set_id,
+        "detail_url": reverse("qna:lecturer_exam_set_detail_screen", kwargs={"exam_set_id": es.exam_set_id}),
     })
 
 
@@ -723,6 +746,8 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
         pk=exam_set_id,
         subject_id__in=_lecturer_subjects(request)
     )
+    if _subject_has_ongoing_exam_group(exam_set.subject_id):
+        return _locked_subject_mutation_response()
 
     if exam_set.is_linked:
         return JsonResponse(
@@ -797,6 +822,8 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
 def lecturer_update_exam_code_content(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(code.subject_id):
+        return _locked_subject_mutation_response()
 
     if code.session_rooms.exists():
         return JsonResponse({"status": "FAIL", "message": "Mã đề đã được sử dụng, không thể sửa."}, status=400)
@@ -820,6 +847,8 @@ def lecturer_update_exam_code_content(request, exam_code_id: int):
 def lecturer_approve_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(code.subject_id):
+        return _locked_subject_mutation_response()
 
     err = _approval_error_for_code(code)
     if err:
@@ -851,6 +880,10 @@ def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
     data = json.loads(request.body)
     code_ids = data.get("exam_code_ids", [])
 
+    exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(exam_set.subject_id):
+        return _locked_subject_mutation_response()
+
     codes = ExamCode.objects.filter(
         exam_set_id__pk=exam_set_id,
         pk__in=code_ids,
@@ -866,7 +899,6 @@ def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
 
     # Auto-publish logic
     exam_set_published = False
-    exam_set = ExamSet.objects.get(pk=exam_set_id)
     if count > 0 and not exam_set.exam_codes.filter(is_approved=False).exists():
         exam_set.status = ExamSetStatus.APPROVED
         exam_set.save(update_fields=["status", "updated_at"])
@@ -885,6 +917,8 @@ def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
 def lecturer_regenerate_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(code.subject_id):
+        return _locked_subject_mutation_response()
 
     if code.session_rooms.exists():
         return JsonResponse({"status": "FAIL", "message": "Mã đề đang sử dụng, không thể sinh lại."}, status=400)
@@ -907,6 +941,8 @@ def lecturer_regenerate_exam_code(request, exam_code_id: int):
 def lecturer_delete_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(code.subject_id):
+        return _locked_subject_mutation_response()
 
     if code.session_rooms.exists():
         return JsonResponse({"status": "FAIL", "message": "Mã đề đang được sử dụng, không thể xóa."}, status=400)
@@ -926,6 +962,8 @@ def lecturer_delete_exam_code(request, exam_code_id: int):
 def lecturer_publish_exam_set(request, exam_set_id: int):
     _ensure_lecturer(request)
     exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(exam_set.subject_id):
+        return _locked_subject_mutation_response()
 
     codes = exam_set.exam_codes.all()
     if not codes.exists():
@@ -933,6 +971,11 @@ def lecturer_publish_exam_set(request, exam_set_id: int):
 
     if codes.filter(is_approved=False).exists():
         return JsonResponse({"status": "FAIL", "message": "Vui lòng duyệt tất cả mã đề."}, status=400)
+
+    try:
+        _validate_exam_set_total_score(exam_set)
+    except ValueError as exc:
+        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
 
     exam_set.status = ExamSetStatus.APPROVED
     exam_set.save(update_fields=["status", "updated_at"])
@@ -945,6 +988,8 @@ def lecturer_publish_exam_set(request, exam_set_id: int):
 def lecturer_save_exam_set_draft(request, exam_set_id: int):
     _ensure_lecturer(request)
     exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(exam_set.subject_id):
+        return _locked_subject_mutation_response()
     exam_set.save(update_fields=["updated_at"])
     return JsonResponse({"status": "SUCCESS", "message": "Đã lưu bản nháp."})
 
@@ -954,6 +999,8 @@ def lecturer_save_exam_set_draft(request, exam_set_id: int):
 def lecturer_delete_exam_set(request, exam_set_id: int):
     _ensure_lecturer(request)
     exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+    if _subject_has_ongoing_exam_group(exam_set.subject_id):
+        return _locked_subject_mutation_response()
 
     # Kiểm tra kĩ càng xem có mã đề nào bên trong đang được dùng không
     has_used_codes = False

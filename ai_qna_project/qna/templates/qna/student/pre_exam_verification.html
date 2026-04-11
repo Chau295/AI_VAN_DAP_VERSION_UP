@@ -203,11 +203,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Start exam
+  let submittingVerification = false;
+
   async function startExam() {
+    if (submittingVerification) return;
     if (!state.faceImageBase64) {
       alert('Vui lòng chụp ảnh trước khi bắt đầu thi.');
       return;
     }
+
+    submittingVerification = true;
+    elements.startExamBtn.disabled = true;
+    elements.captureFaceBtn.disabled = true;
     
     showLoading('Đang lưu ảnh...');
     
@@ -226,18 +233,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
       
       if (data.status === 'success') {
+        elements.startExamBtn.disabled = true;
+        elements.captureFaceBtn.disabled = true;
+        elements.startCameraBtn.disabled = true;
+        state.cameraStream?.getTracks().forEach(track => track.stop());
         updateVerificationStatus('success', 'Đã lưu ảnh thành công! Đang chuyển hướng...');
         
         // Redirect to exam page
         setTimeout(() => {
           window.location.href = "{% url 'qna:exam_page' subject_code %}";
-        }, 2000);
+        }, 1200);
       } else {
         throw new Error(data.message || 'Lỗi khi lưu ảnh');
       }
       
     } catch (error) {
       console.error('Start exam error:', error);
+      elements.startExamBtn.disabled = false;
+      elements.captureFaceBtn.disabled = false;
+      submittingVerification = false;
       updateVerificationStatus('error', `Lỗi: ${error.message}`);
     } finally {
       hideLoading();

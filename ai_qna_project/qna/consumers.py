@@ -1,43 +1,80 @@
-import json
 import base64
+import json
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from .models import ExamSession, ViolationImage
 
-User = get_user_model()
+LECTURER_HIDDEN_VIOLATION_TYPES = {"NO_FACE"}
+
+
+def _is_exam_group_open(exam_group):
+    if not exam_group or exam_group.status == "CANCELLED":
+        return False
+    now = timezone.now()
+    start_at = getattr(exam_group, "start_at", None)
+    end_at = getattr(exam_group, "end_at", None)
+    if not start_at or not end_at:
+        return False
+    return start_at <= now <= end_at
+
+
+def _session_is_valid_for_exam(session):
+    if not session:
+        return False
+    if session.session_status != "STARTED":
+        return False
+    if session.started_at is None:
+        return False
+    if session.completed_at is not None or session.session_status == "COMPLETED":
+        return False
+    if session.verification_status not in {"ALLOW", "WARNING_ALLOW"}:
+        return False
+    if not session.questions.exists():
+        return False
+    return _is_exam_group_open(session.exam_session_group_id)
 
 
 class ExamConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         path_session_id = self.scope.get("url_route", {}).get("kwargs", {}).get("session_id")
-
-        if path_session_id:
-            self.session_id = str(path_session_id)
-        else:
+        self.session_id = str(path_session_id) if path_session_id else None
+        if not self.session_id:
             query_string = self.scope["query_string"].decode()
             params = dict(q.split("=") for q in query_string.split("&") if "=" in q)
             self.session_id = params.get("session_id")
+        request_user = self.scope.get("user")
 
-        if not self.session_id:
-            await self.close(code=4001)
+        if not self.session_id or not request_user or not request_user.is_authenticated:
+            await self.close(code=4401)
             return
 
         try:
             self.session = await sync_to_async(
-                ExamSession.objects.select_related("user_id").get
-            )(pk=self.session_id)
-            self.user = self.session.user
-            self.room_group_name = f"exam_{self.session_id}"
-            self.reply_channel = self.channel_name
-
-            await self.channel_layer.group_add(self.room_group_name, self.channel_name)
-            await self.accept()
-            print(f"User {self.user.username} connected for session {self.session_id}.")
+                lambda: ExamSession.objects.select_related("user_id", "exam_session_group_id").get(pk=self.session_id)
+            )()
         except ExamSession.DoesNotExist:
-            await self.close(code=4004)
+            await self.close(code=4404)
+            return
+
+        if self.session.user_id_id != request_user.id:
+            await self.close(code=4403)
+            return
+
+        is_valid_for_exam = await sync_to_async(_session_is_valid_for_exam)(self.session)
+        if not is_valid_for_exam:
+            await self.close(code=4408)
+            return
+
+        self.user = request_user
+        self.room_group_name = f"exam_{self.session_id}"
+        self.reply_channel = self.channel_name
+
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.accept()
+        print(f"User {self.user.username} connected for session {self.session_id}.")
 
     async def disconnect(self, code):
         if hasattr(self, "room_group_name"):
@@ -45,7 +82,6 @@ class ExamConsumer(AsyncWebsocketConsumer):
             print(f"User disconnected from session {self.session_id}.")
 
     async def receive(self, text_data=None, bytes_data=None):
-        # Forward audio chunks to ASR tasks
         if bytes_data:
             await self.channel_layer.send(
                 "asr-tasks",
@@ -62,7 +98,6 @@ class ExamConsumer(AsyncWebsocketConsumer):
                 data = json.loads(text_data)
                 task_type = data.get("type")
 
-                # Handle ASR Stream
                 if task_type in ["asr.stream.start", "asr.stream.end"]:
                     message = {
                         "reply_channel": self.reply_channel,
@@ -70,7 +105,6 @@ class ExamConsumer(AsyncWebsocketConsumer):
                     }
                     await self.channel_layer.send("asr-tasks", message)
 
-                # YÊU CẦU 3: Nhận sự kiện cảnh báo gian lận từ Client qua WebSocket
                 elif task_type == "proctor_violation":
                     violation_type = data.get("violation_type", "TWO_FACES")
                     image_base64 = data.get("image_base64")
@@ -95,9 +129,10 @@ class ExamConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def save_violation_image(self, violation_type, image_base64):
-        """Hàm lưu trữ ảnh gian lận đồng bộ vào CSDL"""
         try:
-            # Tách header của chuỗi base64 nếu có
+            if not _session_is_valid_for_exam(self.session):
+                return
+
             if ";base64," in image_base64:
                 format_part, imgstr = image_base64.split(";base64,")
                 mime = format_part.split(":")[1]
@@ -107,7 +142,6 @@ class ExamConsumer(AsyncWebsocketConsumer):
 
             image_data = base64.b64decode(imgstr)
 
-            # Tạo record hình ảnh gian lận
             ViolationImage.objects.create(
                 exam_session_id=self.session,
                 image_blob=image_data,
@@ -115,9 +149,9 @@ class ExamConsumer(AsyncWebsocketConsumer):
                 violation_type=violation_type
             )
 
-            # Cập nhật cờ gian lận vào phiên thi
-            self.session.cheating_flag = True
-            self.session.save(update_fields=['cheating_flag'])
+            if violation_type not in LECTURER_HIDDEN_VIOLATION_TYPES:
+                self.session.cheating_flag = True
+                self.session.save(update_fields=['cheating_flag'])
             print(f"Recorded violation {violation_type} for session {self.session_id}")
 
         except Exception as e:

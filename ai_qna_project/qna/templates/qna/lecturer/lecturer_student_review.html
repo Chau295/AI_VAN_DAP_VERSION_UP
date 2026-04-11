@@ -1,7 +1,7 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Xem bài làm sinh viên - {{ selected_subject.name|default:subject.name }}{% endblock %}
+{% block title %}Xem bÃ i lÃ m sinh viÃªn - {{ selected_subject.name|default:subject.name }}{% endblock %}
 
 {% block content %}
 <style>
@@ -66,6 +66,7 @@
   .warning-icon { color: #dc2626; font-size: 1rem; }
   .status-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 102px; padding: 8px 14px; border-radius: 999px; font-size: 0.86rem; font-weight: 700; }
   .status-completed { color: #16a34a; background: #dcfce7; }
+  .status-ended { color: #2563eb; background: #dbeafe; }
   .status-in-progress { color: #d97706; background: #ffedd5; }
   .status-absent { color: #ef4444; background: #fee2e2; }
   .score-value { color: #0f2b57; font-size: 1.85rem; font-weight: 800; }
@@ -93,16 +94,16 @@
 <div class="student-review-page">
   <div class="student-review-shell">
     <div class="student-review-topbar">
-      <h1 class="student-review-title">Xem bài làm sinh viên</h1>
+      <h1 class="student-review-title">Xem bÃ i lÃ m sinh viÃªn</h1>
       <a href="{% url 'qna:lecturer_subject_list' %}" class="student-review-back">
         <i class="fas fa-arrow-left"></i>
-        Quay lại danh sách môn
+        Quay láº¡i danh sÃ¡ch mÃ´n
       </a>
     </div>
 
     <form method="get" class="student-review-panel subject-filter-panel">
       <div class="subject-filter-row">
-        <label class="subject-filter-label" for="subject_id">Chọn môn học:</label>
+        <label class="subject-filter-label" for="subject_id">Chá»n mÃ´n há»c:</label>
         <select id="subject_id" name="subject_id" class="subject-filter-control" onchange="this.form.submit()">
           {% for s in subjects %}
             <option value="{{ s.id }}" {% if selected_subject and selected_subject.id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.subject_code }})</option>
@@ -116,38 +117,38 @@
     <div class="stats-grid">
       <div class="stat-card stat-card-average">
         <div class="stat-meta">
-          <span class="stat-label">Điểm trung bình</span>
+          <span class="stat-label">Äiá»ƒm trung bÃ¬nh</span>
           <span class="stat-value">{{ average_score|floatformat:1 }}</span>
         </div>
         <span class="stat-icon"><i class="fas fa-clipboard-list"></i></span>
       </div>
       <div class="stat-card stat-card-complete">
         <div class="stat-meta">
-          <span class="stat-label">Đã hoàn thành</span>
+          <span class="stat-label">ÄÃ£ hoÃ n thÃ nh</span>
           <span class="stat-value">{{ completed_count }}</span>
         </div>
         <span class="stat-icon"><i class="fas fa-check"></i></span>
       </div>
       <div class="stat-card stat-card-absent">
         <div class="stat-meta">
-          <span class="stat-label">Vắng thi</span>
+          <span class="stat-label">Váº¯ng thi</span>
           <span class="stat-value">{{ absent_count }}</span>
         </div>
         <span class="stat-icon"><i class="fas fa-times"></i></span>
       </div>
     </div>
 
-    <h2 class="list-title">Danh sách Bài làm</h2>
+    <h2 class="list-title">Danh sÃ¡ch BÃ i lÃ m</h2>
 
     <div class="student-review-panel table-panel">
       <form method="get" class="table-filters">
         {% if selected_subject %}<input type="hidden" name="subject_id" value="{{ selected_subject.id }}">{% endif %}
         <div class="table-search">
           <i class="fas fa-search"></i>
-          <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm ..." value="{{ student_filter }}">
+          <input type="text" name="student" class="table-filter-input" placeholder="TÃ¬m kiáº¿m ..." value="{{ student_filter }}">
         </div>
         <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
-          <option value="">Trạng thái: Tất cả</option>
+          <option value="">Tráº¡ng thÃ¡i: Táº¥t cáº£</option>
           {% for g in exam_groups %}
             <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}</option>
           {% endfor %}
@@ -159,13 +160,13 @@
           <table class="result-table">
             <thead>
               <tr>
-                <th>Sinh viên</th>
-                <th>Lớp</th>
-                <th>Kỳ thi</th>
-                <th>Ngày thi</th>
-                <th>Thời gian</th>
-                <th>Trạng thái</th>
-                <th>Điểm</th>
+                <th>Sinh viÃªn</th>
+                <th>Lá»›p</th>
+                <th>Ká»³ thi</th>
+                <th>NgÃ y thi</th>
+                <th>Thá»i gian</th>
+                <th>Tráº¡ng thÃ¡i</th>
+                <th>Äiá»ƒm</th>
                 <th></th>
               </tr>
             </thead>
@@ -187,16 +188,16 @@
                     {% endif %}
                   </td>
                   <td>
-                    <span class="status-pill {{ session.review_status_class }}">{{ session.review_status_label }}</span>
+                    <span class="status-pill {{ session.review_status_class|default:session.status_class }}">{{ session.review_status_label|default:session.status_label }}</span>
                   </td>
-                  <td><span class="score-value">{% if session.is_completed %}{{ session.calculated_final_score|floatformat:1 }}{% else %}-{% endif %}</span></td>
+                  <td><span class="score-value">{% if session.can_display_score %}{{ session.calculated_final_score|floatformat:2 }}{% else %}-{% endif %}</span></td>
                   <td class="action-cell">
                     {% if session.has_violation_warning and session.can_view_detail %}
-                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-flag-link" title="Có cảnh báo gian lận" onclick="event.stopPropagation();">
+                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-flag-link" title="CÃ³ cáº£nh bÃ¡o gian láº­n" onclick="event.stopPropagation();">
                         <i class="fas fa-exclamation-triangle warning-icon"></i>
                       </a>
                     {% elif session.has_violation_warning %}
-                      <span title="Có cảnh báo gian lận">
+                      <span title="CÃ³ cáº£nh bÃ¡o gian láº­n">
                         <i class="fas fa-exclamation-triangle warning-icon"></i>
                       </span>
                     {% endif %}
@@ -207,15 +208,17 @@
           </table>
         </div>
         <div class="table-footer">
-          <div>HIỂN THỊ <strong>1-{{ sessions|length }}</strong> TRONG SỐ <strong>{{ sessions|length }} SINH VIÊN</strong></div>
+          <div>HIá»‚N THá»Š <strong>1-{{ sessions|length }}</strong> TRONG Sá» <strong>{{ sessions|length }} SINH VIÃŠN</strong></div>
         </div>
       {% else %}
         <div class="empty-state">
           <i class="fas fa-inbox"></i>
-          <div>Chưa có bài làm nào để hiển thị.</div>
+          <div>ChÆ°a cÃ³ bÃ i lÃ m nÃ o Ä‘á»ƒ hiá»ƒn thá»‹.</div>
         </div>
       {% endif %}
     </div>
   </div>
 </div>
 {% endblock %}
+
+

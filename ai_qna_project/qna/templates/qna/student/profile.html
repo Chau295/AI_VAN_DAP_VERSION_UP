@@ -42,7 +42,9 @@
      </div>
  </div>
 
- <script>
+<script>
+ const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+
  document.getElementById('avatar-upload').addEventListener('change', function(event) {
      const file = event.target.files[0];
      if (!file) {
@@ -50,7 +52,7 @@
      }
 
      const formData = new FormData();
-     formData.append('avatar', file);
+     formData.append('profile_image', file);
 
      const statusEl = document.getElementById('upload-status');
      statusEl.textContent = 'Đang tải lên...';
@@ -58,17 +60,18 @@
      fetch("{% url 'qna:update_profile_image' %}", {
          method: 'POST',
          headers: {
-             'X-CSRFToken': '{{ csrf_token }}'
+             'X-CSRFToken': csrfToken
          },
          body: formData
      })
      .then(response => response.json())
      .then(data => {
          if (data.success) {
-             document.getElementById('avatar-img').src = data.avatar_url;
+             const nextAvatar = data.image_data_url || data.avatar_url;
+             document.getElementById('avatar-img').src = nextAvatar;
              const navbarAvatar = document.getElementById('navbar-avatar');
              if (navbarAvatar) {
-                 navbarAvatar.src = data.avatar_url;
+                 navbarAvatar.src = nextAvatar;
              }
              statusEl.textContent = 'Cập nhật thành công!';
              setTimeout(() => { statusEl.textContent = ''; }, 3000);

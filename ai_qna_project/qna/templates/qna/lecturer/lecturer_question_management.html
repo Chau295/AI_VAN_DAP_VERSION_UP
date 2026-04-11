@@ -1060,6 +1060,7 @@
   data-api-save-bank-template="{% url 'qna:api_save_question_bank_questions' 999999 %}"
   data-api-delete-bank-template="/api/lecturer/question-banks/999999/delete/"
   data-api-banks="{% url 'qna:api_get_question_banks' %}"
+  data-has-active-exam="{% if has_active_exam %}true{% else %}false{% endif %}"
 >
   <div class="qm2-shell">
 
@@ -1850,6 +1851,7 @@
       const draftClass = q.is_draft ? 'draft-row' : '';
       const draftBadge = q.is_draft ? `<span class="qm2-draft-pill"><i class="fas fa-star"></i> Mới tạo (Chưa lưu)</span>` : '';
       const autoCheck = q.is_draft ? 'checked' : '';
+      const disabled = hasActiveExam ? 'disabled' : '';
 
       return `
       <div class="qm2-question-row ${draftClass}" data-question-id="${q.question_id}" data-difficulty="${q.difficulty}">
@@ -1887,8 +1889,8 @@
 
         <div class="qm2-row-actions">
           <div class="qm2-view-mode" style="display: flex; gap: 10px;">
-              <button type="button" title="Chỉnh sửa trực tiếp" class="edit-question-inline-btn" data-question-id="${q.question_id}"><i class="fas fa-pen"></i></button>
-              <button type="button" title="Xóa" class="delete-question-btn" data-question-id="${q.question_id}"><i class="far fa-trash-alt"></i></button>
+              <button type="button" title="Chỉnh sửa trực tiếp" class="edit-question-inline-btn" data-question-id="${q.question_id}" ${disabled}><i class="fas fa-pen"></i></button>
+              <button type="button" title="Xóa" class="delete-question-btn" data-question-id="${q.question_id}" ${disabled}><i class="far fa-trash-alt"></i></button>
           </div>
           <div class="qm2-edit-mode" style="display:none; gap: 8px;">
               <button type="button" title="Lưu lại" class="save-inline-btn" data-question-id="${q.question_id}" style="color: var(--green); background: #f0fdf4; border: 1px solid #bbf7d0;"><i class="fas fa-check"></i></button>

@@ -365,6 +365,13 @@
     flex-wrap: wrap;
   }
 
+  .detail-actions.is-locked .detail-primary-btn,
+  .detail-actions.is-locked .detail-danger-btn {
+    opacity: 0.42;
+    pointer-events: none;
+    box-shadow: none;
+  }
+
   .detail-outline-btn {
     border: 1px solid #d5dfeb;
     background: #fff;
@@ -516,7 +523,7 @@
         </a>
       </div>
 
-      <div class="detail-status {{ detail.status_class }}">{{ exam_group.status_label }}</div>
+      <div class="detail-status {{ detail.status_class }}" id="detailStatusBadge" data-stored-status="{{ exam_group.status }}" data-start-ts="{{ exam_group.start_at|date:'U' }}" data-end-ts="{{ exam_group.end_at|date:'U' }}">{{ exam_group.status_label }}</div>
 
       <div class="detail-panel">
         <div class="detail-info-grid">
@@ -534,11 +541,11 @@
           </div>
           <div class="detail-info-cell">
             <div class="detail-info-label">Ngày diễn ra</div>
-            <div class="detail-info-value"><i class="far fa-calendar"></i>{{ exam_group.exam_date|date:"d/m/Y" }}</div>
+            <div class="detail-info-value"><i class="far fa-calendar"></i>{{ exam_group.start_at|date:"d/m/Y" }}</div>
           </div>
           <div class="detail-info-cell">
             <div class="detail-info-label">Thời gian thi</div>
-            <div class="detail-info-value"><i class="far fa-clock"></i>{{ exam_group.exam_date|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</div>
+            <div class="detail-info-value"><i class="far fa-clock"></i>{{ exam_group.start_at|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</div>
           </div>
           <div class="detail-info-cell">
             <div class="detail-info-label">Thời lượng</div>
@@ -637,29 +644,105 @@
         {% endif %}
       </div>
 
-      {% if detail.can_edit or detail.can_delete %}
-        <div class="detail-actions">
-          <div>
-            {% if detail.can_delete %}
-              <button type="button" class="detail-danger-btn" id="openDeleteModalButton">
-                <i class="fas fa-trash-alt"></i>
-                Xóa ca thi
-              </button>
-            {% endif %}
-          </div>
-          <div>
-            {% if detail.can_edit %}
-              <a class="detail-primary-btn" href="{{ edit_url }}">
-                <i class="fas fa-pen"></i>
-                Chỉnh sửa
-              </a>
-            {% endif %}
-          </div>
-        </div>
-      {% endif %}
+       {% if detail.can_edit or detail.can_delete %}
+         <div class="detail-actions" id="detailActionBar">
+           <div>
+             {% if detail.can_delete %}
+               <button type="button" class="detail-danger-btn btn-delete" id="openDeleteModalButton">
+                 <i class="fas fa-trash-alt"></i>
+                 Xóa ca thi
+               </button>
+             {% endif %}
+           </div>
+           <div>
+             {% if detail.can_edit %}
+               <a class="detail-primary-btn btn-edit" href="{{ edit_url }}">
+                 <i class="fas fa-pen"></i>
+                 Chỉnh sửa
+               </a>
+             {% endif %}
+           </div>
+         </div>
+       {% endif %}
     </div>
   </div>
 </div>
+
+<script>
+  (function () {
+    const detailServerNowTs = {{ server_now_ts|default:0 }};
+    const detailClientNowTs = Date.now() / 1000;
+    const detailClockOffsetTs = detailServerNowTs ? (detailServerNowTs - detailClientNowTs) : 0;
+
+    const detailStatusMeta = {
+      DRAFT: { label: "Lưu nháp", className: "draft" },
+      SCHEDULED: { label: "Sắp diễn ra", className: "scheduled" },
+      ONGOING: { label: "Đang diễn ra", className: "ongoing" },
+      COMPLETED: { label: "Đã kết thúc", className: "completed" },
+      CANCELLED: { label: "Đã hủy", className: "cancelled" },
+    };
+
+    function computeRealtimeDetailStatus(storedStatus, startTs, endTs) {
+      if (storedStatus === "CANCELLED") {
+        return "CANCELLED";
+      }
+
+      const nowTs = (Date.now() / 1000) + detailClockOffsetTs;
+      if (!startTs || !endTs) {
+        return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+      }
+
+      if (nowTs < startTs) {
+        return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+      }
+
+      if (nowTs <= endTs) {
+        return "ONGOING";
+      }
+
+      return "COMPLETED";
+    }
+
+    function updateRealtimeDetailStatus() {
+      const badge = document.getElementById("detailStatusBadge");
+      if (!badge) {
+        return;
+      }
+
+      const status = computeRealtimeDetailStatus(
+        badge.dataset.storedStatus || "",
+        Number(badge.dataset.startTs || 0),
+        Number(badge.dataset.endTs || 0),
+      );
+      const meta = detailStatusMeta[status] || detailStatusMeta.DRAFT;
+      badge.className = `detail-status ${meta.className}`;
+      badge.textContent = meta.label;
+
+      const actionBar = document.getElementById("detailActionBar");
+      if (actionBar) {
+        const isLocked = ["ONGOING", "COMPLETED", "CANCELLED"].includes(status);
+        actionBar.classList.toggle("is-locked", isLocked);
+
+        actionBar.querySelectorAll(".detail-danger-btn").forEach((button) => {
+          button.disabled = isLocked;
+        });
+
+        actionBar.querySelectorAll("a.detail-primary-btn").forEach((link) => {
+          if (isLocked) {
+            link.setAttribute("aria-disabled", "true");
+            link.setAttribute("tabindex", "-1");
+          } else {
+            link.removeAttribute("aria-disabled");
+            link.removeAttribute("tabindex");
+          }
+        });
+      }
+    }
+
+    updateRealtimeDetailStatus();
+    window.setInterval(updateRealtimeDetailStatus, 5000);
+  })();
+</script>
 
 {% if detail.can_delete %}
   <form id="deleteExamGroupForm" method="post" action="{{ delete_url }}">

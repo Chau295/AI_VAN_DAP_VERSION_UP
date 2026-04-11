@@ -579,6 +579,7 @@
         status: 'ready',
         progress: 100,
         error: '',
+        warningMessages: [],
         meta: `${sizeText(file.size)} • Đã sẵn sàng`,
         note: 'Chờ xác nhận tải lên',
       });
@@ -641,26 +642,29 @@
       const error = (payload.errors || [])[0] || null;
 
       if (xhr.status >= 200 && xhr.status < 300 && result) {
+        const warningMessages = (result.warnings || [])
+          .map(entry => entry?.message || '')
+          .filter(Boolean);
         item.status = 'success';
         item.progress = 100;
         item.error = '';
+        item.warningMessages = warningMessages;
         item.meta = `${sizeText(item.file.size)} • ${result.total_students || 0} sinh viên`;
-        item.note = `Tải lên lúc ${result.created_at || 'vừa xong'}`;
+        item.note = warningMessages.length
+          ? `Hoàn tất với ${warningMessages.length} cảnh báo`
+          : `Tải lên lúc ${result.created_at || 'vừa xong'}`;
         render();
         toast('Tải file lên thành công', `${item.file.name} đã được lưu vào hệ thống.`, false);
 
-        // ---- LOGIC AUTO-REDIRECT ĐƯỢC THÊM VÀO TẠI ĐÂY ----
-        // Đợi 1 giây để người dùng đọc được thông báo màu xanh rồi mới chuyển trang
-        // Đồng thời kiểm tra xem có đang upload file nào khác bị lỗi hoặc chưa xong không.
         const isUploading = filesState.some(f => f.status === 'uploading');
         const hasError = filesState.some(f => f.status === 'error' || f.status === 'invalid');
+        const hasWarning = filesState.some(f => Array.isArray(f.warningMessages) && f.warningMessages.length > 0);
 
-        if (!isUploading && !hasError) {
+        if (!isUploading && !hasError && !hasWarning) {
           setTimeout(() => {
             window.location.href = "{% url 'qna:lecturer_student_list_management' subject.subject_code %}";
-          }, 1000); // 1000ms = 1 giây
+          }, 1000);
         }
-        // ---------------------------------------------------
         return;
       }
 
@@ -729,6 +733,7 @@
                 <div class="qm2-progress-fill ${isError ? 'bg-red-500' : (isSuccess || isReady ? 'bg-green-500' : '')}" style="width:${progress}%"></div>
               </div>
               ${item.error ? `<div class="text-xs text-red-500 mt-1">${esc(item.error)}</div>` : ''}
+              ${(item.warningMessages || []).length ? `<div class="mt-2 rounded-md bg-yellow-50 px-3 py-2 text-xs text-yellow-800">${item.warningMessages.map(message => `<div>${esc(message)}</div>`).join('')}</div>` : ''}
             </div>
           </div>
           <div class="qm2-file-actions ml-4">

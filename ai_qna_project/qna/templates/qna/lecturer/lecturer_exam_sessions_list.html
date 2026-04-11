@@ -234,6 +234,34 @@
     color: #b91c1c;
   }
 
+  .status-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .status-note {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--session-muted);
+    white-space: nowrap;
+  }
+
+  .status-note.scheduled {
+    color: #b45309;
+  }
+
+  .status-note.ongoing {
+    color: #15803d;
+  }
+
+  .status-note.completed,
+  .status-note.draft,
+  .status-note.cancelled {
+    color: var(--session-muted);
+  }
+
   .session-actions {
     display: inline-flex;
     align-items: center;
@@ -477,40 +505,26 @@
                 <th>Ngày diễn ra</th>
                 <th>Thời gian</th>
                 <th>Trạng thái</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
-              {% for exam_group in page_obj.object_list %}
-                <tr>
-                  <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
-                  <td class="session-name">{{ exam_group.group_name }}</td>
-                  <td>{{ exam_group.subject.name }}</td>
-                  <td>{{ exam_group.academic_year|default:"-" }}</td>
-                  <td>{{ exam_group.get_semester_display }}</td>
-                  <td>{{ exam_group.exam_date|date:"d/m/Y" }}</td>
-                  <td>{{ exam_group.exam_date|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</td>
-                  <td>
-                    <span class="status-pill {{ exam_group.computed_status|lower }}">{{ exam_group.status_label }}</span>
-                  </td>
-                  <td>
-                    <div class="session-actions">
-                      <a href="{% url 'qna:lecturer_exam_session_detail_screen' exam_group.id %}" title="Xem">
-                        <i class="fas fa-eye"></i>
-                      </a>
-                      {% if exam_group.can_modify %}
-                        <a href="{% url 'qna:lecturer_create_session_screen' %}?session_id={{ exam_group.id }}&mode=edit" title="Chỉnh sửa">
-                          <i class="fas fa-pen"></i>
-                        </a>
-                      {% else %}
-                        <span class="disabled" title="Ca thi đã khóa chỉnh sửa">
-                          <i class="fas fa-lock"></i>
-                        </span>
-                      {% endif %}
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
+               {% for exam_group in page_obj.object_list %}
+                  <tr class="lecturer-exam-row" data-start="{{ exam_group.start_at|date:'c' }}" data-end="{{ exam_group.end_at|date:'c' }}" data-start-ts="{{ exam_group.start_at|date:'U' }}" data-end-ts="{{ exam_group.end_at|date:'U' }}" data-status="{{ exam_group.status }}" onclick="window.location.href='{% url 'qna:lecturer_exam_session_detail_screen' exam_group.id %}'" style="cursor: pointer;">
+                   <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
+                   <td class="session-name">{{ exam_group.group_name }}</td>
+                   <td>{{ exam_group.subject.name }}</td>
+                   <td>{{ exam_group.academic_year|default:"-" }}</td>
+                   <td>{{ exam_group.get_semester_display }}</td>
+                   <td>{{ exam_group.start_at|date:"d/m/Y" }}</td>
+                    <td>{{ exam_group.start_at|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</td>
+                    <td>
+                      <div class="status-stack">
+                        <span class="status-pill {{ exam_group.computed_status|lower }}">{{ exam_group.status_label }}</span>
+                        <span class="status-note {{ exam_group.computed_status|lower }}" data-status-note></span>
+                      </div>
+                     </td>
+                   </tr>
+                 {% endfor %}
             </tbody>
           </table>
         {% else %}
@@ -568,6 +582,117 @@
 </div>
 
 <script>
+  const realtimeServerNowMs = {{ server_now_ms|default:0 }};
+  const realtimeClientNowMs = Date.now();
+  const realtimeClockOffsetMs = realtimeServerNowMs ? (realtimeServerNowMs - realtimeClientNowMs) : 0;
+
+  const realtimeSessionStatusMeta = {
+    DRAFT: { label: "Lưu nháp", className: "draft" },
+    SCHEDULED: { label: "Sắp diễn ra", className: "scheduled" },
+    ONGOING: { label: "Đang diễn ra", className: "ongoing" },
+    COMPLETED: { label: "Đã kết thúc", className: "completed" },
+    CANCELLED: { label: "Đã hủy", className: "cancelled" },
+  };
+
+  function parseRealtimeSessionTimestamp(rawTimestamp, fallbackValue) {
+    const numericValue = Number(rawTimestamp || 0);
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      return numericValue * 1000;
+    }
+
+    const parsedValue = new Date(fallbackValue || "").getTime();
+    return Number.isFinite(parsedValue) ? parsedValue : 0;
+  }
+
+  function computeRealtimeSessionStatus(storedStatus, startTs, endTs) {
+    if (storedStatus === "CANCELLED") {
+      return "CANCELLED";
+    }
+
+    const nowTs = Date.now() + realtimeClockOffsetMs;
+
+    if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || !startTs || !endTs) {
+      return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+    }
+
+    if (nowTs < startTs) {
+      return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+    }
+
+    if (nowTs <= endTs) {
+      return "ONGOING";
+    }
+
+    return "COMPLETED";
+  }
+
+  function formatRealtimeCountdown(msRemaining) {
+    const totalSeconds = Math.max(0, Math.floor(msRemaining / 1000));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const hh = String(hours).padStart(2, "0");
+    const mm = String(minutes).padStart(2, "0");
+    const ss = String(seconds).padStart(2, "0");
+
+    if (days > 0) {
+      return `${days}d ${hh}:${mm}:${ss}`;
+    }
+
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  function buildRealtimeSessionNote(status, startTs, endTs) {
+    const nowTs = Date.now() + realtimeClockOffsetMs;
+
+    if (!startTs || !endTs) {
+      return status === "DRAFT" ? "Ca thi đang ở trạng thái nháp" : "Đang chờ lịch thi";
+    }
+
+    if (status === "SCHEDULED") {
+      return `Bắt đầu sau ${formatRealtimeCountdown(startTs - nowTs)}`;
+    }
+
+    if (status === "ONGOING") {
+      return `Còn ${formatRealtimeCountdown(endTs - nowTs)}`;
+    }
+
+    if (status === "COMPLETED") {
+      return "Đã hết thời gian thi";
+    }
+
+    if (status === "CANCELLED") {
+      return "Ca thi đã hủy";
+    }
+
+    return "Ca thi đang ở trạng thái nháp";
+  }
+
+  function updateRealtimeSessionRows() {
+    document.querySelectorAll(".lecturer-exam-row").forEach((row) => {
+      const pill = row.querySelector(".status-pill");
+      const note = row.querySelector("[data-status-note]");
+      if (!pill) {
+        return;
+      }
+      const startTs = parseRealtimeSessionTimestamp(row.dataset.startTs, row.dataset.start);
+      const endTs = parseRealtimeSessionTimestamp(row.dataset.endTs, row.dataset.end);
+      const status = computeRealtimeSessionStatus(
+        row.dataset.status || "",
+        startTs,
+        endTs,
+      );
+      const meta = realtimeSessionStatusMeta[status] || realtimeSessionStatusMeta.DRAFT;
+      pill.className = `status-pill ${meta.className}`;
+      pill.textContent = meta.label;
+      if (note) {
+        note.className = `status-note ${meta.className}`;
+        note.textContent = buildRealtimeSessionNote(status, startTs, endTs);
+      }
+    });
+  }
+
   document.querySelectorAll("[data-session-toast]").forEach((toast) => {
     window.setTimeout(() => {
       toast.remove();
@@ -582,5 +707,10 @@
       }
     });
   });
+
+  updateRealtimeSessionRows();
+  if (document.querySelectorAll(".lecturer-exam-row").length) {
+    window.setInterval(updateRealtimeSessionRows, 1000);
+  }
 </script>
 {% endblock %}

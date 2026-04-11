@@ -81,21 +81,25 @@
   .fraud-icon { width: 50px; height: 50px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; background: #eff6ff; color: #1d4ed8; font-size: 1.2rem; }
   .fraud-empty { color: #4b5563; font-size: 0.95rem; line-height: 1.6; }
   .fraud-list { display: flex; flex-direction: column; gap: 14px; }
+  .fraud-list.is-collapsed .fraud-item.is-extra { display: none; }
   .fraud-item { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 12px; align-items: start; }
-  .fraud-thumb { width: 62px; height: 62px; background: #111827; border-radius: 10px; overflow: hidden; display: block; }
+  .fraud-thumb { width: 62px; height: 62px; background: #111827; border-radius: 10px; overflow: hidden; display: block; border: none; cursor: pointer; padding: 0; }
+  .fraud-thumb:hover { opacity: 0.8; }
   .fraud-thumb img { width: 100%; height: 100%; object-fit: cover; }
   .fraud-meta { min-width: 0; }
   .fraud-name { color: var(--detail-text); font-size: 0.92rem; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; }
   .fraud-time { color: #6b7280; font-size: 0.78rem; margin-top: 2px; }
   .fraud-desc { color: #ef4444; font-size: 0.8rem; margin-top: 2px; }
   .fraud-badge { margin-top: 6px; display: inline-flex; align-items: center; justify-content: center; padding: 5px 10px; border-radius: 999px; background: var(--detail-red); color: #fff; font-size: 0.7rem; font-weight: 800; }
-  .fraud-link { margin-top: 10px; text-align: center; color: #2563eb; font-weight: 700; text-decoration: none; display: block; }
+  .fraud-link { margin-top: 10px; width: 100%; text-align: center; color: #2563eb; font-weight: 700; text-decoration: none; display: block; background: none; border: none; cursor: pointer; }
 
-  @media (max-width: 1080px) {
-    .result-detail-grid { grid-template-columns: 1fr; }
-    .info-grid { grid-template-columns: 1fr; }
-    .side-column { order: -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
+  /* Image Modal Styles */
+  .image-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+  .image-modal-backdrop { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); }
+  .image-modal-content { position: relative; max-width: 90vw; max-height: 90vh; background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
+  .image-modal-close { position: absolute; top: -12px; right: -12px; width: 32px; height: 32px; border-radius: 50%; background: #dc2626; color: #fff; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; z-index: 1; }
+  .image-modal-close:hover { background: #b91c1c; }
+  .image-modal-img { max-width: 100%; max-height: 80vh; display: block; border-radius: 4px; }
 
   @media (max-width: 720px) {
     .result-detail-page { padding: 18px 12px 28px; }
@@ -255,23 +259,23 @@
           {% if violation_images %}
             <div class="fraud-title">Phát hiện gian lận</div>
             <div class="fraud-empty" style="margin-bottom:14px;">Hệ thống lưu lại các bằng chứng bất thường được phát hiện từ camera.</div>
-            <div class="fraud-list">
-              {% for image in violation_images|slice:':2' %}
-                <div class="fraud-item">
-                  <a href="{{ image.image_data_url }}" target="_blank" class="fraud-thumb">
+            <div class="fraud-list{% if violation_images|length > 2 %} is-collapsed{% endif %}" data-fraud-list>
+              {% for image in violation_images %}
+                <div class="fraud-item{% if forloop.counter > 2 %} is-extra{% endif %}">
+                  <button type="button" class="fraud-thumb" data-image-src="{{ image.image_data_url }}" data-image-alt="Ảnh cảnh báo gian lận - {{ image.timestamp|date:'H:i:s d/m/Y' }}" onclick="openImageModal(this)">
                     <img src="{{ image.image_data_url }}" alt="Ảnh cảnh báo gian lận">
-                  </a>
+                  </button>
                   <div class="fraud-meta">
                     <div class="fraud-name">{{ session.user.userprofile.full_name|default:session.user.username }} <i class="fas fa-exclamation-triangle" style="color:#dc2626;"></i></div>
                     <div class="fraud-time">{{ image.timestamp|date:"H:i:s d/m/Y" }}</div>
-                    <div class="fraud-desc">Phát hiện 2 gương mặt</div>
+                    <div class="fraud-desc">{{ image.violation_description }}</div>
                     <div class="fraud-badge">CẢNH BÁO</div>
                   </div>
                 </div>
               {% endfor %}
             </div>
             {% if violation_images|length > 2 %}
-              <a href="#" class="fraud-link">Xem tất cả cảnh báo ({{ violation_images|length }})</a>
+              <button type="button" class="fraud-link" data-fraud-toggle data-expanded-label="Thu gọn cảnh báo" data-collapsed-label="Xem tất cả cảnh báo ({{ violation_images|length }})">Xem tất cả cảnh báo ({{ violation_images|length }})</button>
             {% endif %}
           {% else %}
             <div class="fraud-icon"><i class="far fa-shield-check"></i></div>
@@ -283,4 +287,66 @@
     </div>
   </div>
 </div>
+
+<!-- Image Modal -->
+<div id="imageModal" class="image-modal" style="display: none;">
+  <div class="image-modal-backdrop" onclick="closeImageModal()"></div>
+  <div class="image-modal-content">
+    <button type="button" class="image-modal-close" onclick="closeImageModal()" aria-label="Đóng">
+      <i class="fas fa-times"></i>
+    </button>
+    <img id="modalImage" src="" alt="" class="image-modal-img">
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const toggleButton = document.querySelector('[data-fraud-toggle]');
+    const fraudList = document.querySelector('[data-fraud-list]');
+    if (toggleButton && fraudList) {
+      toggleButton.addEventListener('click', () => {
+        const isCollapsed = fraudList.classList.toggle('is-collapsed');
+        toggleButton.textContent = isCollapsed
+          ? toggleButton.dataset.collapsedLabel
+          : toggleButton.dataset.expandedLabel;
+      });
+    }
+  });
+
+  function openImageModal(button) {
+    const imageSrc = button.dataset.imageSrc;
+    const imageAlt = button.dataset.imageAlt;
+
+    const modal = document.getElementById('imageModal');
+    const modalImage = document.getElementById('modalImage');
+
+    modalImage.src = imageSrc;
+    modalImage.alt = imageAlt;
+    modal.style.display = 'flex';
+  }
+
+  function closeImageModal() {
+    const modal = document.getElementById('imageModal');
+    modal.style.display = 'none';
+  }
+
+  // Close modal when clicking outside the image
+  document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('imageModal');
+    if (modal) {
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal.querySelector('.image-modal-backdrop')) {
+          closeImageModal();
+        }
+      });
+    }
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && modal && modal.style.display !== 'none') {
+        closeImageModal();
+      }
+    });
+  });
+</script>
 {% endblock %}

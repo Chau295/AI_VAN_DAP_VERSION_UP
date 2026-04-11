@@ -14,9 +14,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-if@6s5)2b1+)vbko#wa$*u$y+ccr%)q981o%&n8e2y%i@ga@eq'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 
 
 # Application definition
@@ -53,6 +53,7 @@ TEMPLATES = [
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
+                'django.template.context_processors.tz',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
@@ -85,7 +86,7 @@ AUTH_PASSWORD_VALIDATORS = []
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 USE_I18N = True
 
@@ -135,6 +136,6 @@ CACHES = {
     }
 }
 
-OPENAI_API_KEY = os.getenv("")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "ffmpeg")

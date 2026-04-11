@@ -1,4 +1,4 @@
-from django.contrib import admin
+﻿from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
@@ -16,7 +16,7 @@ from .models import (
     ExamSessionRoom,
     ExamSession,
     ExamResult,
-    ViolationImage,  # Đã thêm model này để quản lý ảnh gian lận
+    ViolationImage,  # ÄÃ£ thÃªm model nÃ y Ä‘á»ƒ quáº£n lÃ½ áº£nh gian láº­n
     StudentRosterUpload,
     StudentRosterStudent,
 )
@@ -25,7 +25,7 @@ from .models import (
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
     can_delete = False
-    verbose_name_plural = "Hồ sơ người dùng"
+    verbose_name_plural = "Há»“ sÆ¡ ngÆ°á»i dÃ¹ng"
     fk_name = "user_id"
 
 
@@ -276,7 +276,7 @@ class ExamSessionAdmin(admin.ModelAdmin):
         "verification_status",
         "cheating_flag",
     )
-    list_filter = ("subject_id", "is_completed", "verification_status", "cheating_flag")
+    list_filter = ("subject_id", "session_status", "verification_status", "cheating_flag")
     search_fields = ("user_id__username", "subject_id__name", "subject_id__subject_code")
     date_hierarchy = "created_at"
     filter_horizontal = ("questions",)
@@ -291,7 +291,7 @@ class ExamResultAdmin(admin.ModelAdmin):
     ordering = ("-answered_at",)
 
 
-# Đăng ký hiển thị ảnh gian lận trong admin
+# ÄÄƒng kÃ½ hiá»ƒn thá»‹ áº£nh gian láº­n trong admin
 @admin.register(ViolationImage)
 class ViolationImageAdmin(admin.ModelAdmin):
     list_display = ("violation_image_id", "exam_session_id", "violation_type", "timestamp")

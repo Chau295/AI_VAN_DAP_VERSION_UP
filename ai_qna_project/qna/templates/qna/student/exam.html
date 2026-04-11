@@ -9,7 +9,7 @@
     <div class="bg-white p-8 rounded-xl shadow-md max-w-4xl mx-auto">
       <div class="flex justify-between items-center mb-6 border-b pb-4">
         <div>
-          <h2 class="text-3xl font-bold text-gray-800">Phần câu hỏi chính</h2>
+          <h2 class="text-3xl font-bold text-gray-800">Danh sách câu hỏi</h2>
           <p class="text-gray-500">Vui lòng chọn lần lượt các câu hỏi để trả lời.</p>
         </div>
         <div>
@@ -83,19 +83,38 @@
     </div>
   </div>
 
+  <div id="websocket-banner" style="display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:9999; background:#dc2626; color:#fff; padding:12px 24px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.3); font-weight:bold;">
+    <i class="fas fa-exclamation-triangle mr-2"></i>Kết nối bị mất. Đang thử kết nối lại...
+  </div>
+
+  <div id="alert-banner" style="display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:9999; background:#dc2626; color:#fff; padding:12px 24px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.3); font-weight:bold; max-width:90%;">
+    <span id="alert-message"></span>
+    <button onclick="document.getElementById('alert-banner').style.display='none';" style="margin-left:16px; background:none; border:none; color:#fff; font-size:18px; cursor:pointer;">&times;</button>
+  </div>
+
   <div id="confirmFinishModal" class="modal" style="display:none;">
-      <div class="modal-content w-full max-w-md bg-white rounded-xl shadow-2xl flex flex-col m-4">
-          <div class="p-6 border-b border-gray-200">
-              <h3 class="text-2xl font-bold text-gray-800">Xác nhận kết thúc bài thi</h3>
+      <div class="modal-content exam-confirm-card exam-confirm-card-finish w-full max-w-lg bg-white rounded-[28px] shadow-2xl flex flex-col m-4 overflow-hidden">
+          <div class="exam-confirm-header">
+              <span class="exam-confirm-badge">Nộp bài</span>
+              <div class="exam-confirm-icon exam-confirm-icon-finish">
+                  <i class="fas fa-flag-checkered"></i>
+              </div>
+              <h3 class="exam-confirm-title">Xác nhận kết thúc bài thi</h3>
+              <p class="exam-confirm-subtitle">Hệ thống sẽ chốt toàn bộ câu trả lời hiện có và chuyển sang màn hình tổng kết.</p>
           </div>
-          <div class="p-8 flex-grow text-center">
-              <i class="fas fa-exclamation-circle text-5xl text-amber-500 mb-4"></i>
-              <p class="text-gray-700 text-lg">Bạn có chắc chắn muốn kết thúc bài thi?</p>
-              <p class="text-gray-500 mt-2">Sau khi kết thúc, bạn sẽ không thể thay đổi câu trả lời.</p>
+          <div class="exam-confirm-body">
+              <div class="exam-confirm-highlight">
+                  <span class="exam-confirm-highlight-label">Lưu ý</span>
+                  <div class="exam-confirm-highlight-text">Sau khi nộp bài, bạn sẽ không thể quay lại để sửa hoặc trả lời thêm.</div>
+              </div>
+              <div class="exam-confirm-points">
+                  <div class="exam-confirm-point"><i class="fas fa-check-circle"></i><span>Các câu đã nộp sẽ được giữ nguyên.</span></div>
+                  <div class="exam-confirm-point"><i class="fas fa-clock"></i><span>Đồng hồ sẽ dừng ngay khi xác nhận.</span></div>
+              </div>
           </div>
-          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end gap-3">
-              <button id="btnCancelFinish" class="btn">Hủy bỏ</button>
-              <button id="btnConfirmFinish" class="btn btn-primary">Xác nhận kết thúc</button>
+          <div class="exam-confirm-actions">
+              <button id="btnCancelFinish" class="btn exam-confirm-btn-secondary">Quay lại làm bài</button>
+              <button id="btnConfirmFinish" class="btn btn-primary exam-confirm-btn-primary">Xác nhận nộp bài</button>
           </div>
       </div>
   </div>
@@ -132,17 +151,22 @@
                   <div class="lg:col-span-1">
                       <div class="sticky top-0 p-1">
                           <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
-                              <div class="text-sm font-medium text-gray-600 mb-1">Tổng điểm</div>
-                              <div class="text-5xl font-extrabold text-blue-600 leading-none">
-                                  <span id="finalTotalScore">0.00</span><span class="text-gray-400 text-2xl">/10</span>
-                              </div>
-                              <div id="finalScoreNote" class="text-xs text-gray-500 mt-1"></div>
-                              <div class="mt-6 border-t pt-4">
-                                  <div id="appealTimer">
-                                      <div class="text-sm font-medium text-gray-600">Thời gian phúc khảo còn lại:</div>
-                                      <div id="appealCountdown" class="font-mono text-2xl font-bold text-indigo-600 mt-1">06:00</div>
-                                  </div>
-                              </div>
+                               <div class="text-sm font-medium text-gray-600 mb-1">Tổng điểm</div>
+                               <div class="text-5xl font-extrabold text-blue-600 leading-none">
+                                   <span id="finalTotalScore">0.00</span><span id="finalScoreSuffix" class="text-gray-400 text-2xl"></span>
+                               </div>
+                               <div id="finalScoreNote" class="text-xs text-gray-500 mt-1"></div>
+                                <div class="mt-6 border-t pt-4">
+                                    <div id="appealTimer">
+                                        <div class="text-sm font-medium text-gray-600">Thời gian phúc khảo còn lại:</div>
+                                        <div id="appealCountdown" class="font-mono text-2xl font-bold text-indigo-600 mt-1">--:--</div>
+                                    </div>
+                                   <div class="mt-6 border-t pt-4">
+                                       <label for="appealReason" class="block text-sm font-medium text-gray-700 mb-2">Yêu cầu phúc khảo</label>
+                                       <textarea id="appealReason" rows="4" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Nhập lý do phúc khảo..."></textarea>
+                                       <button id="submitAppealBtn" class="mt-3 btn btn-primary w-full">Gửi phúc khảo</button>
+                                   </div>
+                               </div>
                           </div>
                       </div>
                   </div>
@@ -155,18 +179,28 @@
   </div>
 
   <div id="confirmStopRecordingModal" class="modal" style="display:none;">
-      <div class="modal-content w-full max-w-md bg-white rounded-xl shadow-2xl flex flex-col m-4">
-          <div class="p-6 border-b border-gray-200">
-              <h3 class="text-2xl font-bold text-gray-800">Xác nhận dừng ghi âm</h3>
+      <div class="modal-content exam-confirm-card exam-confirm-card-recording w-full max-w-lg bg-white rounded-[28px] shadow-2xl flex flex-col m-4 overflow-hidden">
+          <div class="exam-confirm-header">
+              <span class="exam-confirm-badge exam-confirm-badge-danger">Trả lời câu hỏi</span>
+              <div class="exam-confirm-icon exam-confirm-icon-recording">
+                  <i class="fas fa-stop-circle"></i>
+              </div>
+              <h3 class="exam-confirm-title">Xác nhận dừng ghi âm</h3>
+              <p class="exam-confirm-subtitle">Câu trả lời hiện tại sẽ được gửi đi chấm điểm ngay sau khi bạn xác nhận.</p>
           </div>
-          <div class="p-8 flex-grow text-center">
-              <i class="fas fa-stop-circle text-5xl text-red-500 mb-4"></i>
-              <p class="text-gray-700 text-lg">Bạn có chắc chắn muốn dừng ghi âm và nộp bài?</p>
-              <p class="text-gray-500 mt-2">Sau khi nộp, bạn sẽ không thể ghi âm lại câu trả lời này.</p>
+          <div class="exam-confirm-body">
+              <div class="exam-confirm-highlight exam-confirm-highlight-danger">
+                  <span class="exam-confirm-highlight-label">Quan trong</span>
+                  <div class="exam-confirm-highlight-text">Bạn sẽ không thể ghi âm lại cho chính câu hỏi này sau khi nộp.</div>
+              </div>
+              <div class="exam-confirm-points">
+                  <div class="exam-confirm-point"><i class="fas fa-microphone-slash"></i><span>Ghi âm sẽ dừng ngay lập tức.</span></div>
+                  <div class="exam-confirm-point"><i class="fas fa-paper-plane"></i><span>Câu trả lời sẽ được gửi đi để chấm tự động.</span></div>
+              </div>
           </div>
-          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end gap-3">
-              <button id="btnCancelStopRecording" class="btn">Hủy bỏ</button>
-              <button id="btnConfirmStopRecording" class="btn btn-primary">Xác nhận nộp bài</button>
+          <div class="exam-confirm-actions">
+              <button id="btnCancelStopRecording" class="btn exam-confirm-btn-secondary">Tiep tuc ghi am</button>
+              <button id="btnConfirmStopRecording" class="btn btn-primary exam-confirm-btn-danger">Xác nhận nộp bài</button>
           </div>
       </div>
   </div>
@@ -182,6 +216,10 @@
               <div class="card p-4"><div class="text-sm text-gray-500">Nhận xét</div><div id="detailFeedback" class="mt-1 text-gray-800"></div></div>
               <div id="detailAnalysisBlock" class="card p-4" style="display:none;"><div class="text-sm text-gray-500">Phân tích đáp án</div><ul id="detailAnalysis" class="mt-2 list-disc list-inside text-gray-800"></ul></div>
               <div class="card p-4 flex items-center justify-between"><div class="text-sm text-gray-500">Điểm</div><div><span id="detailScore" class="text-2xl font-bold text-blue-600">0.00</span><span id="detailMax" class="text-gray-500"></span></div></div>
+              <div id="detailAudioBlock" class="card p-4" style="display:none;">
+                <div class="text-sm text-gray-500">File ghi âm</div>
+                <audio id="detailAudio" controls class="mt-2 w-full"></audio>
+              </div>
           </div>
           <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0 flex items-center justify-end gap-3">
               <button id="btnCloseDetail" class="btn">Đóng</button>
@@ -194,7 +232,51 @@
 {% csrf_token %}
 
 <style>
-  .modal{position:fixed;inset:0;background:rgba(17,24,39,.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}.modal-content{}.btn{padding:10px 20px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;font-weight:600;transition:all .2s;box-shadow:0 1px 2px 0 rgba(0,0,0,.05)}.btn:hover{border-color:#9ca3af;background:#f9fafb}.btn-primary{border-color:#2563eb;background:#2563eb;color:#fff}.btn-primary:hover{background:#1d4ed8;border-color:#1d4ed8}.btn-sm{padding:6px 12px;font-size:.875rem;border-radius:6px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.line-clamp-2{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.line-clamp-3{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}#finalResultModal .overflow-y-auto::-webkit-scrollbar,#answerDetailModal .overflow-y-auto::-webkit-scrollbar{width:8px}#finalResultModal .overflow-y-auto::-webkit-scrollbar-track,#answerDetailModal .overflow-y-auto::-webkit-scrollbar-track{background:0 0}#finalResultModal .overflow-y-auto::-webkit-scrollbar-thumb,#answerDetailModal .overflow-y-auto::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:4px}#finalResultModal .overflow-y-auto::-webkit-scrollbar-thumb:hover,#answerDetailModal .overflow-y-auto::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+  .modal{position:fixed;inset:0;background:rgba(17,24,39,.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+  .btn{padding:10px 20px;border-radius:12px;border:1px solid #d1d5db;background:#fff;cursor:pointer;font-weight:600;transition:all .2s;box-shadow:0 1px 2px 0 rgba(0,0,0,.05)}
+  .btn:hover{border-color:#9ca3af;background:#f9fafb}
+  .btn-primary{border-color:#2563eb;background:#2563eb;color:#fff}
+  .btn-primary:hover{background:#1d4ed8;border-color:#1d4ed8}
+  .btn-sm{padding:6px 12px;font-size:.875rem;border-radius:6px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .line-clamp-2{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+  .line-clamp-3{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+  .exam-confirm-card{border:1px solid rgba(226,232,240,.9);box-shadow:0 30px 80px rgba(15,23,42,.24)}
+  .exam-confirm-header{padding:28px 30px 18px;background:linear-gradient(180deg,#f8fafc 0%,#ffffff 100%);text-align:center}
+  .exam-confirm-badge{display:inline-flex;align-items:center;justify-content:center;padding:6px 12px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+  .exam-confirm-badge-danger{background:#fee2e2;color:#b91c1c}
+  .exam-confirm-icon{width:72px;height:72px;border-radius:24px;display:flex;align-items:center;justify-content:center;margin:18px auto 16px;font-size:30px;box-shadow:inset 0 1px 0 rgba(255,255,255,.65)}
+  .exam-confirm-icon-finish{background:linear-gradient(135deg,#dcfce7 0%,#bbf7d0 100%);color:#15803d}
+  .exam-confirm-icon-recording{background:linear-gradient(135deg,#fee2e2 0%,#fecaca 100%);color:#b91c1c}
+  .exam-confirm-title{margin:0;color:#0f172a;font-size:28px;font-weight:800;letter-spacing:-.03em}
+  .exam-confirm-subtitle{margin:12px auto 0;max-width:420px;color:#475569;font-size:15px;line-height:1.65}
+  .exam-confirm-body{padding:0 30px 26px;display:flex;flex-direction:column;gap:18px}
+  .exam-confirm-highlight{padding:16px 18px;border-radius:18px;background:linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%);border:1px solid #bfdbfe}
+  .exam-confirm-highlight-danger{background:linear-gradient(135deg,#fef2f2 0%,#fff7ed 100%);border-color:#fecaca}
+  .exam-confirm-highlight-label{display:block;margin-bottom:8px;color:#2563eb;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+  .exam-confirm-highlight-danger .exam-confirm-highlight-label{color:#b91c1c}
+  .exam-confirm-highlight-text{color:#1e293b;font-size:14px;line-height:1.7}
+  .exam-confirm-points{display:grid;gap:10px}
+  .exam-confirm-point{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:14px;background:#f8fafc;color:#334155;font-size:14px;line-height:1.6}
+  .exam-confirm-point i{margin-top:3px;color:#2563eb}
+  .exam-confirm-card-recording .exam-confirm-point i{color:#dc2626}
+  .exam-confirm-actions{padding:18px 30px 28px;background:#fff;display:flex;align-items:center;justify-content:flex-end;gap:12px}
+  .exam-confirm-btn-secondary{background:#fff;color:#334155}
+  .exam-confirm-btn-primary{background:linear-gradient(135deg,#16a34a 0%,#15803d 100%);border-color:#15803d}
+  .exam-confirm-btn-primary:hover{background:linear-gradient(135deg,#15803d 0%,#166534 100%);border-color:#166534}
+  .exam-confirm-btn-danger{background:linear-gradient(135deg,#ef4444 0%,#dc2626 100%);border-color:#dc2626}
+  .exam-confirm-btn-danger:hover{background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);border-color:#b91c1c}
+  #finalResultModal .overflow-y-auto::-webkit-scrollbar,#answerDetailModal .overflow-y-auto::-webkit-scrollbar{width:8px}
+  #finalResultModal .overflow-y-auto::-webkit-scrollbar-track,#answerDetailModal .overflow-y-auto::-webkit-scrollbar-track{background:0 0}
+  #finalResultModal .overflow-y-auto::-webkit-scrollbar-thumb,#answerDetailModal .overflow-y-auto::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:4px}
+  #finalResultModal .overflow-y-auto::-webkit-scrollbar-thumb:hover,#answerDetailModal .overflow-y-auto::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+  @media (max-width: 640px){
+    .exam-confirm-header{padding:24px 20px 16px}
+    .exam-confirm-title{font-size:24px}
+    .exam-confirm-body{padding:0 20px 20px}
+    .exam-confirm-actions{padding:16px 20px 22px;flex-direction:column-reverse}
+    .exam-confirm-actions .btn{width:100%}
+  }
 </style>
 {% endblock %}
 
@@ -209,13 +291,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // Đồng bộ thời gian với Backend
   const DURATION_MINUTES = {{ duration_minutes|default:60 }};
   const EXAM_TOTAL_DURATION_MS = DURATION_MINUTES * 60 * 1000;
-  const APPEAL_WINDOW_MS = 6 * 60 * 1000;
+  const SERVER_NOW_MS = {{ server_now_ms|default:0 }};
+  const EXAM_END_AT_MS = {{ exam_end_ms|default:0 }};
+  const SCORE_SCALE_SUFFIX = "{{ score_scale_suffix|default:''|escapejs }}";
+  const SHOW_NON_TEN_WARNING = {{ show_non_ten_scale_warning|yesno:"true,false" }};
+  const SCORE_SCALE_WARNING = "{{ score_scale_warning|default:''|escapejs }}";
+  const CLIENT_NOW_MS = Date.now();
+  const SERVER_CLIENT_OFFSET_MS = SERVER_NOW_MS ? (SERVER_NOW_MS - CLIENT_NOW_MS) : 0;
   const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
   const SESSION_ID = JSON.parse(document.getElementById('session_id_data').textContent);
 
   const API_ENDPOINTS = {
-    FINALIZE: "{% url 'qna:finalize_session' session.id %}"
+    FINALIZE: "{% url 'qna:finalize_session' session.id %}",
+    APPEAL: "{% url 'qna:submit_exam_appeal' session.id %}"
   };
+
+  let scoreScaleSuffix = SCORE_SCALE_SUFFIX;
+  let showNonTenWarning = SHOW_NON_TEN_WARNING;
+  let scoreScaleWarning = SCORE_SCALE_WARNING;
+  let appealDeadlineMs = Number({{ appeal_deadline_ms|default:0 }});
+  let wsRetryCount = 0;
 
   const elements = {
     selection: document.getElementById('question-selection-area'),
@@ -242,7 +337,11 @@ document.addEventListener('DOMContentLoaded', () => {
     mediaRecorder: null,
     audioChunks: [],
     currentAudioBlob: null,
-    currentAudioMimeType: 'audio/webm'
+    currentAudioMimeType: 'audio/webm',
+    skipAudioSubmit: false,
+    forcedFinishReason: '',
+    isSubmittingAnswer: false,
+    hasUnloadGuard: true
   };
 
   // Khởi tạo danh sách câu hỏi chính từ DOM
@@ -263,12 +362,47 @@ document.addEventListener('DOMContentLoaded', () => {
     hide: (id) => { document.getElementById(id).style.display = 'none'; }
   };
   const formatScore = (n) => (Math.round(Number(n || 0) * 100) / 100).toFixed(2);
+  const nowMs = () => Date.now() + SERVER_CLIENT_OFFSET_MS;
   const formatTime = (ms) => {
     const s = Math.max(0, Math.ceil(ms / 1000));
     const m = Math.floor(s / 60);
     const rs = s % 60;
     return `${String(m).padStart(2, '0')}:${String(rs).padStart(2, '0')}`;
   };
+  const isExamTimeExpired = () => Boolean(state.mainTimerEnd && nowMs() >= state.mainTimerEnd);
+  const showAlert = (message) => {
+    document.getElementById('alert-message').textContent = message;
+    document.getElementById('alert-banner').style.display = 'block';
+    setTimeout(() => document.getElementById('alert-banner').style.display = 'none', 5000);
+  };
+
+  function syncFinishExamButtonState() {
+    const finishBtn = document.getElementById('finish-exam-btn');
+    if (!finishBtn) return;
+    const disabled = state.isSubmittingAnswer;
+    finishBtn.disabled = disabled;
+    finishBtn.classList.toggle('opacity-60', disabled);
+    finishBtn.classList.toggle('cursor-not-allowed', disabled);
+  }
+
+  function setSubmittingAnswer(isSubmitting) {
+    state.isSubmittingAnswer = isSubmitting;
+    syncFinishExamButtonState();
+  }
+
+  function setQuestionListLocked(locked) {
+    document.querySelectorAll('.question-choice-btn').forEach((btn) => {
+      const alreadyDone = btn.classList.contains('opacity-60');
+      if (alreadyDone) return;
+      btn.classList.toggle('pointer-events-none', locked);
+      btn.classList.toggle('opacity-50', locked);
+    });
+  }
+
+  function calculateTotalScoreMain() {
+    const sumOfScores = state.mainResults.reduce((sum, result) => sum + (Number(result.score) || 0), 0);
+    return state.questions.length > 0 ? (sumOfScores / state.questions.length) : 0;
+  }
 
   async function postJSON(url, data) {
     const res = await fetch(url, {
@@ -288,50 +422,79 @@ document.addEventListener('DOMContentLoaded', () => {
      TIMERS
      ========================================================================== */
   let mainTimerInterval = null;
-  let timerPausedTime = null;
-  let totalPausedDuration = 0;
+
+  function forceExamTermination(message) {
+    if (state.examFinished) {
+      if (message && !state.forcedFinishReason) {
+        state.forcedFinishReason = message;
+      }
+      return;
+    }
+
+    state.examFinished = true;
+    state.forcedFinishReason = message || state.forcedFinishReason;
+    clearInterval(mainTimerInterval);
+    modal.hide('confirmStopRecordingModal');
+    modal.hide('confirmFinishModal');
+
+    if (message) {
+      showAlert(message);
+    }
+
+    if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
+      state.skipAudioSubmit = true;
+      state.mediaRecorder.stop();
+      return;
+    }
+
+    finalizeAndShowResult(true, state.forcedFinishReason);
+  }
 
   function startMainTimer(durationMs = EXAM_TOTAL_DURATION_MS) {
-    state.mainTimerEnd = Date.now() + durationMs;
+    state.mainTimerEnd = EXAM_END_AT_MS > 0 ? EXAM_END_AT_MS : nowMs() + durationMs;
     clearInterval(mainTimerInterval);
 
     const tick = () => {
-      if (!timerPausedTime) {
-        const timeLeft = Math.max(0, state.mainTimerEnd - Date.now());
-        const timeStr = formatTime(timeLeft);
-        document.getElementById('main-timer').textContent = timeStr;
-        elements.stickyTimerDisplay.textContent = timeStr;
+      const timeLeft = Math.max(0, state.mainTimerEnd - nowMs());
+      const timeStr = formatTime(timeLeft);
+      document.getElementById('main-timer').textContent = timeStr;
+      elements.stickyTimerDisplay.textContent = timeStr;
 
-        if (timeLeft <= 0 && !state.examFinished) {
-          state.examFinished = true;
-          clearInterval(mainTimerInterval);
-          alert('Đã hết thời gian làm bài! Câu trả lời hiện tại (nếu có) sẽ được tự động nộp.');
-
-          if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
-            confirmAndStopRecording();
-          } else {
-            finalizeAndShowResult(true);
-          }
-        }
+      if (timeLeft <= 0 && !state.examFinished) {
+        forceExamTermination('Đã hết thời gian thi.');
       }
     };
     mainTimerInterval = setInterval(tick, 250);
     tick();
   }
 
-  function pauseMainTimer() {
-    if (!timerPausedTime) {
-      timerPausedTime = Date.now();
-    }
-  }
+  function startAppealCountdown() {
+    const wrap = document.getElementById('appealTimer');
+    const countdown = document.getElementById('appealCountdown');
+    const textarea = document.getElementById('appealReason');
+    const btn = document.getElementById('submitAppealBtn');
+    if (!wrap || !countdown || !textarea || !btn) return;
 
-  function resumeMainTimer() {
-    if (timerPausedTime) {
-      const pausedDuration = Date.now() - timerPausedTime;
-      totalPausedDuration += pausedDuration;
-      state.mainTimerEnd += pausedDuration;
-      timerPausedTime = null;
+    if (!appealDeadlineMs) {
+      wrap.style.display = 'none';
+      return;
     }
+
+    wrap.style.display = 'block';
+    const tick = () => {
+      const remain = Math.max(0, appealDeadlineMs - nowMs());
+      countdown.textContent = formatTime(remain);
+      if (remain <= 0) {
+        textarea.disabled = true;
+        btn.disabled = true;
+        btn.textContent = 'Đã hết hạn phúc khảo';
+        clearInterval(window.__appealTimer);
+      }
+    };
+
+    clearInterval(window.__appealTimer);
+    window.__appealTimer = setInterval(tick, 1000);
+    tick();
   }
 
   /* ==========================================================================
@@ -357,6 +520,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function startAnswering(questionData) {
+    if (state.examFinished || isExamTimeExpired()) {
+      forceExamTermination('Đã hết giờ thi.');
+      return;
+    }
+    if (state.currentQuestion || state.isSubmittingAnswer) {
+      return;
+    }
+
+    setQuestionListLocked(true);
     state.currentQuestion = { ...questionData, type: 'main' };
     elements.aTitle.textContent = 'Câu hỏi';
     elements.backBtn.style.display = 'block';
@@ -373,18 +545,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     state.socket = new WebSocket(`${wsScheme}://${window.location.host}/ws/exam/${SESSION_ID}/`);
     state.socket.binaryType = "arraybuffer";
-    state.socket.onopen = () => console.log('WebSocket connected.');
+    state.socket.onopen = () => {
+      wsRetryCount = 0;
+      console.log('WebSocket connected.');
+      document.getElementById('websocket-banner').style.display = 'none';
+    };
     state.socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.type === 'exam.result') handleExamResult(message.message);
-        else if (message.type === 'exam.error') {
-          alert(message.message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
+        if (message.type === 'exam.result') {
+          Promise.resolve(handleExamResult(message.message)).catch((error) => {
+            console.error('Result handling error:', error);
+            showAlert(error.message || 'Co loi khi cap nhat ket qua.');
+          });
+        } else if (message.type === 'exam.error') {
+          setSubmittingAnswer(false);
+          state.currentQuestion = null;
+          state.currentAudioBlob = null;
+          state.audioChunks = [];
+          showAlert(message.message || 'Co loi xay ra trong qua trinh cham diem.');
+          setQuestionListLocked(false);
+          showScreen('selection');
           setAnswerUIState('interaction');
         }
       } catch (e) { console.error('Error parsing WebSocket message:', e); }
     };
-    state.socket.onclose = () => console.warn('WebSocket closed.');
+    state.socket.onclose = () => {
+      console.warn('WebSocket closed.');
+      document.getElementById('websocket-banner').style.display = 'block';
+      if (!state.examFinished) {
+        const waitMs = Math.min(10000, 1000 * (wsRetryCount + 1));
+        wsRetryCount += 1;
+        window.clearTimeout(window.__wsReconnectTimer);
+        window.__wsReconnectTimer = window.setTimeout(connectWebSocket, waitMs);
+      }
+    };
     state.socket.onerror = (err) => console.error('WebSocket error:', err);
   }
 
@@ -398,23 +593,31 @@ document.addEventListener('DOMContentLoaded', () => {
       state.mediaRecorder = preferredMimeType ? new MediaRecorder(stream, { mimeType: preferredMimeType }) : new MediaRecorder(stream);
       state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.audioChunks.push(e.data); };
       state.mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        if (state.skipAudioSubmit) {
+          state.currentAudioBlob = null;
+          state.skipAudioSubmit = false;
+          finalizeAndShowResult(true, state.forcedFinishReason);
+          return;
+        }
+
         const audioBlob = new Blob(state.audioChunks, { type: state.currentAudioMimeType });
         state.currentAudioBlob = audioBlob;
-        submitAudio(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
+        await submitAudio(audioBlob);
       };
       setAnswerUIState('recording');
       state.mediaRecorder.start(1000);
     } catch (e) {
-      alert('Không thể truy cập microphone. Vui lòng cấp quyền và thử lại.');
+      showAlert('Không thể truy cập microphone. Vui lòng cấp quyền và thử lại.');
       console.error('Microphone access error:', e);
+      setQuestionListLocked(false);
+      showScreen('selection');
       setAnswerUIState('interaction');
     }
   }
 
   function stopRecording() {
     if (state.mediaRecorder?.state === 'recording') {
-      pauseMainTimer();
       modal.show('confirmStopRecordingModal');
     }
   }
@@ -427,9 +630,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function submitAudio(blob) {
-    if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-      alert('Kênh chấm điểm chưa sẵn sàng. Vui lòng thử lại.');
+    if (state.isSubmittingAnswer) return;
+    setSubmittingAnswer(true);
+
+    if (isExamTimeExpired()) {
+      setSubmittingAnswer(false);
+      forceExamTermination('Da het gio thi.');
+      return;
+    }
+
+    if (!blob || !blob.size) {
+      setSubmittingAnswer(false);
+      showAlert('Khong ghi nhan duoc file ghi am.');
+      setQuestionListLocked(false);
+      showScreen('selection');
       setAnswerUIState('interaction');
+      state.currentQuestion = null;
+      return;
+    }
+
+    if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+      setSubmittingAnswer(false);
+      showAlert('Kenh cham diem chua san sang. Vui long thu lai.');
+      setQuestionListLocked(false);
+      showScreen('selection');
+      setAnswerUIState('interaction');
+      state.currentQuestion = null;
       return;
     }
     const { id } = state.currentQuestion;
@@ -447,20 +673,16 @@ document.addEventListener('DOMContentLoaded', () => {
     state.socket.send(JSON.stringify(endMessage));
   }
 
-  function blobToMp3File(blob, fileName) {
-    return new File([blob], fileName, { type: 'audio/mpeg' });
+  function blobToWebmFile(blob, fileName) {
+    return new File([blob], fileName, { type: 'audio/webm' });
   }
 
-  async function saveResultAudio(resultId, questionId, score, transcript, feedback, analysis) {
-    if (!state.currentAudioBlob) return;
-    const file = await blobToMp3File(state.currentAudioBlob, `audio_${SESSION_ID}_${questionId}.mp3`);
+  async function saveResultAudio(questionId) {
+    if (!state.currentAudioBlob) return '';
+    const file = await blobToWebmFile(state.currentAudioBlob, `audio_${SESSION_ID}_${questionId}.webm`);
     const formData = new FormData();
     formData.append('session_id', SESSION_ID);
     formData.append('question_id', questionId);
-    formData.append('score', score);
-    formData.append('transcript', transcript || '');
-    formData.append('feedback', feedback || '');
-    formData.append('analysis', JSON.stringify(analysis || []));
     formData.append('audio_file', file);
 
     const response = await fetch('{% url "qna:save_exam_result" %}', {
@@ -468,93 +690,157 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: { 'X-CSRFToken': csrfToken },
       body: formData
     });
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'Không thể lưu file ghi âm.');
+      throw new Error(data.message || 'Khong the dinh kem file ghi am.');
     }
+    return data.audio_url || '';
   }
 
   /* ==========================================================================
      RESULT HANDLING & EXAM FLOW
      ========================================================================== */
-  function handleExamResult(payload) {
+  async function handleExamResult(payload) {
     const data = payload.data || {};
     if (payload.type === 'main_question_complete') {
-      const existingResult = state.mainResults.find(r => r.question_id === data.question_id);
-      if (!existingResult) {
-        state.mainResults.push({
+      let localResult = state.mainResults.find(r => r.question_id === data.question_id);
+      if (!localResult) {
+        localResult = {
           question_id: data.question_id,
           score: data.score,
           transcript: data.transcript,
           feedback: data.feedback,
           analysis: data.analysis || [],
           result_id: data.result_id,
-          text: state.questions.find(q => q.id === data.question_id)?.question_text || ''
-        });
+          text: state.questions.find(q => q.id === data.question_id)?.question_text || '',
+          audioUrl: ''
+        };
+        state.mainResults.push(localResult);
+      }
 
-        saveResultAudio(data.result_id, data.question_id, data.score, data.transcript, data.feedback, data.analysis || [])
-          .catch(error => console.error('Save audio error:', error));
+      try {
+        const audioUrl = await saveResultAudio(data.question_id);
+        if (audioUrl) {
+          localResult.audioUrl = audioUrl;
+        }
+      } catch (error) {
+        console.error('Save audio error:', error);
+        localResult.audioUrl = '';
+        showAlert(error.message || 'Da cham diem xong nhung khong the dinh kem file ghi am.');
+      }
 
-        const btn = document.querySelector(`.question-choice-btn[data-question-id="${data.question_id}"]`);
-        if (btn) {
-          btn.classList.add('opacity-60', 'pointer-events-none');
-          const statusEl = btn.querySelector('.q-status');
-          if(statusEl) {
-            statusEl.textContent = 'Đã trả lời';
-            statusEl.className = 'q-status inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700';
-          }
+      const btn = document.querySelector(`.question-choice-btn[data-question-id="${data.question_id}"]`);
+      if (btn) {
+        btn.classList.add('opacity-60', 'pointer-events-none');
+        const statusEl = btn.querySelector('.q-status');
+        if(statusEl) {
+          statusEl.textContent = 'Đã trả lời';
+          statusEl.className = 'q-status inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700';
         }
       }
 
+      state.currentQuestion = null;
+      setSubmittingAnswer(false);
+      state.currentAudioBlob = null;
+      state.audioChunks = [];
+
       if (state.examFinished) {
-        finalizeAndShowResult(true);
+        await finalizeAndShowResult(true, state.forcedFinishReason);
       } else {
+        setQuestionListLocked(false);
         showScreen('selection');
+        setAnswerUIState('interaction');
       }
     }
   }
 
   function onFinishMainExam() {
-    const sumOfScores = state.mainResults.reduce((sum, result) => sum + (Number(result.score) || 0), 0);
-    state.totalScoreMain = state.questions.length > 0 ? sumOfScores / state.questions.length : 0;
+    state.totalScoreMain = calculateTotalScoreMain();
 
     document.getElementById('summaryScore').textContent = formatScore(state.totalScoreMain);
     const noteEl = document.getElementById('summaryNote');
     const btnExit = document.getElementById('btnSummaryExit');
 
-    noteEl.textContent = 'Bạn có thể xem kết quả chi tiết.';
+    const parts = ['Bạn có thể xem kết quả chi tiết.'];
+    if (showNonTenWarning && scoreScaleWarning) {
+      parts.push(scoreScaleWarning);
+    }
+    noteEl.textContent = parts.join(' ');
     btnExit.onclick = () => { modal.hide('summaryModal'); showFinalResult(); };
     modal.show('summaryModal');
   }
 
-  async function finalizeAndShowResult(isTimeout = false) {
-    showFinalResult(isTimeout);
+  async function finalizeAndShowResult(isTimeout = false, forcedNote = '') {
+    clearInterval(mainTimerInterval);
+    state.examFinished = true;
+    state.totalScoreMain = calculateTotalScoreMain();
+    stopMonitoring();
+
+    try {
+      const data = await postJSON(API_ENDPOINTS.FINALIZE, {});
+      if (typeof data.final_score !== 'undefined') {
+        state.totalScoreMain = Number(data.final_score || 0);
+      }
+      scoreScaleSuffix = data.score_scale_suffix || '';
+      showNonTenWarning = Boolean(data.show_non_ten_scale_warning);
+      scoreScaleWarning = data.score_scale_warning || '';
+      appealDeadlineMs = Number(data.appeal_deadline_ms || 0);
+      startAppealCountdown();
+    } catch (error) {
+      console.error('Finalize error:', error);
+    }
+
+    showFinalResult(isTimeout, forcedNote || state.forcedFinishReason);
   }
 
-  function showFinalResult() {
-    const renderDetailCard = (item, index) => `
-      <div class="card p-4 transition-all hover:shadow-md hover:border-blue-400">
-        <p class="text-gray-700 mb-3 line-clamp-2">${item.text || 'Không có nội dung câu hỏi'}</p>
-        <div class="flex items-center justify-between border-t border-gray-200 pt-3">
-          <div class="text-sm text-gray-500">
-            <span class="font-semibold text-gray-800">Câu ${index + 1}:</span>
-            <b class="ml-2 font-mono text-lg text-blue-600">
-              ${formatScore(item.score)}
-            </b>
-            <span class="font-semibold text-gray-400">/ 10.00</span>
-          </div>
-          <button data-index="${index}" class="btn btn-sm detail-btn">Xem chi tiết</button>
-        </div>
-      </div>`;
+  function getQuestionResult(questionId) {
+    return state.mainResults.find(r => r.question_id === questionId) || null;
+  }
 
-    document.getElementById('detailMain').innerHTML = state.mainResults.map((r, i) => renderDetailCard(r, i)).join('');
+  function showFinalResult(isForcedEnd = false, forcedNote = '') {
+    const rows = state.questions.map((q, index) => {
+      const result = getQuestionResult(q.id);
+      return `
+        <div class="card p-4 transition-all hover:shadow-md hover:border-blue-400">
+          <p class="text-gray-700 mb-3 line-clamp-2">${q.question_text || 'Không có nội dung câu hỏi'}</p>
+          <div class="flex items-center justify-between border-t border-gray-200 pt-3">
+            <div class="text-sm text-gray-500">
+              <span class="font-semibold text-gray-800">Câu ${index + 1}:</span>
+               <b class="ml-2 font-mono text-lg text-blue-600">
+                 ${result ? formatScore(result.score) : '0.00'}
+               </b>
+              <div class="mt-1 ${result ? 'text-green-600' : 'text-gray-400'}">
+                ${result ? 'Đã trả lời' : 'Chưa trả lời'}
+              </div>
+            </div>
+            ${result ? `<button data-index="${index}" data-question-id="${q.id}" class="btn btn-sm detail-btn">Xem chi tiết</button>` : ''}
+          </div>
+        </div>
+      `;
+    });
+
+    document.getElementById('detailMain').innerHTML = rows.join('');
     document.getElementById('finalTotalScore').textContent = formatScore(state.totalScoreMain);
-    document.getElementById('finalScoreNote').textContent = '';
+    const scoreSuffixEl = document.getElementById('finalScoreSuffix');
+    if (scoreSuffixEl) {
+      scoreSuffixEl.textContent = scoreScaleSuffix || '';
+    }
+
+    const notes = [];
+    if (forcedNote) {
+      notes.push(forcedNote);
+    } else if (isForcedEnd) {
+      notes.push('Bài thi đã được kết thúc tự động.');
+    }
+    if (showNonTenWarning && scoreScaleWarning) {
+      notes.push(scoreScaleWarning);
+    }
+    document.getElementById('finalScoreNote').textContent = notes.join(' ');
 
     modal.show('finalResultModal');
   }
 
-  function showAnswerDetail({ title, question, transcript, feedback, analysis, score, max }, context) {
+  function showAnswerDetail({ title, question, transcript, feedback, analysis, score, max, audioUrl }, context) {
     document.getElementById('detailTitle').textContent = title || 'Chi tiết câu trả lời';
     document.getElementById('detailQuestion').textContent = question || '';
     document.getElementById('detailTranscript').textContent = transcript || 'Chưa có bản ghi';
@@ -570,6 +856,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('detailScore').textContent = formatScore(score);
     document.getElementById('detailMax').textContent = ` / ${formatScore(max)}`;
+
+    const audioBlock = document.getElementById('detailAudioBlock');
+    const audioEl = document.getElementById('detailAudio');
+    if (audioUrl) {
+      audioBlock.style.display = 'block';
+      audioEl.src = audioUrl;
+    } else {
+      audioBlock.style.display = 'none';
+      audioEl.removeAttribute('src');
+    }
 
     modal.show('answerDetailModal');
   }
@@ -588,30 +884,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('finalResultModal').addEventListener('click', (e) => {
         const btn = e.target.closest('.detail-btn');
-        if (btn) {
-            const index = Number(btn.dataset.index);
-            const result = state.mainResults[index];
-            showAnswerDetail({
-                title: `Câu ${index + 1}`,
-                question: result.text,
-                transcript: result.transcript, feedback: result.feedback, analysis: result.analysis,
-                score: result.score, max: 10.0
-            }, { type: 'main', index });
-        }
+        if (!btn) return;
+        const qid = Number(btn.dataset.questionId);
+        const question = state.questions.find(q => q.id === qid);
+        const result = state.mainResults.find(r => r.question_id === qid);
+        showAnswerDetail({
+            title: `Câu ${question?.order || ''}`,
+            question: question?.question_text || '',
+            transcript: result?.transcript || 'Không có câu trả lời',
+            feedback: result?.feedback || 'Chưa có nhận xét',
+            analysis: result?.analysis || [],
+            score: result?.score || 0,
+            max: 10.0,
+            audioUrl: result?.audioUrl || ''
+        });
     });
 
-    elements.backBtn.onclick = () => showScreen('selection');
+    elements.backBtn.onclick = () => {
+      if (state.mediaRecorder?.state === 'recording' || state.isSubmittingAnswer) return;
+      state.currentQuestion = null;
+      setQuestionListLocked(false);
+      showScreen('selection');
+    };
     elements.stopBtn.onclick = stopRecording;
     document.getElementById('finish-exam-btn').onclick = () => modal.show('confirmFinishModal');
     document.getElementById('btnCancelFinish').onclick = () => modal.hide('confirmFinishModal');
-    document.getElementById('btnConfirmFinish').onclick = () => {
+    document.getElementById('btnConfirmFinish').onclick = async () => {
+      if (state.isSubmittingAnswer || state.mediaRecorder?.state === 'recording') {
+        showAlert('Hãy nộp xong câu hỏi hiện tại trước khi kết thúc bài thi.');
+        return;
+      }
       modal.hide('confirmFinishModal');
-      onFinishMainExam();
+      await finalizeAndShowResult(false);
     };
 
     document.getElementById('btnCancelStopRecording').onclick = () => {
       modal.hide('confirmStopRecordingModal');
-      resumeMainTimer();
     };
     document.getElementById('btnConfirmStopRecording').onclick = () => {
       modal.hide('confirmStopRecordingModal');
@@ -619,26 +927,57 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     document.getElementById('btnCloseDetail').onclick = () => modal.hide('answerDetailModal');
-    document.getElementById('btnFinishAll').onclick = async (e) => {
-      const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Đang lưu...';
+    document.getElementById('btnFinishAll').onclick = () => {
+      window.location.href = "{% url 'qna:dashboard' %}";
+    };
+
+    document.getElementById('submitAppealBtn').onclick = async () => {
+      const textarea = document.getElementById('appealReason');
+      const btn = document.getElementById('submitAppealBtn');
+      const reason = (textarea.value || '').trim();
+      if (reason.length < 10) {
+        alert('Lý do phúc khảo quá ngắn.');
+        return;
+      }
+
+      btn.disabled = true;
       try {
-        const data = await postJSON(API_ENDPOINTS.FINALIZE, {});
-        if (data.status === 'success') {
-          window.location.href = "{% url 'qna:dashboard' %}";
-        } else {
-          alert(data.message || 'Không thể lưu kết quả cuối cùng.');
-          btn.disabled = false; btn.textContent = 'Hoàn thành';
+        const response = await fetch(API_ENDPOINTS.APPEAL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ reason }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          alert(data.message || 'Không thể gửi phúc khảo.');
+          btn.disabled = false;
+          return;
         }
-      } catch (err) {
-        alert('Lỗi kết nối khi lưu kết quả.');
-        btn.disabled = false; btn.textContent = 'Hoàn thành';
+
+        alert(data.message || 'Đã gửi yêu cầu phúc khảo.');
+        textarea.disabled = true;
+        btn.disabled = true;
+        btn.textContent = 'Đã gửi phúc khảo';
+      } catch (error) {
+        alert('Không thể gửi phúc khảo.');
+        btn.disabled = false;
       }
     };
+
+    window.addEventListener('beforeunload', (event) => {
+      if (!state.examFinished && state.hasUnloadGuard) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    });
   }
 
   /* ==========================================================================
-     AI WEBCAM PROCTORING
-     ========================================================================== */
+      INIT
+      ========================================================================== */
   const proctoringState = {
     video: null,
     canvas: null,
@@ -656,6 +995,15 @@ document.addEventListener('DOMContentLoaded', () => {
     MULTIPLE_FACE_COOLDOWN: 5000,
     VIOLATION_WARNING_LIMIT: 3
   };
+
+  const PROCTORING_MAX_WARNINGS = 3;
+
+  function shouldTerminateByViolations() {
+    return (
+      proctoringState.violations.noFace >= PROCTORING_MAX_WARNINGS ||
+      proctoringState.violations.multipleFaces >= PROCTORING_MAX_WARNINGS
+    );
+  }
 
   function createProctoringUI() {
     const container = document.createElement('div');
@@ -712,6 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       proctoringState.video.srcObject = proctoringState.stream;
       await proctoringState.video.play();
+      if (cameraOffTimeout) { clearTimeout(cameraOffTimeout); cameraOffTimeout = null; }
       return true;
     } catch (error) {
       console.error('Camera access error:', error);
@@ -751,13 +1100,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleCameraInterrupted() {
-    if (proctoringState.cameraInterrupted) return;
-    proctoringState.cameraInterrupted = true;
-    if (noFaceTimeout) { clearTimeout(noFaceTimeout); noFaceTimeout = null; }
-    proctoringState.violations.noFace++;
-    updateViolationDisplay('noface', proctoringState.violations.noFace);
-    showProctoringWarning('Camera đã bị tắt hoặc ngắt kết nối. Vui lòng bật lại camera ngay.');
-    sendProctoringViolation('CAMERA_OFF', 0);
+    if (cameraOffTimeout) return;
+    cameraOffTimeout = setTimeout(() => {
+      if (proctoringState.cameraInterrupted) return;
+      proctoringState.cameraInterrupted = true;
+      if (noFaceTimeout) { clearTimeout(noFaceTimeout); noFaceTimeout = null; }
+      proctoringState.violations.noFace++;
+      updateViolationDisplay('noface', proctoringState.violations.noFace);
+      sendProctoringViolation('CAMERA_OFF', 0);
+      forceExamTermination('Camera bị tắt hoặc ngắt kết nối quá lâu. Bài thi sẽ kết thúc ngay.');
+    }, 3000);
   }
 
   // --- HÀM GỬI ẢNH GIAN LẬN QUA WEBSOCKET ---
@@ -783,6 +1135,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let noFaceTimeout = null;
   let multipleFaceTimeout = null;
+  let cameraOffTimeout = null;
 
   async function startMonitoring() {
     if (proctoringState.isMonitoring) return;
@@ -811,8 +1164,14 @@ document.addEventListener('DOMContentLoaded', () => {
             noFaceTimeout = setTimeout(() => {
               proctoringState.violations.noFace++;
               updateViolationDisplay('noface', proctoringState.violations.noFace);
+              if (shouldTerminateByViolations()) {
+                sendProctoringViolation('NO_FACE', 0);
+                noFaceTimeout = null;
+                forceExamTermination('Bạn đã vi phạm quy định giám sát quá nhiều lần.');
+                return;
+              }
               showProctoringWarning('Không phát hiện khuôn mặt trong 4 giây. Vui lòng ngồi trước camera.');
-               sendProctoringViolation('NO_FACE', 0); // Báo về Backend
+              sendProctoringViolation('NO_FACE', 0);
               noFaceTimeout = null;
             }, PROCTORING_CONFIG.NO_FACE_THRESHOLD);
           }
@@ -826,8 +1185,14 @@ document.addEventListener('DOMContentLoaded', () => {
             multipleFaceTimeout = setTimeout(() => {
               proctoringState.violations.multipleFaces++;
               updateViolationDisplay('multiface', proctoringState.violations.multipleFaces);
+              if (shouldTerminateByViolations()) {
+                sendProctoringViolation('TWO_FACES', detections.length);
+                multipleFaceTimeout = null;
+                forceExamTermination('Bạn đã vi phạm quy định giám sát quá nhiều lần.');
+                return;
+              }
               showProctoringWarning(`Phát hiện ${detections.length} khuôn mặt. Chỉ được phép 1 người trong khung hình.`);
-               sendProctoringViolation('TWO_FACES', detections.length); // Báo về Backend
+              sendProctoringViolation('TWO_FACES', detections.length);
               multipleFaceTimeout = null;
             }, PROCTORING_CONFIG.MULTIPLE_FACE_COOLDOWN);
           }
@@ -874,10 +1239,16 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('popstate', () => {
       history.pushState({ examLocked: true }, '', window.location.href);
     });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && !state.examFinished) {
+        alert('Không được chuyển tab khi thi!');
+      }
+    });
 
     setupEventListeners();
     connectWebSocket();
     startMainTimer();
+    startAppealCountdown();
 
     initializeProctoring().catch(err => {
       console.error('Proctoring initialization failed:', err);
@@ -885,7 +1256,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  window.addEventListener('beforeunload', () => stopMonitoring());
+  window.addEventListener('beforeunload', () => {
+    window.clearTimeout(window.__wsReconnectTimer);
+    clearInterval(window.__appealTimer);
+    stopMonitoring();
+  });
   init();
 });
 </script>

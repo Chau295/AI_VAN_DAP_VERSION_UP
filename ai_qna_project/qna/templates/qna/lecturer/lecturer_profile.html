@@ -49,6 +49,8 @@
 </div>
 
 <script>
+const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+
 document.getElementById('avatar-upload').addEventListener('change', function(event) {
     const file = event.target.files[0];
     if (!file) {
@@ -64,7 +66,7 @@ document.getElementById('avatar-upload').addEventListener('change', function(eve
     fetch("{% url 'qna:update_profile_image' %}", {
         method: 'POST',
         headers: {
-            'X-CSRFToken': '{{ csrf_token }}'
+            'X-CSRFToken': csrfToken
         },
         body: formData
     })

@@ -649,6 +649,14 @@
     return output;
   }
 
+  const realtimeSessionStatusMeta = {
+    DRAFT: { label: "Lưu nháp" },
+    SCHEDULED: { label: "Sắp diễn ra" },
+    ONGOING: { label: "Đang diễn ra" },
+    COMPLETED: { label: "Đã kết thúc" },
+    CANCELLED: { label: "Đã hủy" },
+  };
+
   let examPickerRoomIndex = null;
   let examPickerSelection = [];
   let examPickerOriginalSelection = [];
@@ -1070,9 +1078,60 @@
     confirmAction = null;
   }
 
+  function computeRealtimeWizardStatus() {
+    const storedStatus = sessionInitialState.status || "DRAFT";
+    if (storedStatus === "CANCELLED") {
+      return "CANCELLED";
+    }
+
+    const startTs = Number(sessionInitialState.start_at_timestamp || 0);
+    const endTs = Number(sessionInitialState.end_at_timestamp || 0);
+    const nowTs = Date.now() / 1000;
+
+    if (!startTs || !endTs) {
+      return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+    }
+
+    if (nowTs < startTs) {
+      return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+    }
+
+    if (nowTs <= endTs) {
+      return "ONGOING";
+    }
+
+    return "COMPLETED";
+  }
+
   function updateStatusLabel() {
     const field = document.getElementById("sessionStatusLabel");
+    if (!field) {
+      return;
+    }
+
+    if (wizardState.sessionId) {
+      const realtimeStatus = computeRealtimeWizardStatus();
+      field.value = realtimeSessionStatusMeta[realtimeStatus]?.label || sessionInitialState.status_label || wizardState.statusLabel;
+      return;
+    }
+
     field.value = sessionMode === "view" ? (sessionInitialState.status_label || wizardState.statusLabel) : "Lưu nháp / Sắp diễn ra";
+  }
+
+  function enforceRealtimeWizardLock() {
+    if (!wizardState.sessionId) {
+      return;
+    }
+
+    const realtimeStatus = computeRealtimeWizardStatus();
+    updateStatusLabel();
+
+    if (sessionMode === "edit" && ["ONGOING", "COMPLETED", "CANCELLED"].includes(realtimeStatus)) {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("session_id", wizardState.sessionId);
+      nextUrl.searchParams.set("mode", "view");
+      window.location.replace(nextUrl.toString());
+    }
   }
 
   function populateGeneralFields() {
@@ -2271,6 +2330,10 @@
     renderSelectedRosters();
     renderDistribution();
     setStep(1);
+    enforceRealtimeWizardLock();
+    if (wizardState.sessionId) {
+      window.setInterval(enforceRealtimeWizardLock, 5000);
+    }
   }
 
   initializeWizard();
