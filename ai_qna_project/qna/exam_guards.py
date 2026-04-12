@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
+from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import ExamSessionGroup, Subject
@@ -20,12 +24,12 @@ def is_exam_group_active(exam_group: ExamSessionGroup | None, now=None) -> bool:
 
 def subject_has_active_exam_group(subject: Subject, now=None) -> bool:
     current_time = now or timezone.now()
-    candidate_groups = (
-        ExamSessionGroup.objects.filter(
-            subject_id=subject,
-            exam_date__lte=current_time,
-        )
-        .exclude(status="CANCELLED")
-        .only("exam_date", "duration_minutes", "status")
-    )
-    return any(is_exam_group_active(group, now=current_time) for group in candidate_groups)
+    
+    return ExamSessionGroup.objects.filter(
+        subject_id=subject,
+        exam_date__lte=current_time,
+    ).exclude(
+        status="CANCELLED"
+    ).filter(
+        exam_date__gte=current_time - models.F('duration_minutes') * timedelta(minutes=1)
+    ).exists()

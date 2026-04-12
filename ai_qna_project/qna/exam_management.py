@@ -890,12 +890,13 @@ def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
         is_approved=False
     )
 
-    count = 0
-    for code in codes:
-        if not _approval_error_for_code(code):
-            code.is_approved = True
-            code.save(update_fields=["is_approved", "updated_at"])
-            count += 1
+    with transaction.atomic():
+        count = 0
+        for code in codes:
+            if not _approval_error_for_code(code):
+                code.is_approved = True
+                code.save(update_fields=["is_approved", "updated_at"])
+                count += 1
 
     # Auto-publish logic
     exam_set_published = False

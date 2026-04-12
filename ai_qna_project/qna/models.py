@@ -1040,7 +1040,7 @@ class ViolationImage(models.Model):
         related_name="violation_images",
         verbose_name="PhiÃªn thi"
     )
-    image_blob = models.BinaryField(verbose_name="áº¢nh gian láº­n")
+    image = models.ImageField(upload_to='violations/', null=True, blank=True, verbose_name="áº¢nh gian láº­n")
     image_mime = models.CharField(max_length=100, default="image/jpeg", verbose_name="MIME type áº£nh")
     violation_type = models.CharField(max_length=50, default="TWO_FACES", verbose_name="Loáº¡i gian láº­n")
     timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Thá»i Ä‘iá»ƒm ghi nháº­n")
@@ -1068,9 +1068,8 @@ class ViolationImage(models.Model):
 
     @property
     def get_image_data_url(self):
-        from base64 import b64encode
-        if self.image_blob:
-            return f"data:{self.image_mime};base64,{b64encode(self.image_blob).decode('ascii')}"
+        if self.image:
+            return self.image.url
         return ""
 
 

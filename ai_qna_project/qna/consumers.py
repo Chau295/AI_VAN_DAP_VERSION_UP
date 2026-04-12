@@ -1,5 +1,6 @@
 import base64
 import json
+from django.core.files.base import ContentFile
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -129,6 +130,7 @@ class ExamConsumer(AsyncWebsocketConsumer):
 
     @sync_to_async
     def save_violation_image(self, violation_type, image_base64):
+        temp_file = None
         try:
             if not _session_is_valid_for_exam(self.session):
                 return
@@ -142,20 +144,37 @@ class ExamConsumer(AsyncWebsocketConsumer):
 
             image_data = base64.b64decode(imgstr)
 
-            ViolationImage.objects.create(
-                exam_session_id=self.session,
-                image_blob=image_data,
-                image_mime=mime,
-                violation_type=violation_type
-            )
+            extension = "jpg"
+            if mime and "png" in mime.lower():
+                extension = "png"
+            
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}")
+            temp_file.write(image_data)
+            temp_file.close()
 
-            if violation_type not in LECTURER_HIDDEN_VIOLATION_TYPES:
-                self.session.cheating_flag = True
-                self.session.save(update_fields=['cheating_flag'])
+            with open(temp_file.name, 'rb') as f:
+                violation_image = ViolationImage()
+                violation_image.exam_session_id = self.session
+                violation_image.image_mime = mime
+                violation_image.violation_type = violation_type
+                violation_image.image.save(
+                    f"violation_{self.session_id}_{violation_type}.{extension}",
+                    ContentFile(image_data),
+                    save=True
+                )
+
             print(f"Recorded violation {violation_type} for session {self.session_id}")
 
         except Exception as e:
             print(f"Error saving violation image: {e}")
+        finally:
+            if temp_file is not None:
+                import os
+                try:
+                    os.unlink(temp_file.name)
+                except OSError:
+                    pass
 
     async def exam_result(self, event):
         message = event["message"]

@@ -1,4 +1,4 @@
-﻿# qna/management/commands/run_workers.py
+# qna/management/commands/run_workers.py
 import logging
 import json
 import os
@@ -19,11 +19,6 @@ except ImportError:  # pragma: no cover - optional dependency
 import fitz
 import openai
 from docx import Document
-try:
-    from transformers import AutoTokenizer, AutoModel
-except ImportError:  # pragma: no cover - optional dependency
-    AutoTokenizer = None
-    AutoModel = None
 
 from django.core.management.base import BaseCommand
 from django.conf import settings
@@ -75,7 +70,7 @@ def _load_main_question_context(session_id, question_id):
         session.session_status == "STARTED"
         and session.started_at is not None
         and session.completed_at is None
-        and not session.is_completed
+        and session.session_status != "COMPLETED"
         and exam_is_open
     )
     return {
@@ -106,9 +101,10 @@ def _create_main_exam_result(session_id, question_id, transcript, score, feedbac
         )
         return {"id": exam_result.id, "score": exam_result.score, "created": False}
 
+
 logger = logging.getLogger(__name__)
 
-# ====== Háº°NG Sá» / HELPERS ======
+# ====== HẰNG SỐ / HELPERS ======
 EBML_MAGIC = b"\x1A\x45\xDF\xA3"
 
 
@@ -130,7 +126,7 @@ def wav_duration_and_rms(path: str):
         rms = (acc / len(samples)) ** 0.5
         return duration, rms
     except Exception as e:
-        logger.error(f"KhÃ´ng thá»ƒ phÃ¢n tÃ­ch WAV {path}: {e}")
+        logger.error(f"Không thể phân tích WAV {path}: {e}")
         return 0.0, 0.0
 
 
@@ -141,47 +137,38 @@ def preprocess_text_vietnamese(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
-def get_sentence_embedding(text, tokenizer, model, device):
-    inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True, max_length=256)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-    with torch.no_grad():
-        outputs = model(**inputs)
-    return outputs.last_hidden_state.mean(dim=1)
-
-
 async def rephrase_text_with_chatgpt(text, question_text, client):
     if not text or client is None:
         return text
 
-    # Prompt cáº£i tiáº¿n vá»›i rÃ ng buá»™c cháº·t cháº½ hÆ¡n
-    system_prompt = """Báº¡n lÃ  má»™t trá»£ lÃ½ sá»­a lá»—i vÄƒn báº£n tiáº¿ng Viá»‡t.
+    system_prompt = """Bạn là một trợ lý sửa lỗi văn bản tiếng Việt.
 
-NGUYÃŠN Táº®C QUAN TRá»ŒNG:
-1. CHá»ˆ sá»­a lá»—i chÃ­nh táº£, lá»—i Ä‘Ã¡nh mÃ¡y, lá»—i nháº­n dáº¡ng giá»ng nÃ³i
-2. KHÃ”NG ÄÆ¯á»¢C thÃªm tá»« má»›i nÃ o
-3. KHÃ”NG ÄÆ¯á»¢C xÃ³a tá»« nÃ o (trá»« tá»« láº·p thá»«a)
-4. KHÃ”NG ÄÆ¯á»¢C thay Ä‘á»•i cáº¥u trÃºc cÃ¢u
-5. KHÃ”NG ÄÆ¯á»¢C thay Ä‘á»•i Ã½ nghÄ©a cá»§a cÃ¢u
-6. KHÃ”NG ÄÆ¯á»¢C diá»…n giáº£i láº¡i ná»™i dung
+NGUYÊN TẮC QUAN TRỌNG:
+1. CHỈ sửa lỗi chính tả, lỗi đánh máy, lỗi nhận dạng giọng nói
+2. KHÔNG ĐƯỢC thêm từ mới nào
+3. KHÔNG ĐƯỢC xóa từ nào (trừ từ lặp thừa)
+4. KHÔNG ĐƯỢC thay đổi cấu trúc câu
+5. KHÔNG ĐƯỢC thay đổi ý nghĩa của câu
+6. KHÔNG ĐƯỢC diễn giải lại nội dung
 
-VÃ Dá»¤:
-- "chá»§ng nÄƒng" â†’ "chuáº©n nÄƒng" (Ä‘Ãºng)
-- "tÃ´i lÃ  sinh viÃªn" â†’ "tÃ´i lÃ  má»™t sinh viÃªn" (SAI - Ä‘Ã£ thÃªm tá»«)
-- "tÃ´i nÃ³i nÃ³i vá»" â†’ "tÃ´i nÃ³i vá»" (Ä‘Ãºng - xÃ³a láº·p)
-- "data" â†’ "dá»¯ liá»‡u" (SAI - Ä‘Ã£ thay Ä‘á»•i tá»«)
+VÍ DỤ:
+- "chủng năng" → "chuẩn năng" (đúng)
+- "tôi là sinh viên" → "tôi là một sinh viên" (SAI - đã thêm từ)
+- "tôi nói nói về" → "tôi nói về" (đúng - xóa lặp)
+- "data" → "dữ liệu" (SAI - đã thay đổi từ)
 
-Chá»‰ tráº£ vá» vÄƒn báº£n Ä‘Ã£ sá»­a, KHÃ”NG thÃªm giáº£i thÃ­ch."""
+Chỉ trả về văn bản đã sửa, KHÔNG thêm giải thích."""
 
-    user_prompt = f"""CÃ¢u tráº£ lá»i sau Ä‘Æ°á»£c nháº­n dáº¡ng tá»« giá»ng nÃ³i, cáº§n sá»­a lá»—i:
+    user_prompt = f"""Câu trả lời sau đây được nhận dạng từ giọng nói, cần sửa lỗi:
 
---- CÃ‚U Há»ŽI ---
+--- CÂU HỎI ---
 {question_text}
 
---- CÃ‚U TRáº¢ Lá»œI Gá»C ---
+--- CÂU TRẢ LỜI GỐC ---
 {text}
 
---- YÃŠU Cáº¦U ---
-Chá»‰ sá»­a lá»—i chÃ­nh táº£/Ä‘Ã¡nh mÃ¡y. Giá»¯ nguyÃªn má»i thá»© khÃ¡c.
+--- YÊU CẦU ---
+Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
 """
 
     try:
@@ -192,60 +179,57 @@ Chá»‰ sá»­a lá»—i chÃ­nh táº£/Ä‘Ã¡nh mÃ¡y. Giá»¯ nguy�
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.0,  # Giáº£m randomness
+            temperature=0.0,
         )
         rephrased = resp.choices[0].message.content.strip()
 
-        # Validation: Kiá»ƒm tra Ä‘á»™ tÆ°Æ¡ng Ä‘á»“ng
         if text and rephrased and text != rephrased:
-            # TÃ­nh Ä‘á»™ tÆ°Æ¡ng Ä‘á»“ng Ä‘Æ¡n giáº£n dá»±a trÃªn Ä‘á»™ dÃ i
             len_original = len(text.split())
             len_rephrased = len(rephrased.split())
             ratio = len_rephrased / len_original if len_original > 0 else 1
 
-            # Náº¿u Ä‘á»™ dÃ i thay Ä‘á»•i quÃ¡ nhiá»u (> 30%), dÃ¹ng báº£n gá»‘c
             if ratio < 0.7 or ratio > 1.3:
                 logger.warning(
-                    f"Rephrasing thay Ä‘á»•i Ä‘á»™ dÃ i quÃ¡ nhiá»u: "
-                    f"{len_original} â†’ {len_rephrased} (ratio={ratio:.2f}). "
-                    f"Sá»­ dá»¥ng báº£n gá»‘c."
+                    f"Rephrasing thay đổi độ dài quá nhiều: "
+                    f"{len_original} → {len_rephrased} (ratio={ratio:.2f}). "
+                    f"Sử dụng bản gốc."
                 )
                 return text
 
         return rephrased
     except Exception as e:
-        logger.error(f"Lá»—i rephrase OpenAI: {e}")
+        logger.error(f"Lỗi rephrase OpenAI: {e}")
         return text
 
 
 async def score_student_answer_with_openai(student_answer_raw, question_text, openai_client, model_name="gpt-4o-mini"):
-    if openai_client is None: return 0.0, "OpenAI client chÆ°a Ä‘Æ°á»£c khá»Ÿi táº¡o."
+    if openai_client is None: return 0.0, "OpenAI client chưa được khởi tạo."
 
     max_score = 10.0
 
     system_prompt = (
-        "Báº¡n lÃ  má»™t chuyÃªn gia cháº¥m Ä‘iá»ƒm cÃ¢u tráº£ lá»i váº¥n Ä‘Ã¡p vá» khoa há»c dá»¯ liá»‡u.\n\n"
-        "NGUYÃŠN Táº®C CHáº¤M ÄIá»‚M:\n"
-        f"1. Cháº¥m Ä‘iá»ƒm trá»±c tiáº¿p theo cháº¥t lÆ°á»£ng ná»™i dung. Äiá»ƒm tá»‘i Ä‘a: {max_score:.2f}\n"
-        "2. ÄÃ¡nh giÃ¡ Ä‘á»™ chÃ­nh xÃ¡c, Ä‘á»™ Ä‘áº§y Ä‘á»§, má»©c Ä‘á»™ giáº£i thÃ­ch vÃ  sá»± liÃªn quan vá»›i cÃ¢u há»i.\n"
-        "3. áº¢O GIÃC DETECTION: Náº¿u cÃ¢u tráº£ lá»i cÃ³ váº» Ä‘Æ°á»£c AI táº¡o ra (vÃ­ dá»¥: quÃ¡ hoÃ n háº£o, "
-        "cáº¥u trÃºc khÃ´ng tá»± nhiÃªn, tá»« vá»±ng khÃ´ng phÃ¹ há»£p vá»›i sinh viÃªn), giáº£m 30-50% Ä‘iá»ƒm.\n"
-        "4. CÃ¢u tráº£ lá»i quÃ¡ ngáº¯n hoáº·c khÃ´ng liÃªn quan: 0 Ä‘iá»ƒm.\n"
-        "5. CÃ¢u tráº£ lá»i chá»‰ Ä‘á»c láº¡i cÃ¢u há»i: 0 Ä‘iá»ƒm.\n"
-        "6. Pháº£i cÃ³ ná»™i dung thá»±c sá»± tá»« sinh viÃªn má»›i cÃ³ Ä‘iá»ƒm.\n\n"
-        "Äáº¦U RA Báº®T BUá»˜C: JSON format:\n"
+        "Bạn là một chuyên gia chấm điểm câu trả lời vấn đáp về khoa học dữ liệu.\n\n"
+        "NGUYÊN TẮC CHẤM ĐIỂM:\n"
+        f"1. Chấm điểm trực tiếp theo chất lượng nội dung. Điểm tối đa: {max_score:.2f}\n"
+        "2. Đánh giá độ chính xác, độ đầy đủ, mức độ giải thích và sự liên quan với câu hỏi.\n"
+        "3. ẢO GIÁC DETECTION: Nếu câu trả lời có vẻ được AI tạo ra (ví dụ: quá hoàn hảo, "
+        "cấu trúc không tự nhiên, từ vựng không phù hợp với sinh viên), giảm 30-50% điểm.\n"
+        "4. Câu trả lời quá ngắn hoặc không liên quan: 0 điểm.\n"
+        "5. Câu trả lời chỉ đọc lại câu hỏi: 0 điểm.\n"
+        "6. Phải có nội dung thực sự từ sinh viên mới có điểm.\n\n"
+        "ĐẦU RA BẮT BUỘC: JSON format:\n"
         '{"diem_so": float, "phan_hoi": "string"}\n'
-        "KHÃ”NG thÃªm vÄƒn báº£n nÃ o khÃ¡c ngoÃ i JSON."
+        "KHÔNG thêm văn bản nào khác ngoài JSON."
     )
 
     user_prompt = (
-        f"--- CÃ‚U Há»ŽI ---\n{question_text}\n\n"
-        f"--- CÃ‚U TRáº¢ Lá»œI SINH VIÃŠN (Ä‘Ã£ transcribe tá»« giá»ng nÃ³i) ---\n{student_answer_raw}\n\n"
-        f"--- CHáº¤M ÄIá»‚M ---\n"
-        f"1. ÄÃ¡nh giÃ¡: CÃ¢u tráº£ lá»i cÃ³ Ä‘Æ°á»£c sinh viÃªn thá»±c sá»± nÃ³i khÃ´ng?\n"
-        f"2. Cháº¥m Ä‘iá»ƒm dá»±a trÃªn Ä‘á»™ Ä‘Ãºng, Ä‘á»™ Ä‘áº§y Ä‘á»§ vÃ  chiá»u sÃ¢u giáº£i thÃ­ch.\n"
-        f"3. Náº¿u cÃ³ áº£o giÃ¡c AI, ghi rÃµ trong pháº£n há»“i vÃ  giáº£m Ä‘iá»ƒm.\n\n"
-        f"Tráº£ vá» JSON duy nháº¥t, KHÃ”NG thÃªm chá»¯ nÃ o khÃ¡c."
+        f"--- CÂU HỎI ---\n{question_text}\n\n"
+        f"--- CÂU TRẢ LỜI SINH VIÊN (đã transcribe từ giọng nói) ---\n{student_answer_raw}\n\n"
+        f"--- CHẤM ĐIỂM ---\n"
+        f"1. Đánh giá: Câu trả lời có được sinh viên thực sự nói không?\n"
+        f"2. Chấm điểm dựa trên độ đúng, độ đầy đủ và chiều sâu giải thích.\n"
+        f"3. Nếu có ảo giác AI, ghi rõ trong phần hồi và giảm điểm.\n\n"
+        f"Trả về JSON duy nhất, KHÔNG thêm chữ nào khác."
     )
 
     try:
@@ -253,6 +237,7 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
             openai_client.chat.completions.create,
             model=model_name,
             temperature=0,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -260,11 +245,11 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
         )
         data = json.loads(resp.choices[0].message.content)
         score = min(max(float(data.get("diem_so", 0.0)), 0.0), max_score)
-        feedback = data.get("phan_hoi", "KhÃ´ng cÃ³ pháº£n há»“i.")
+        feedback = data.get("phan_hoi", "Không có phản hồi.")
         return score, feedback
     except Exception as e:
-        logger.error(f"Lá»—i khi cháº¥m Ä‘iá»ƒm OpenAI: {e}")
-        return 0.0, f"Lá»—i há»‡ thá»‘ng cháº¥m Ä‘iá»ƒm AI: {e}"
+        logger.error(f"Lỗi khi chấm điểm OpenAI: {e}")
+        return 0.0, f"Lỗi hệ thống chấm điểm AI: {e}"
 
 
 def convert_webm_to_wav(webm_path: str) -> Optional[str]:
@@ -274,13 +259,13 @@ def convert_webm_to_wav(webm_path: str) -> Optional[str]:
         command = [ffmpeg_binary, "-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts",
                    "-i", webm_path, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-y", wav_path]
         subprocess.run(command, check=True, capture_output=True, text=True)
-        logger.info(f"ÄÃ£ chuyá»ƒn Ä‘á»•i thÃ nh cÃ´ng {webm_path} sang {wav_path}")
+        logger.info(f"Đã chuyển đổi thành công {webm_path} sang {wav_path}")
         return wav_path
     except subprocess.CalledProcessError as e:
-        logger.error(f"Lá»—i khi cháº¡y ffmpeg: {e.stderr}")
+        logger.error(f"Lỗi khi chạy ffmpeg: {e.stderr}")
         return None
     except FileNotFoundError:
-        logger.error(f"Lá»—i: khÃ´ng tÃ¬m tháº¥y ffmpeg táº¡i '{ffmpeg_binary}'.")
+        logger.error(f"Lỗi: không tìm thấy ffmpeg tại '{ffmpeg_binary}'.")
         return None
 
 
@@ -308,54 +293,39 @@ def extract_material_text(material) -> str:
             return "\n".join(texts)
 
     except Exception as e:
-        logger.warning(f"KhÃ´ng thá»ƒ Ä‘á»c file {path}: {e}")
+        logger.warning(f"Không thể đọc file {path}: {e}")
 
     return ""
 
 
 # ====== WORKER CLASS ======
 class Command(BaseCommand):
-    help = 'Cháº¡y worker láº¯ng nghe cÃ¡c tÃ¡c vá»¥ AI tá»« channel layer'
+    help = 'Chạy worker lắng nghe các tác vụ AI từ channel layer'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.channel_layer = get_channel_layer()
         self.audio_chunks = {}
         self.device = "cuda" if (torch is not None and torch.cuda.is_available()) else "cpu"
-        self.stdout.write(f"Sá»­ dá»¥ng thiáº¿t bá»‹: {self.device}")
-        self.stdout.write("Dang tai PhoBERT model...")
-        if torch is None or AutoTokenizer is None or AutoModel is None:
-            self.phobert_model = None
-            self.phobert_tokenizer = None
-            self.stderr.write("PhoBERT dependencies chua san sang - se bo qua mo hinh cuc bo.")
-        else:
-            try:
-                self.phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
-                self.phobert_model = AutoModel.from_pretrained("vinai/phobert-base").to(self.device)
-                self.phobert_model.eval()
-                self.stdout.write("PhoBERT da san sang.")
-            except Exception as e:
-                self.phobert_model = None
-                self.phobert_tokenizer = None
-                self.stderr.write(f"Loi khi tai PhoBERT: {e} - se bo qua mo hinh cuc bo.")
-        self.stdout.write("Äang cáº¥u hÃ¬nh OpenAI client...")
+        self.stdout.write(f"Sử dụng thiết bị: {self.device}")
+        self.stdout.write("Đang cấu hình OpenAI client...")
         try:
             self.openai_client = openai.OpenAI()
             self.openai_client.models.list()
-            self.stdout.write("âœ… OpenAI (ChatGPT & Whisper) Ä‘Ã£ sáºµn sÃ ng.")
+            self.stdout.write("✅ OpenAI (ChatGPT & Whisper) đã sẵn sàng.")
         except Exception as e:
             self.openai_client = None
-            self.stderr.write(f"Lá»—i cáº¥u hÃ¬nh OpenAI: {e} - Ä‘áº·t OPENAI_API_KEY trÆ°á»›c.")
+            self.stderr.write(f"Lỗi cấu hình OpenAI: {e} - đặt OPENAI_API_KEY trước.")
 
     async def process_audio_and_transcribe(self, reply_channel, chunks, whisper_prompt: Optional[str] = None):
         if not chunks:
-            logger.warning("KhÃ´ng cÃ³ chunk Ã¢m thanh nÃ o Ä‘á»ƒ xá»­ lÃ½.")
+            logger.warning("Không có chunk âm thanh nào để xử lý.")
             return None
         first = chunks[0]
         if len(first) < 4 or not has_ebml_header(first[:4]):
-            logger.error("CÃ¡c chunk khÃ´ng chá»©a EBML header. Dá»¯ liá»‡u audio khÃ´ng há»£p lá»‡.")
+            logger.error("Các chunk không chứa EBML header. Dữ liệu audio không hợp lệ.")
             await self.channel_layer.send(reply_channel, {'type': 'exam.error',
-                                                          'message': 'Dá»¯ liá»‡u audio khÃ´ng há»£p lá»‡ (thiáº¿u header).'})
+                                                          'message': 'Dữ liệu audio không hợp lệ (thiếu header).'})
             return None
         unique_id = re.sub(r'[^a-zA-Z0-9]', '_', reply_channel)
         webm_path = os.path.join(settings.BASE_DIR, f'temp_audio_{unique_id}_{uuid4().hex[:8]}.webm')
@@ -363,33 +333,29 @@ class Command(BaseCommand):
             with open(webm_path, 'wb') as f:
                 for c in chunks: f.write(c)
         except Exception as e:
-            logger.error(f"Lá»—i ghi file táº¡m: {e}")
+            logger.error(f"Lỗi ghi file tạm: {e}")
             await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.error', 'message': 'Lá»—i há»‡ thá»‘ng khi ghi file Ã¢m thanh.'})
+                                          {'type': 'exam.error', 'message': 'Lỗi hệ thống khi ghi file âm thanh.'})
             return None
         wav_path = await asyncio.to_thread(convert_webm_to_wav, webm_path)
         if os.path.exists(webm_path): os.remove(webm_path)
         if not wav_path:
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': 'Lá»—i xá»­ lÃ½ file Ã¢m thanh.'})
+            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': 'Lỗi xử lý file âm thanh.'})
             return None
         duration, rms = wav_duration_and_rms(wav_path)
         logger.info(f"WAV duration ~ {duration:.2f}s; RMS ~ {rms:.1f}")
 
-        # Kiá»ƒm tra RMS Ä‘á»ƒ phÃ¡t hiá»‡n silence (khÃ´ng cÃ³ Ã¢m thanh thá»±c)
-        # NgÆ°á»¡ng RMS < 50.0 thÆ°á»ng lÃ  silence hoáº·c nhiá»…u ná»n
         RMS_THRESHOLD = 50.0
         if rms < RMS_THRESHOLD:
-            logger.info(f"PhÃ¡t hiá»‡n silence (RMS={rms:.1f} < {RMS_THRESHOLD}). Tráº£ vá» 'KhÃ´ng cÃ³ Ã¢m thanh'.")
+            logger.info(f"Phát hiện silence (RMS={rms:.1f} < {RMS_THRESHOLD}). Trả về 'Không có âm thanh'.")
             await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.error', 'message': 'KhÃ´ng cÃ³ Ã¢m thanh Ä‘Æ°á»£c phÃ¡t hiá»‡n.'})
+                                          {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
             return None
 
-        # Removed duration check - users can now submit audio of any length
         try:
-            # Sá»­ dá»¥ng prompt context Ä‘á»ƒ giÃºp Whisper hiá»ƒu bá»‘i cáº£nh tá»‘t hÆ¡n
             context_prompt = whisper_prompt or ""
             if context_prompt:
-                context_prompt = f"Bá»‘i cáº£nh: {context_prompt}. "
+                context_prompt = f"Bối cảnh: {context_prompt}. "
 
             with open(wav_path, "rb") as audio_file:
                 transcription = await asyncio.to_thread(
@@ -402,28 +368,25 @@ class Command(BaseCommand):
                 )
 
             raw = transcription.text.strip()
-            logger.info(f"Transcript nháº­n Ä‘Æ°á»£c: '{raw}'")
+            logger.info(f"Transcript nhận được: '{raw}'")
 
-            # Validation thÃªm
             if raw:
-                # Kiá»ƒm tra náº¿u transcript quÃ¡ ngáº¯n
                 words = raw.split()
                 if len(words) < 3 and len(chunks) > 0:
                     logger.warning(
-                        f"Transcript quÃ¡ ngáº¯n ({len(words)} tá»«) dÃ¹ cÃ³ dá»¯ liá»‡u audio. "
-                        f"CÃ³ thá»ƒ lá»—i transcribe."
+                        f"Transcript quá ngắn ({len(words)} từ) dù có dữ liệu audio. "
+                        f"Có thể lỗi transcribe."
                     )
 
-            # Náº¿u Whisper tráº£ vá» chuá»—i rá»—ng, coi nhÆ° khÃ´ng cÃ³ Ã¢m thanh
             if not raw:
-                logger.info("Whisper tráº£ vá» chuá»—i rá»—ng. Tráº£ vá» 'KhÃ´ng cÃ³ Ã¢m thanh'.")
+                logger.info("Whisper trả về chuỗi rỗng. Trả về 'Không có âm thanh'.")
                 await self.channel_layer.send(reply_channel,
-                                              {'type': 'exam.error', 'message': 'KhÃ´ng cÃ³ Ã¢m thanh Ä‘Æ°á»£c phÃ¡t hiá»‡n.'})
+                                              {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
                 return None
 
             return raw
         except Exception as e:
-            logger.error(f"Lá»—i Whisper: {e}")
+            logger.error(f"Lỗi Whisper: {e}")
             return ""
         finally:
             if os.path.exists(wav_path): os.remove(wav_path)
@@ -435,7 +398,7 @@ class Command(BaseCommand):
         chunks = message.get('__chunks', [])
         if not all([session_id, question_id, chunks]):
             logger.error(
-                f"Tac vu 'main' thieu du lieu. session_id={session_id}, question_id={question_id}, chunks={len(chunks)}")
+                f"Tác vụ 'main' thiếu dữ liệu. session_id={session_id}, question_id={question_id}, chunks={len(chunks)}")
             return
         try:
             question_context = await _load_main_question_context(session_id, question_id)
@@ -444,7 +407,7 @@ class Command(BaseCommand):
             if not question_context["session_is_active"]:
                 await self.channel_layer.send(reply_channel, {
                     'type': 'exam.error',
-                    'message': 'Phien thi khong con hop le de nop cau tra loi.'
+                    'message': 'Phiên thi không còn hợp lệ để nộp câu trả lời.'
                 })
                 return
 
@@ -452,20 +415,20 @@ class Command(BaseCommand):
                 logger.warning(f"Exam time has ended for session {session_id}. Rejecting audio processing.")
                 await self.channel_layer.send(reply_channel, {
                     'type': 'exam.error',
-                    'message': 'Thoi gian thi da ket thuc. Khong the gui cau tra loi.'
+                    'message': 'Thời gian thi đã kết thúc. Không thể gửi câu trả lời.'
                 })
                 return
 
             if question_context["already_answered"]:
                 await self.channel_layer.send(reply_channel, {
                     'type': 'exam.error',
-                    'message': 'Cau hoi nay da duoc nop truoc do.'
+                    'message': 'Câu hỏi này đã được nộp trước đó.'
                 })
                 return
 
             ordered_question_ids = question_context["ordered_question_ids"]
             question_order = next((index + 1 for index, item_id in enumerate(ordered_question_ids) if item_id == question_id_int), None)
-            question_label = f"Cau {question_order}" if question_order else f"Q{question_id}"
+            question_label = f"Câu {question_order}" if question_order else f"Q{question_id}"
             raw_transcript = await self.process_audio_and_transcribe(reply_channel, chunks,
                                                                      whisper_prompt=question_context["question_text"])
             if raw_transcript is None or raw_transcript == "":
@@ -473,7 +436,7 @@ class Command(BaseCommand):
             rephrased = await rephrase_text_with_chatgpt(raw_transcript, question_context["question_text"], self.openai_client)
             final_score, feedback = await score_student_answer_with_openai(rephrased, question_context["question_text"], self.openai_client)
             final_score = float(min(max(final_score, 0.0), 10.0))
-            logger.info(f"Cham diem {question_label} -> Final={final_score:.2f}")
+            logger.info(f"Chấm điểm {question_label} -> Final={final_score:.2f}")
             exam_result = await _create_main_exam_result(
                 session_id=session_id,
                 question_id=question_id_int,
@@ -484,7 +447,7 @@ class Command(BaseCommand):
             if not exam_result["created"]:
                 await self.channel_layer.send(reply_channel, {
                     'type': 'exam.error',
-                    'message': 'Cau hoi nay da duoc nop truoc do.'
+                    'message': 'Câu hỏi này đã được nộp trước đó.'
                 })
                 return
             await self.channel_layer.send(reply_channel,
@@ -496,8 +459,8 @@ class Command(BaseCommand):
                                                                                        'feedback': feedback}
                                                                               }})
         except Exception as e:
-            logger.error(f"Loi khong mong muon trong process_main_question: {e}", exc_info=True)
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': f'Loi worker: {str(e)}'})
+            logger.error(f"Lỗi không mong muốn trong process_main_question: {e}", exc_info=True)
+            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': f'Lỗi worker: {str(e)}'})
 
     async def process_generate_questions(self, message):
         job_id = message["job_id"]
@@ -525,7 +488,7 @@ class Command(BaseCommand):
             doc_text_parts = []
             for m in materials:
                 text = await sync_to_async(extract_material_text)(m)
-                doc_text_parts.append(f"--- Nguá»“n: {m.title} ---\n{text[:5000]}")
+                doc_text_parts.append(f"--- Nguồn: {m.title} ---\n{text[:5000]}")
 
             doc_text = "\n\n".join(doc_text_parts)
 
@@ -534,24 +497,24 @@ class Command(BaseCommand):
             hard = int(level_config.get("hard", 0))
 
             system_prompt = (
-                "Báº¡n lÃ  má»™t chuyÃªn gia há»c thuáº­t ra Ä‘á» thi váº¥n Ä‘Ã¡p Ä‘áº¡i há»c.\n"
-                "Nhiá»‡m vá»¥: Dá»±a vÃ o ná»™i dung tÃ i liá»‡u Ä‘Æ°á»£c cung cáº¥p, táº¡o cÃ¢u há»i Ä‘Ãºng vá»›i sá»‘ lÆ°á»£ng vÃ  má»©c Ä‘á»™ Ä‘Æ°á»£c yÃªu cáº§u.\n"
-                "Äáº¦U RA Báº®T BUá»˜C: JSON object theo format "
-                '{"questions": [{"content": "...", "difficulty": "EASY|MEDIUM|HARD", "source": "tÃªn tÃ i liá»‡u"}]}'
+                "Bạn là một chuyên gia học thuật ra đề thi vấn đáp đại học.\n"
+                "Nhiệm vụ: Dựa vào nội dung tài liệu được cung cấp, tạo câu hỏi đúng với số lượng và mức độ được yêu cầu.\n"
+                "ĐẦU RA BẮT BUỘC: JSON object theo format "
+                '{"questions": [{"content": "...", "difficulty": "EASY|MEDIUM|HARD", "source": "tên tài liệu"}]}'
             )
 
             user_prompt = f"""
-                Táº¡o tá»•ng cá»™ng {total_count} cÃ¢u há»i:
+                Tạo tổng cộng {total_count} câu hỏi:
                 - EASY: {easy}
                 - MEDIUM: {medium}
                 - HARD: {hard}
 
-                Dá»±a trÃªn tÃ i liá»‡u sau:
+                Dựa trên tài liệu sau:
                 {doc_text}
                 """
 
             if self.openai_client is None:
-                raise RuntimeError("OpenAI client chÆ°a Ä‘Æ°á»£c khá»Ÿi táº¡o.")
+                raise RuntimeError("OpenAI client chưa được khởi tạo.")
 
             resp = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
@@ -575,12 +538,11 @@ class Command(BaseCommand):
 
                 content = (q.get("content") or "").strip()
 
-                # ==== Báº®T BUá»˜C LÆ¯U VÃ€O DATABASE Vá»šI TIá»€N Tá» DRAFT_ ====
                 new_q = await sync_to_async(Question.objects.create)(
                     subject=subject,
                     question_text=content,
                     difficulty=diff,
-                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}"  # LÆ°u dÆ°á»›i dáº¡ng nhÃ¡p
+                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}"
                 )
 
                 formatted_questions.append({
@@ -606,10 +568,10 @@ class Command(BaseCommand):
                 "error_message": "",
             }, timeout=1800)
 
-            logger.info(f"ÄÃ£ sinh xong {len(formatted_questions)} cÃ¢u há»i cho job_id={job_id}")
+            logger.info(f"Đã sinh xong {len(formatted_questions)} câu hỏi cho job_id={job_id}")
 
         except Exception as exc:
-            logger.error(f"Lá»—i khi sinh cÃ¢u há»i (job {job_id}): {exc}", exc_info=True)
+            logger.error(f"Lỗi khi sinh câu hỏi (job {job_id}): {exc}", exc_info=True)
             cache.set(cache_key, {
                 "status": "FAIL",
                 "progress": 100,
@@ -619,13 +581,13 @@ class Command(BaseCommand):
             }, timeout=1800)
 
     async def run(self):
-        logger.info("Worker Ä‘ang láº¯ng nghe trÃªn kÃªnh 'asr-tasks'.")
+        logger.info("Worker đang lắng nghe trên kênh 'asr-tasks'.")
         while True:
             message = await self.channel_layer.receive('asr-tasks')
             task_type = message.get('type')
 
             if task_type == 'ai.generate_questions':
-                logger.info(f"Nháº­n lá»‡nh sinh cÃ¢u há»i AI, job_id={message.get('job_id')}")
+                logger.info(f"Nhận lệnh sinh câu hỏi AI, job_id={message.get('job_id')}")
                 asyncio.create_task(self.process_generate_questions(message))
                 continue
 
@@ -634,24 +596,24 @@ class Command(BaseCommand):
                 continue
 
             if task_type == 'asr.stream.start':
-                logger.info(f"Báº¯t Ä‘áº§u stream cho kÃªnh {reply_channel}")
+                logger.info(f"Bắt đầu stream cho kênh {reply_channel}")
                 self.audio_chunks[reply_channel] = []
             elif task_type == 'asr.chunk':
                 if reply_channel in self.audio_chunks:
                     self.audio_chunks[reply_channel].append(message.get('audio_chunk', b''))
             elif task_type == 'asr.stream.end':
                 mode = message.get('mode') or 'main'
-                logger.info(f"Káº¿t thÃºc stream, nháº­n lá»‡nh xá»­ lÃ½ '{mode}' cho kÃªnh {reply_channel}")
+                logger.info(f"Kết thúc stream, nhận lệnh xử lý '{mode}' cho kênh {reply_channel}")
 
                 chunks = self.audio_chunks.pop(reply_channel, [])
                 if not chunks:
-                    logger.warning(f"KhÃ´ng cÃ³ chunk audio nÃ o Ä‘á»ƒ xá»­ lÃ½ cho kÃªnh {reply_channel}. Bá» qua.")
+                    logger.warning(f"Không có chunk audio nào để xử lý cho kênh {reply_channel}. Bỏ qua.")
                     continue
 
                 message['__chunks'] = chunks
                 asyncio.create_task(self.process_main_question(message))
             else:
-                logger.warning(f"Bá» qua message khÃ´ng há»— trá»£: {task_type}")
+                logger.warning(f"Bỏ qua message không hỗ trợ: {task_type}")
 
     def handle(self, *args, **options):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -660,4 +622,3 @@ class Command(BaseCommand):
             asyncio.run(self.run())
         except KeyboardInterrupt:
             self.stdout.write(self.style.WARNING('Worker stopped by user.'))
-
