@@ -684,18 +684,7 @@ def _sync_session_completion_flags(session: ExamSession) -> None:
 
     if update_fields:
         session.save(update_fields=update_fields)
-def _get_session_appeal_deadline(session: ExamSession):
-    completed_at = getattr(session, "completed_at", None)
-    if not completed_at:
-        return None
-    return completed_at + timedelta(days=7)
 
-
-def _is_session_appeal_open(session: ExamSession) -> bool:
-    deadline = _get_session_appeal_deadline(session)
-    if not deadline:
-        return False
-    return timezone.now() <= deadline
 
 # =========================================================
 # AUTH / ROOT
@@ -2651,28 +2640,16 @@ def _attach_review_status_meta(session) -> None:
         session.review_status_class = "status-completed"
         session.can_view_detail = True
         session.can_display_score = True
-    elif exam_group and getattr(exam_group, "computed_status", None) in {"COMPLETED", "CANCELLED"}:
-        if started_exam:
-            session.review_status_label = "Đã kết thúc"
-            session.review_status_class = "status-ended"
-            session.can_view_detail = True
-            session.can_display_score = True
-        else:
-            session.review_status_label = "Vắng thi"
-            session.review_status_class = "status-absent"
-            session.can_view_detail = False
-            session.can_display_score = False
+    elif started_exam:
+        session.review_status_label = "Đã kết thúc"
+        session.review_status_class = "status-ended"
+        session.can_view_detail = True
+        session.can_display_score = True
     else:
-        if started_exam:
-            session.review_status_label = "Đã kết thúc"
-            session.review_status_class = "status-ended"
-            session.can_view_detail = True
-            session.can_display_score = True
-        else:
-            session.review_status_label = "Vắng thi"
-            session.review_status_class = "status-absent"
-            session.can_view_detail = False
-            session.can_display_score = False
+        session.review_status_label = "Vắng thi"
+        session.review_status_class = "status-absent"
+        session.can_view_detail = False
+        session.can_display_score = False
 
     session.status_label = session.review_status_label
     session.status_class = session.review_status_class
@@ -2871,36 +2848,17 @@ def lecturer_session_detail(request, session_id):
         return redirect("qna:dashboard")
 
     session = get_object_or_404(
-        ExamSession.objects.select_related("subject_id", "user_id", "user_id__userprofile"),
+        ExamSession.objects.select_related("subject_id", "user_id", "user_id__userprofile", "exam_session_group_id"),
         pk=session_id,
     )
     if session.subject not in request.user.userprofile.subjects_taught.all():
         raise PermissionDenied("Bạn không có quyền")
-
-    if not session.is_completed and session.exam_group and session.exam_group.computed_status == "ONGOING":
-        messages.warning(request, "PhiÃªn thi Ä‘ang diá»…n ra, chÆ°a thá»ƒ xem chi tiáº¿t.")
-        return redirect("qna:lecturer_student_review_screen")
 
     main_avg, final_total = _compute_scores(session)
     _attach_review_status_meta(session)
     session.detail_status_label = session.review_status_label
     session.detail_status_class = session.review_status_class
 
-    # Lấy danh sách ảnh gian lận
-    # violation_images = []
-    # for image in session.violation_images.exclude(
-    #     violation_type__in=LECTURER_HIDDEN_VIOLATION_TYPES
-    # ).order_by('-timestamp'):
-    #     image.violation_description = {
-    #         "TWO_FACES": "PhÃ¡t hiá»‡n nhiá»u hÆ¡n 1 gÆ°Æ¡ng máº·t",
-    #         "NO_FACE": "KhÃ´ng phÃ¡t hiá»‡n khuÃ´n máº·t trong khung hÃ¬nh",
-    #         "CAMERA_OFF": "Camera bá»‹ táº¯t hoáº·c ngáº¯t káº¿t ná»‘i",
-    #     }.get(image.violation_type, "PhÃ¡t hiá»‡n dáº¥u hiá»‡u báº¥t thÆ°á»ng")
-    #     image.image_data_url = (
-    #         f"data:{image.image_mime};base64,{b64encode(image.image_blob).decode('ascii')}"
-    #         if image.image_blob and image.image_mime else None
-    #     )
-    #     violation_images.append(image)
     violation_images = []
 
     return render(
@@ -2908,14 +2866,12 @@ def lecturer_session_detail(request, session_id):
         "qna/lecturer/lecturer_session_detail.html",
         {
             "session": session,
-            "results": ExamResult.objects.filter(exam_session_id=session).select_related("question_id").order_by(
-                "question_id"),
+            "results": ExamResult.objects.filter(exam_session_id=session).select_related("question_id").order_by("question_id"),
             "main_avg": main_avg,
             "final_total": final_total,
             "violation_images": violation_images,
         },
     )
-
 
 @login_required
 def lecturer_export_reports_screen(request):
@@ -3215,6 +3171,7 @@ def history_view(request: HttpRequest) -> HttpResponse:
 
     return render(request, "qna/student/history.html", {"sessions": sessions})
 
+
 @login_required
 def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
     session = get_object_or_404(
@@ -3242,6 +3199,7 @@ def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
             "appeal_open": _is_session_appeal_open(session),
         },
     )
+
 
 @login_required
 def pre_exam_verification_view(request: HttpRequest, subject_code: str) -> HttpResponse:
