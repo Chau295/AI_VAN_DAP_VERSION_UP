@@ -1,57 +1,76 @@
 {% load static %}
+<!DOCTYPE html>
 <html lang="vi" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Hệ thống Thi vấn đáp AI{% endblock %}</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{% static 'css/all.min.css' %}">
+
+    {% block extra_css %}{% endblock %}
+
     <style>
-        /* CSS cho liên kết active */
         .sidebar-link.active {
             background-color: #4ade80;
             color: #1f2937;
-            font-weight: 600;
+            font-weight: 700;
         }
+
         .sidebar-link.active i {
             color: #1f2937;
         }
 
-        /* CSS cho menu con */
         .submenu {
             max-height: 0;
             overflow: hidden;
             transition: max-height 0.3s ease-out;
         }
+
         .submenu.open {
             max-height: 500px;
         }
+
         .submenu-link.active {
-            background-color: rgba(74, 222, 128, 0.2);
+            background-color: rgba(74, 222, 128, 0.20);
             color: #4ade80;
+            font-weight: 600;
         }
 
-        /* CSS cho sidebar thu gọn */
         #sidebar {
             transition: margin-left 0.3s ease-in-out;
         }
+
         #sidebar.collapsed {
-            margin-left: -16rem; /* 16rem = w-64 */
+            margin-left: -16rem;
         }
 
-        /* Mobile menu toggle */
         .mobile-menu-btn {
             display: none;
         }
+
+        .logout-btn {
+            background: transparent;
+            border: 0;
+            width: 100%;
+            cursor: pointer;
+        }
+
         @media (max-width: 768px) {
             .mobile-menu-btn {
                 display: flex;
             }
+
             #sidebar {
                 position: fixed;
-                z-index: 50;
+                z-index: 60;
                 margin-left: -16rem;
+                top: 0;
+                left: 0;
+                height: 100vh;
             }
+
             #sidebar.mobile-open {
                 margin-left: 0;
             }
@@ -59,11 +78,10 @@
     </style>
 </head>
 <body class="bg-gray-100 font-sans h-full">
-
     <div class="flex h-screen overflow-hidden">
         <aside id="sidebar" class="w-64 bg-blue-800 text-gray-200 flex flex-col flex-shrink-0">
             <div class="p-6 flex items-center justify-center border-b border-orange-500">
-                <img src="{% static 'images/logo.jpg' %}" alt="Logo" class="w-10 h-10 mr-3">
+                <img src="{% static 'images/logo.jpg' %}" alt="Logo" class="w-10 h-10 mr-3 rounded-md object-cover">
                 <div>
                     <h1 class="text-2xl font-bold text-white">DUE-EXAM</h1>
                     <p class="text-sm text-gray-300">AI Oral Exam System</p>
@@ -72,11 +90,23 @@
 
             <div class="px-4 py-3 border-b border-blue-700">
                 <div class="flex items-center">
-                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                        {{ user.username|slice:":1"|upper }}
+                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                        {% if user.is_authenticated and user.userprofile.profile_image_blob %}
+                            <img
+                                id="navbar-avatar"
+                                src="{% url 'qna:profile' %}"
+                                alt="Avatar"
+                                class="w-full h-full object-cover hidden"
+                            >
+                            <span id="navbar-avatar-fallback">{{ user.username|slice:":1"|upper }}</span>
+                        {% else %}
+                            <span id="navbar-avatar-fallback">{{ user.username|slice:":1"|upper }}</span>
+                        {% endif %}
                     </div>
-                    <div class="ml-3">
-                        <p class="text-white font-semibold">{{ user.userprofile.full_name|default:user.username }}</p>
+                    <div class="ml-3 min-w-0">
+                        <p class="text-white font-semibold truncate">
+                            {{ user.userprofile.full_name|default:user.username }}
+                        </p>
                         <p class="text-sm text-gray-400">
                             {% if user.userprofile.is_lecturer %}Giảng viên{% else %}Sinh viên{% endif %}
                         </p>
@@ -86,155 +116,185 @@
 
             <nav class="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
                 {% if user.userprofile.is_lecturer %}
-                <a href="{% url 'qna:lecturer_dashboard' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_dashboard' %}active{% endif %}">
-                    <i class="fas fa-home w-6 text-gray-300"></i>
-                    <span class="ml-3">Môn học</span>
-                </a>
-            {% with url_name=request.resolver_match.url_name %}
-                <div class="relative">
-                    <button onclick="toggleQnADropdown()"
-                            class="w-full text-left sidebar-link flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 focus:outline-none {% if url_name == 'lecturer_questions_screen' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}bg-blue-800{% endif %}">
-                        <div class="flex items-center">
-                            <i class="fas fa-folder-open w-6 text-gray-300"></i>
-                            <span class="ml-3 text-white">Câu hỏi & Đề thi</span>
+                    <a href="{% url 'qna:lecturer_dashboard' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_dashboard' or request.resolver_match.url_name == 'lecturer_subject_list' %}active{% endif %}">
+                        <i class="fas fa-home w-6 text-gray-300"></i>
+                        <span class="ml-3">Môn học</span>
+                    </a>
+
+                    {% with url_name=request.resolver_match.url_name %}
+                    <div class="relative">
+                        <button
+                            type="button"
+                            onclick="toggleQnADropdown()"
+                            class="w-full text-left sidebar-link flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 focus:outline-none {% if url_name == 'lecturer_questions_screen' or url_name == 'question_bank_list_screen' or url_name == 'question_bank_detail_screen' or url_name == 'lecturer_question_management' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}bg-blue-700{% endif %}">
+                            <div class="flex items-center">
+                                <i class="fas fa-folder-open w-6 text-gray-300"></i>
+                                <span class="ml-3 text-white">Câu hỏi &amp; Đề thi</span>
+                            </div>
+                            <i id="qna-icon" class="fas fa-chevron-down text-gray-300 text-sm transition-transform duration-300 {% if url_name == 'lecturer_questions_screen' or url_name == 'question_bank_list_screen' or url_name == 'question_bank_detail_screen' or url_name == 'lecturer_question_management' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}rotate-180{% endif %}"></i>
+                        </button>
+
+                        <div id="qna-dropdown" class="mt-1 flex flex-col gap-1 overflow-hidden transition-all duration-300 {% if url_name == 'lecturer_questions_screen' or url_name == 'question_bank_list_screen' or url_name == 'question_bank_detail_screen' or url_name == 'lecturer_question_management' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}block{% else %}hidden{% endif %}">
+                            <a href="{% url 'qna:lecturer_questions_screen' %}"
+                               class="flex items-center pl-12 pr-4 py-2 text-sm rounded-lg transition-colors hover:bg-blue-600 {% if url_name == 'lecturer_questions_screen' or url_name == 'question_bank_list_screen' or url_name == 'question_bank_detail_screen' or url_name == 'lecturer_question_management' %}text-white font-semibold bg-blue-700/50{% else %}text-gray-300{% endif %}">
+                                <i class="fas fa-question-circle w-5 text-gray-400"></i>
+                                <span>Quản lý câu hỏi</span>
+                            </a>
+
+                            <a href="{% url 'qna:lecturer_exam_codes_screen' %}"
+                               class="flex items-center pl-12 pr-4 py-2 text-sm rounded-lg transition-colors hover:bg-blue-600 {% if url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}text-white font-semibold bg-blue-700/50{% else %}text-gray-300{% endif %}">
+                                <i class="fas fa-file-alt w-5 text-gray-400"></i>
+                                <span>Quản lý đề thi</span>
+                            </a>
                         </div>
-                        <i id="qna-icon" class="fas fa-chevron-down text-gray-300 text-sm transition-transform duration-300 {% if url_name == 'lecturer_questions_screen' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}rotate-180{% endif %}"></i>
-                    </button>
-
-                    <div id="qna-dropdown" class="mt-1 flex flex-col gap-1 overflow-hidden transition-all duration-300 {% if url_name == 'lecturer_questions_screen' or url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}block{% else %}hidden{% endif %}">
-
-                        <a href="{% url 'qna:lecturer_questions_screen' %}"
-                           class="flex items-center pl-12 pr-4 py-2 text-sm rounded-lg transition-colors hover:bg-blue-600 {% if url_name == 'lecturer_questions_screen' %}text-white font-semibold bg-blue-700/50{% else %}text-gray-300{% endif %}">
-                            <i class="fas fa-question-circle w-5 text-gray-400"></i>
-                            <span>Quản lý câu hỏi</span>
-                        </a>
-
-                        <a href="{% url 'qna:lecturer_exam_codes_screen' %}"
-                           class="flex items-center pl-12 pr-4 py-2 text-sm rounded-lg transition-colors hover:bg-blue-600 {% if url_name == 'lecturer_exam_codes_screen' or url_name == 'lecturer_generate_codes_screen' or url_name == 'lecturer_exam_set_detail_screen' %}text-white font-semibold bg-blue-700/50{% else %}text-gray-300{% endif %}">
-                            <i class="fas fa-file-alt w-5 text-gray-400"></i>
-                            <span>Quản lý đề thi</span>
-                        </a>
-
                     </div>
-                </div>
-                {% endwith %}
+                    {% endwith %}
 
-                <a
-                    href="{% url 'qna:lecturer_exam_sessions_list' %}"
-                    class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_exam_sessions_list' or request.resolver_match.url_name == 'lecturer_create_session_screen' or request.resolver_match.url_name == 'lecturer_exam_session_detail_screen' or request.resolver_match.url_name == 'lecturer_exam_session_common_list_screen' %}active{% endif %}">
-                    <i class="fas fa-calendar-alt w-6 text-gray-300"></i>
-                    <span class="ml-3">Ca thi</span>
-                </a>
+                    <a href="{% url 'qna:lecturer_exam_sessions_list' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_exam_sessions_list' or request.resolver_match.url_name == 'lecturer_create_session_screen' or request.resolver_match.url_name == 'lecturer_exam_session_detail_screen' or request.resolver_match.url_name == 'lecturer_exam_session_common_list_screen' %}active{% endif %}">
+                        <i class="fas fa-calendar-alt w-6 text-gray-300"></i>
+                        <span class="ml-3">Ca thi</span>
+                    </a>
 
-                <div>
-                    <button onclick="toggleSubmenu('resultMenu')" class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left">
-                        <div class="flex items-center">
-                            <i class="fas fa-chart-bar w-6 text-gray-300"></i>
-                            <span class="ml-3">Kết quả</span>
+                    <div>
+                        <button type="button"
+                                onclick="toggleSubmenu('resultMenu')"
+                                class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}bg-blue-700{% endif %}">
+                            <div class="flex items-center">
+                                <i class="fas fa-chart-bar w-6 text-gray-300"></i>
+                                <span class="ml-3">Kết quả</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-gray-400 transition-transform {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}rotate-180{% endif %}" id="resultMenuArrow"></i>
+                        </button>
+
+                        <div id="resultMenu" class="submenu ml-6 space-y-1 {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}open{% endif %}">
+                            <a href="{% url 'qna:lecturer_student_review_screen' %}"
+                               class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_student_review_screen' %}active{% endif %}">
+                                <i class="fas fa-user-graduate w-5 mr-2"></i>Xem bài làm sinh viên
+                            </a>
                         </div>
-                        <i class="fas fa-chevron-down text-gray-400 transition-transform" id="resultMenuArrow"></i>
-                    </button>
-                    <div id="resultMenu" class="submenu ml-6 space-y-1">
-                        <a href="{% url 'qna:lecturer_student_review_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_student_review_screen' %}active{% endif %}">
-                            <i class="fas fa-user-graduate w-5 mr-2"></i>Xem bài làm sinh viên
-                        </a>
-                        <a href="{% url 'qna:lecturer_export_reports_screen' %}" class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_export_reports_screen' %}active{% endif %}">
-                            <i class="fas fa-file-excel w-5 mr-2"></i>Xuất báo cáo
-                        </a>
                     </div>
-                </div>
 
-                {% else %}
-                <a href="{% url 'qna:dashboard' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-                    <i class="fas fa-home w-6 text-gray-300"></i>
-                    <span class="ml-3">Trang chủ</span>
-                </a>
-
-                <a href="{% url 'qna:history' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'history' or request.resolver_match.url_name == 'history_detail' %}active{% endif %}">
-                    <i class="fas fa-history w-6 text-gray-300"></i>
-                    <span class="ml-3">Lịch sử thi</span>
-                </a>
-
-                {% endif %}
-
-                {% if user.userprofile.is_lecturer %}
-                    <a href="{% url 'qna:lecturer_profile' %}"class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
+                    <a href="{% url 'qna:lecturer_profile' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_profile' %}active{% endif %}">
                         <i class="fas fa-user w-6 text-gray-300"></i>
-                        <span class="ml-3">Thông tin cá nhân</span>
+                        <span class="ml-3">Hồ sơ</span>
                     </a>
                 {% else %}
-                    <a href="{% url 'qna:profile' %}" class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
+                    <a href="{% url 'qna:dashboard' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                        <i class="fas fa-home w-6 text-gray-300"></i>
+                        <span class="ml-3">Trang chủ</span>
+                    </a>
+
+                    <a href="{% url 'qna:history' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'history' or request.resolver_match.url_name == 'history_detail' %}active{% endif %}">
+                        <i class="fas fa-clock-rotate-left w-6 text-gray-300"></i>
+                        <span class="ml-3">Lịch sử bài thi</span>
+                    </a>
+
+                    <a href="{% url 'qna:profile' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'profile' %}active{% endif %}">
                         <i class="fas fa-user w-6 text-gray-300"></i>
-                        <span class="ml-3">Thông tin cá nhân</span>
+                        <span class="ml-3">Hồ sơ</span>
                     </a>
                 {% endif %}
             </nav>
 
             <div class="p-4 border-t border-blue-700">
-                <form method="post" action="{% url 'logout' %}">
+                <form method="post" action="/accounts/logout/">
                     {% csrf_token %}
-                    <button type="submit" class="w-full flex items-center px-4 py-3 rounded-lg transition-colors text-red-400 hover:bg-red-500 hover:text-white">
-                        <i class="fas fa-sign-out-alt w-6"></i>
+                    <button type="submit"
+                            class="logout-btn sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-red-600 hover:text-white text-left">
+                        <i class="fas fa-sign-out-alt w-6 text-gray-300"></i>
                         <span class="ml-3">Đăng xuất</span>
                     </button>
                 </form>
             </div>
         </aside>
 
-        <main class="flex-1 p-6 md:p-10 overflow-y-auto">
-            <button onclick="toggleMobileMenu()" class="mobile-menu-btn fixed top-4 left-4 z-50 bg-blue-800 text-white p-3 rounded-lg shadow-lg hover:bg-blue-700">
+        <main class="flex-1 p-6 md:p-10 overflow-y-auto relative">
+            <button
+                type="button"
+                onclick="toggleMobileMenu()"
+                class="mobile-menu-btn fixed top-4 left-4 z-50 bg-blue-800 text-white p-3 rounded-lg shadow-lg hover:bg-blue-700">
                 <i class="fas fa-bars text-xl"></i>
             </button>
 
-            {% block content %}
-            {% endblock %}
+            {% if messages %}
+                <div class="mb-6 space-y-3">
+                    {% for message in messages %}
+                        <div class="rounded-lg px-4 py-3 border
+                            {% if message.tags == 'error' %}
+                                bg-red-50 text-red-700 border-red-200
+                            {% elif message.tags == 'warning' %}
+                                bg-yellow-50 text-yellow-800 border-yellow-200
+                            {% elif message.tags == 'success' %}
+                                bg-green-50 text-green-700 border-green-200
+                            {% else %}
+                                bg-blue-50 text-blue-700 border-blue-200
+                            {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            {% block content %}{% endblock %}
         </main>
     </div>
 
     {% block extra_js %}{% endblock %}
 
     <script>
-        // Toggle submenu
         function toggleSubmenu(menuId) {
             const menu = document.getElementById(menuId);
             const arrow = document.getElementById(menuId + 'Arrow');
+            if (!menu) return;
+
             menu.classList.toggle('open');
             if (arrow) {
                 arrow.classList.toggle('rotate-180');
             }
         }
 
-        // Toggle mobile menu
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
+            if (!sidebar) return;
             sidebar.classList.toggle('mobile-open');
         }
 
-        // Close mobile menu when clicking outside
-        document.addEventListener('click', function(event) {
+        document.addEventListener('click', function (event) {
             const sidebar = document.getElementById('sidebar');
             const mobileBtn = document.querySelector('.mobile-menu-btn');
-            if (window.innerWidth <= 768 &&
+
+            if (!sidebar || !mobileBtn) return;
+
+            if (
+                window.innerWidth <= 768 &&
                 !sidebar.contains(event.target) &&
-                !mobileBtn.contains(event.target)) {
+                !mobileBtn.contains(event.target)
+            ) {
                 sidebar.classList.remove('mobile-open');
             }
         });
-        function toggleQnADropdown() {
-        const dropdown = document.getElementById('qna-dropdown');
-        const icon = document.getElementById('qna-icon');
 
-        // Kiểm tra xem dropdown có đang bị ẩn (hidden) không
-        if (dropdown.classList.contains('hidden')) {
-            dropdown.classList.remove('hidden');
-            dropdown.classList.add('block');
-            icon.classList.add('rotate-180'); // Xoay mũi tên lên
-        } else {
-            dropdown.classList.add('hidden');
-            dropdown.classList.remove('block');
-            icon.classList.remove('rotate-180'); // Xoay mũi tên xuống
+        function toggleQnADropdown() {
+            const dropdown = document.getElementById('qna-dropdown');
+            const icon = document.getElementById('qna-icon');
+            if (!dropdown) return;
+
+            if (dropdown.classList.contains('hidden')) {
+                dropdown.classList.remove('hidden');
+                dropdown.classList.add('block');
+                if (icon) icon.classList.add('rotate-180');
+            } else {
+                dropdown.classList.add('hidden');
+                dropdown.classList.remove('block');
+                if (icon) icon.classList.remove('rotate-180');
+            }
         }
-    }
     </script>
 </body>
 </html>

@@ -66,7 +66,7 @@
           <h2 class="text-2xl font-bold text-blue-600 mt-4">Đang ghi âm...</h2>
           <p class="text-gray-500 mt-2">Hãy nói rõ ràng. Nhấn Dừng để nộp bài.</p>
           <button id="stop-recording-btn" class="mt-8 bg-red-600 text-white font-bold py-3 px-8 rounded-full hover:bg-red-700 transition-all text-lg shadow-lg">
-            <i class="fas fa-stop mr-2"></i> Dừng & Nộp bài
+            <i class="fas fa-stop mr-2"></i>Dừng & Nộp bài
           </button>
         </div>
         <div id="grading-state" class="hidden">
@@ -93,138 +93,133 @@
   </div>
 
   <div id="confirmFinishModal" class="modal" style="display:none;">
-      <div class="modal-content exam-confirm-card exam-confirm-card-finish w-full max-w-lg bg-white rounded-[28px] shadow-2xl flex flex-col m-4 overflow-hidden">
-          <div class="exam-confirm-header">
-              <span class="exam-confirm-badge">Nộp bài</span>
-              <div class="exam-confirm-icon exam-confirm-icon-finish">
-                  <i class="fas fa-flag-checkered"></i>
-              </div>
-              <h3 class="exam-confirm-title">Xác nhận kết thúc bài thi</h3>
-              <p class="exam-confirm-subtitle">Hệ thống sẽ chốt toàn bộ câu trả lời hiện có và chuyển sang màn hình tổng kết.</p>
-          </div>
-          <div class="exam-confirm-body">
-              <div class="exam-confirm-highlight">
-                  <span class="exam-confirm-highlight-label">Lưu ý</span>
-                  <div class="exam-confirm-highlight-text">Sau khi nộp bài, bạn sẽ không thể quay lại để sửa hoặc trả lời thêm.</div>
-              </div>
-              <div class="exam-confirm-points">
-                  <div class="exam-confirm-point"><i class="fas fa-check-circle"></i><span>Các câu đã nộp sẽ được giữ nguyên.</span></div>
-                  <div class="exam-confirm-point"><i class="fas fa-clock"></i><span>Đồng hồ sẽ dừng ngay khi xác nhận.</span></div>
-              </div>
-          </div>
-          <div class="exam-confirm-actions">
-              <button id="btnCancelFinish" class="btn exam-confirm-btn-secondary">Quay lại làm bài</button>
-              <button id="btnConfirmFinish" class="btn btn-primary exam-confirm-btn-primary">Xác nhận nộp bài</button>
-          </div>
+    <div class="modal-content exam-confirm-card exam-confirm-card-finish w-full max-w-lg bg-white rounded-[28px] shadow-2xl flex flex-col m-4 overflow-hidden">
+      <div class="exam-confirm-header">
+        <span class="exam-confirm-badge">Nộp bài</span>
+        <div class="exam-confirm-icon exam-confirm-icon-finish">
+          <i class="fas fa-flag-checkered"></i>
+        </div>
+        <h3 class="exam-confirm-title">Xác nhận kết thúc bài thi</h3>
+        <p class="exam-confirm-subtitle">Hệ thống sẽ chốt toàn bộ câu trả lời hiện có và chuyển sang màn hình tổng kết.</p>
       </div>
+      <div class="exam-confirm-body">
+        <div class="exam-confirm-highlight">
+          <span class="exam-confirm-highlight-label">Lưu ý</span>
+          <div class="exam-confirm-highlight-text">Sau khi nộp bài, bạn sẽ không thể quay lại để sửa hoặc trả lời thêm.</div>
+        </div>
+        <div class="exam-confirm-points">
+          <div class="exam-confirm-point"><i class="fas fa-check-circle"></i><span>Các câu đã nộp sẽ được giữ nguyên.</span></div>
+          <div class="exam-confirm-point"><i class="fas fa-clock"></i><span>Đồng hồ sẽ dừng ngay khi xác nhận.</span></div>
+        </div>
+      </div>
+      <div class="exam-confirm-actions">
+        <button id="btnCancelFinish" class="btn exam-confirm-btn-secondary">Quay lại làm bài</button>
+        <button id="btnConfirmFinish" class="btn btn-primary exam-confirm-btn-primary">Xác nhận nộp bài</button>
+      </div>
+    </div>
   </div>
 
   <div id="summaryModal" class="modal" style="display:none;">
-      <div class="modal-content w-full max-w-lg bg-white rounded-xl shadow-2xl flex flex-col m-4">
-          <div class="p-6 border-b border-gray-200">
-              <h3 class="text-2xl font-bold text-gray-800">Kết quả bài thi</h3>
-          </div>
-          <div class="p-8 flex-grow text-center">
-              <p class="text-gray-600 mb-2">Điểm trung bình của bạn là:</p>
-              <div id="summaryScore" class="text-6xl font-extrabold text-gray-900 leading-none">0.00</div>
-              <div id="summaryNote" class="mt-4 text-gray-700 bg-gray-50 p-4 rounded-lg"></div>
-          </div>
-          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end">
-              <button id="btnSummaryExit" class="btn btn-primary">Xem kết quả chi tiết</button>
-          </div>
+    <div class="modal-content w-full max-w-lg bg-white rounded-xl shadow-2xl flex flex-col m-4">
+      <div class="p-6 border-b border-gray-200">
+        <h3 class="text-2xl font-bold text-gray-800">Kết quả bài thi</h3>
       </div>
+      <div class="p-8 flex-grow text-center">
+        <p class="text-gray-600 mb-2">Điểm trung bình của bạn là:</p>
+        <div id="summaryScore" class="text-6xl font-extrabold text-gray-900 leading-none">0.00</div>
+        <div id="summaryNote" class="mt-4 text-gray-700 bg-gray-50 p-4 rounded-lg"></div>
+      </div>
+      <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end">
+        <button id="btnSummaryExit" class="btn btn-primary">Xem kết quả chi tiết</button>
+      </div>
+    </div>
   </div>
 
   <div id="finalResultModal" class="modal" style="display:none;">
-      <div class="modal-content w-full max-w-5xl bg-white rounded-xl shadow-2xl flex flex-col h-[90vh] max-h-[800px] m-4">
-          <div class="p-6 border-b border-gray-200 flex-shrink-0">
-              <h3 class="text-2xl font-bold text-gray-800">Kết quả chi tiết</h3>
-          </div>
-          <div class="flex-grow overflow-y-auto p-2 sm:p-6">
-              <div class="grid gap-8 lg:grid-cols-3">
-                  <div class="lg:col-span-2 space-y-4">
-                      <div>
-                          <h4 class="text-xl font-semibold text-gray-700 mb-4 px-2 sm:px-0">Các câu hỏi</h4>
-                          <div id="detailMain" class="space-y-4"></div>
-                      </div>
-                  </div>
-                  <div class="lg:col-span-1">
-                      <div class="sticky top-0 p-1">
-                          <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
-                               <div class="text-sm font-medium text-gray-600 mb-1">Tổng điểm</div>
-                               <div class="text-5xl font-extrabold text-blue-600 leading-none">
-                                   <span id="finalTotalScore">0.00</span><span id="finalScoreSuffix" class="text-gray-400 text-2xl"></span>
-                               </div>
-                               <div id="finalScoreNote" class="text-xs text-gray-500 mt-1"></div>
-                                <div class="mt-6 border-t pt-4">
-                                    <div id="appealTimer">
-                                        <div class="text-sm font-medium text-gray-600">Thời gian phúc khảo còn lại:</div>
-                                        <div id="appealCountdown" class="font-mono text-2xl font-bold text-indigo-600 mt-1">--:--</div>
-                                    </div>
-                                   <div class="mt-6 border-t pt-4">
-                                       <label for="appealReason" class="block text-sm font-medium text-gray-700 mb-2">Yêu cầu phúc khảo</label>
-                                       <textarea id="appealReason" rows="4" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Nhập lý do phúc khảo..."></textarea>
-                                       <button id="submitAppealBtn" class="mt-3 btn btn-primary w-full">Gửi phúc khảo</button>
-                                   </div>
-                               </div>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0 flex items-center justify-end">
-              <button id="btnFinishAll" class="btn btn-primary">Hoàn thành và về trang chủ</button>
-          </div>
+    <div class="modal-content w-full max-w-5xl bg-white rounded-xl shadow-2xl flex flex-col h-[90vh] max-h-[800px] m-4">
+      <div class="p-6 border-b border-gray-200 flex-shrink-0">
+        <h3 class="text-2xl font-bold text-gray-800">Kết quả chi tiết</h3>
       </div>
+      <div class="flex-grow overflow-y-auto p-2 sm:p-6">
+        <div class="grid gap-8 lg:grid-cols-3">
+          <div class="lg:col-span-2 space-y-4">
+            <div>
+              <h4 class="text-xl font-semibold text-gray-700 mb-4 px-2 sm:px-0">Các câu hỏi</h4>
+              <div id="detailMain" class="space-y-4"></div>
+            </div>
+          </div>
+          <div class="lg:col-span-1">
+            <div class="sticky top-0 p-1">
+              <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                <div class="text-sm font-medium text-gray-600 mb-1">Tổng điểm</div>
+                <div class="text-5xl font-extrabold text-blue-600 leading-none">
+                  <span id="finalTotalScore">0.00</span><span id="finalScoreSuffix" class="text-gray-400 text-2xl"></span>
+                </div>
+                <div id="finalScoreNote" class="text-xs text-gray-500 mt-1"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0 flex items-center justify-end">
+        <button id="btnFinishAll" class="btn btn-primary">Hoàn thành và về trang chủ</button>
+      </div>
+    </div>
   </div>
 
   <div id="confirmStopRecordingModal" class="modal" style="display:none;">
-      <div class="modal-content exam-confirm-card exam-confirm-card-recording w-full max-w-lg bg-white rounded-[28px] shadow-2xl flex flex-col m-4 overflow-hidden">
-          <div class="exam-confirm-header">
-              <span class="exam-confirm-badge exam-confirm-badge-danger">Trả lời câu hỏi</span>
-              <div class="exam-confirm-icon exam-confirm-icon-recording">
-                  <i class="fas fa-stop-circle"></i>
-              </div>
-              <h3 class="exam-confirm-title">Xác nhận dừng ghi âm</h3>
-              <p class="exam-confirm-subtitle">Câu trả lời hiện tại sẽ được gửi đi chấm điểm ngay sau khi bạn xác nhận.</p>
-          </div>
-          <div class="exam-confirm-body">
-              <div class="exam-confirm-highlight exam-confirm-highlight-danger">
-                  <span class="exam-confirm-highlight-label">Quan trong</span>
-                  <div class="exam-confirm-highlight-text">Bạn sẽ không thể ghi âm lại cho chính câu hỏi này sau khi nộp.</div>
-              </div>
-              <div class="exam-confirm-points">
-                  <div class="exam-confirm-point"><i class="fas fa-microphone-slash"></i><span>Ghi âm sẽ dừng ngay lập tức.</span></div>
-                  <div class="exam-confirm-point"><i class="fas fa-paper-plane"></i><span>Câu trả lời sẽ được gửi đi để chấm tự động.</span></div>
-              </div>
-          </div>
-          <div class="exam-confirm-actions">
-              <button id="btnCancelStopRecording" class="btn exam-confirm-btn-secondary">Tiep tuc ghi am</button>
-              <button id="btnConfirmStopRecording" class="btn btn-primary exam-confirm-btn-danger">Xác nhận nộp bài</button>
-          </div>
+    <div class="modal-content exam-confirm-card exam-confirm-card-recording w-full max-w-lg bg-white rounded-[28px] shadow-2xl flex flex-col m-4 overflow-hidden">
+      <div class="exam-confirm-header">
+        <span class="exam-confirm-badge exam-confirm-badge-danger">Trả lời câu hỏi</span>
+        <div class="exam-confirm-icon exam-confirm-icon-recording">
+          <i class="fas fa-stop-circle"></i>
+        </div>
+        <h3 class="exam-confirm-title">Xác nhận dừng ghi âm</h3>
+        <p class="exam-confirm-subtitle">Câu trả lời hiện tại sẽ được gửi đi chấm điểm ngay sau khi bạn xác nhận.</p>
       </div>
+      <div class="exam-confirm-body">
+        <div class="exam-confirm-highlight exam-confirm-highlight-danger">
+          <span class="exam-confirm-highlight-label">Quan trọng</span>
+          <div class="exam-confirm-highlight-text">Bạn sẽ không thể ghi âm lại cho chính câu hỏi này sau khi nộp.</div>
+        </div>
+        <div class="exam-confirm-points">
+          <div class="exam-confirm-point"><i class="fas fa-microphone-slash"></i><span>Ghi âm sẽ dừng ngay lập tức.</span></div>
+          <div class="exam-confirm-point"><i class="fas fa-paper-plane"></i><span>Câu trả lời sẽ được gửi đi để chấm tự động.</span></div>
+        </div>
+      </div>
+      <div class="exam-confirm-actions">
+        <button id="btnCancelStopRecording" class="btn exam-confirm-btn-secondary">Tiếp tục ghi âm</button>
+        <button id="btnConfirmStopRecording" class="btn btn-primary exam-confirm-btn-danger">Xác nhận nộp bài</button>
+      </div>
+    </div>
   </div>
 
   <div id="answerDetailModal" class="modal" style="display:none;">
-      <div class="modal-content w-full max-w-4xl bg-white rounded-xl shadow-2xl flex flex-col h-[90vh] max-h-[800px] m-4">
-          <div class="p-6 border-b border-gray-200 flex-shrink-0">
-              <h3 id="detailTitle" class="text-2xl font-bold text-gray-800">Chi tiết câu trả lời</h3>
-          </div>
-          <div class="p-6 flex-grow overflow-y-auto space-y-4">
-              <div class="card p-4"><div class="text-sm text-gray-500">Câu hỏi</div><div id="detailQuestion" class="mt-1 font-semibold text-gray-800"></div></div>
-              <div class="card p-4"><div class="text-sm text-gray-500">Câu trả lời của bạn</div><div id="detailTranscript" class="mt-1 text-gray-800 italic"></div></div>
-              <div class="card p-4"><div class="text-sm text-gray-500">Nhận xét</div><div id="detailFeedback" class="mt-1 text-gray-800"></div></div>
-              <div id="detailAnalysisBlock" class="card p-4" style="display:none;"><div class="text-sm text-gray-500">Phân tích đáp án</div><ul id="detailAnalysis" class="mt-2 list-disc list-inside text-gray-800"></ul></div>
-              <div class="card p-4 flex items-center justify-between"><div class="text-sm text-gray-500">Điểm</div><div><span id="detailScore" class="text-2xl font-bold text-blue-600">0.00</span><span id="detailMax" class="text-gray-500"></span></div></div>
-              <div id="detailAudioBlock" class="card p-4" style="display:none;">
-                <div class="text-sm text-gray-500">File ghi âm</div>
-                <audio id="detailAudio" controls class="mt-2 w-full"></audio>
-              </div>
-          </div>
-          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0 flex items-center justify-end gap-3">
-              <button id="btnCloseDetail" class="btn">Đóng</button>
-          </div>
+    <div class="modal-content w-full max-w-4xl bg-white rounded-xl shadow-2xl flex flex-col h-[90vh] max-h-[800px] m-4">
+      <div class="p-6 border-b border-gray-200 flex-shrink-0">
+        <h3 id="detailTitle" class="text-2xl font-bold text-gray-800">Chi tiết câu trả lời</h3>
       </div>
+      <div class="p-6 flex-grow overflow-y-auto space-y-4">
+        <div class="card p-4"><div class="text-sm text-gray-500">Câu hỏi</div><div id="detailQuestion" class="mt-1 font-semibold text-gray-800"></div></div>
+        <div class="card p-4"><div class="text-sm text-gray-500">Câu trả lời của bạn</div><div id="detailTranscript" class="mt-1 text-gray-800 italic"></div></div>
+        <div class="card p-4"><div class="text-sm text-gray-500">Nhận xét</div><div id="detailFeedback" class="mt-1 text-gray-800"></div></div>
+        <div id="detailAnalysisBlock" class="card p-4" style="display:none;">
+          <div class="text-sm text-gray-500">Phân tích đáp án</div>
+          <ul id="detailAnalysis" class="mt-2 list-disc list-inside text-gray-800"></ul>
+        </div>
+        <div class="card p-4 flex items-center justify-between">
+          <div class="text-sm text-gray-500">Điểm</div>
+          <div><span id="detailScore" class="text-2xl font-bold text-blue-600">0.00</span><span id="detailMax" class="text-gray-500"></span></div>
+        </div>
+        <div id="detailAudioBlock" class="card p-4" style="display:none;">
+          <div class="text-sm text-gray-500">File ghi âm</div>
+          <audio id="detailAudio" controls class="mt-2 w-full"></audio>
+        </div>
+      </div>
+      <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0 flex items-center justify-end gap-3">
+        <button id="btnCloseDetail" class="btn">Đóng</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -285,10 +280,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  /* ==========================================================================
-     CONFIG & STATE
-     ========================================================================== */
-  // Đồng bộ thời gian với Backend
   const DURATION_MINUTES = {{ duration_minutes|default:60 }};
   const EXAM_TOTAL_DURATION_MS = DURATION_MINUTES * 60 * 1000;
   const SERVER_NOW_MS = {{ server_now_ms|default:0 }};
@@ -302,14 +293,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const SESSION_ID = JSON.parse(document.getElementById('session_id_data').textContent);
 
   const API_ENDPOINTS = {
-    FINALIZE: "{% url 'qna:finalize_session' session.id %}",
-    APPEAL: "{% url 'qna:submit_exam_appeal' session.id %}"
+    FINALIZE: "{% url 'qna:finalize_session' session.id %}"
   };
 
   let scoreScaleSuffix = SCORE_SCALE_SUFFIX;
   let showNonTenWarning = SHOW_NON_TEN_WARNING;
   let scoreScaleWarning = SCORE_SCALE_WARNING;
-  let appealDeadlineMs = Number({{ appeal_deadline_ms|default:0 }});
   let wsRetryCount = 0;
 
   const elements = {
@@ -327,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const state = {
-    questions: [], // Lưu trữ thông tin các câu hỏi chính
+    questions: [],
     mainResults: [],
     currentQuestion: null,
     totalScoreMain: 0,
@@ -344,36 +333,37 @@ document.addEventListener('DOMContentLoaded', () => {
     hasUnloadGuard: true
   };
 
-  // Khởi tạo danh sách câu hỏi chính từ DOM
   document.querySelectorAll('.question-choice-btn').forEach(btn => {
     state.questions.push({
       id: Number(btn.dataset.questionId),
       order: Number(btn.dataset.questionOrder),
-      question_text: btn.dataset.questionText,
-      answered: false
+      question_text: btn.dataset.questionText
     });
   });
 
-  /* ==========================================================================
-     UTILITY FUNCTIONS
-     ========================================================================== */
   const modal = {
     show: (id) => { document.getElementById(id).style.display = 'flex'; },
     hide: (id) => { document.getElementById(id).style.display = 'none'; }
   };
+
   const formatScore = (n) => (Math.round(Number(n || 0) * 100) / 100).toFixed(2);
   const nowMs = () => Date.now() + SERVER_CLIENT_OFFSET_MS;
+
   const formatTime = (ms) => {
     const s = Math.max(0, Math.ceil(ms / 1000));
     const m = Math.floor(s / 60);
     const rs = s % 60;
     return `${String(m).padStart(2, '0')}:${String(rs).padStart(2, '0')}`;
   };
+
   const isExamTimeExpired = () => Boolean(state.mainTimerEnd && nowMs() >= state.mainTimerEnd);
+
   const showAlert = (message) => {
     document.getElementById('alert-message').textContent = message;
     document.getElementById('alert-banner').style.display = 'block';
-    setTimeout(() => document.getElementById('alert-banner').style.display = 'none', 5000);
+    setTimeout(() => {
+      document.getElementById('alert-banner').style.display = 'none';
+    }, 5000);
   };
 
   function syncFinishExamButtonState() {
@@ -410,17 +400,16 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
       body: JSON.stringify(data)
     });
+
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`API Error on ${url}:`, errorText);
       throw new Error(errorText);
     }
+
     return res.json();
   }
 
-  /* ==========================================================================
-     TIMERS
-     ========================================================================== */
   let mainTimerInterval = null;
 
   function forceExamTermination(message) {
@@ -464,42 +453,11 @@ document.addEventListener('DOMContentLoaded', () => {
         forceExamTermination('Đã hết thời gian thi.');
       }
     };
+
     mainTimerInterval = setInterval(tick, 250);
     tick();
   }
 
-  function startAppealCountdown() {
-    const wrap = document.getElementById('appealTimer');
-    const countdown = document.getElementById('appealCountdown');
-    const textarea = document.getElementById('appealReason');
-    const btn = document.getElementById('submitAppealBtn');
-    if (!wrap || !countdown || !textarea || !btn) return;
-
-    if (!appealDeadlineMs) {
-      wrap.style.display = 'none';
-      return;
-    }
-
-    wrap.style.display = 'block';
-    const tick = () => {
-      const remain = Math.max(0, appealDeadlineMs - nowMs());
-      countdown.textContent = formatTime(remain);
-      if (remain <= 0) {
-        textarea.disabled = true;
-        btn.disabled = true;
-        btn.textContent = 'Đã hết hạn phúc khảo';
-        clearInterval(window.__appealTimer);
-      }
-    };
-
-    clearInterval(window.__appealTimer);
-    window.__appealTimer = setInterval(tick, 1000);
-    tick();
-  }
-
-  /* ==========================================================================
-     UI & SCREEN MANAGEMENT
-     ========================================================================== */
   function showScreen(screenName) {
     elements.selection.style.display = (screenName === 'selection') ? 'block' : 'none';
     elements.answer.style.display = (screenName === 'answer') ? 'block' : 'none';
@@ -524,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
       forceExamTermination('Đã hết giờ thi.');
       return;
     }
+
     if (state.currentQuestion || state.isSubmittingAnswer) {
       return;
     }
@@ -538,38 +497,40 @@ document.addEventListener('DOMContentLoaded', () => {
     startRecording();
   }
 
-  /* ==========================================================================
-     AUDIO & WEBSOCKET
-     ========================================================================== */
   function connectWebSocket() {
     const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     state.socket = new WebSocket(`${wsScheme}://${window.location.host}/ws/exam/${SESSION_ID}/`);
     state.socket.binaryType = "arraybuffer";
+
     state.socket.onopen = () => {
       wsRetryCount = 0;
       console.log('WebSocket connected.');
       document.getElementById('websocket-banner').style.display = 'none';
     };
+
     state.socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         if (message.type === 'exam.result') {
           Promise.resolve(handleExamResult(message.message)).catch((error) => {
             console.error('Result handling error:', error);
-            showAlert(error.message || 'Co loi khi cap nhat ket qua.');
+            showAlert(error.message || 'Có lỗi khi cập nhật kết quả.');
           });
         } else if (message.type === 'exam.error') {
           setSubmittingAnswer(false);
           state.currentQuestion = null;
           state.currentAudioBlob = null;
           state.audioChunks = [];
-          showAlert(message.message || 'Co loi xay ra trong qua trinh cham diem.');
+          showAlert(message.message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
           setQuestionListLocked(false);
           showScreen('selection');
           setAnswerUIState('interaction');
         }
-      } catch (e) { console.error('Error parsing WebSocket message:', e); }
+      } catch (e) {
+        console.error('Error parsing WebSocket message:', e);
+      }
     };
+
     state.socket.onclose = () => {
       console.warn('WebSocket closed.');
       document.getElementById('websocket-banner').style.display = 'block';
@@ -580,20 +541,35 @@ document.addEventListener('DOMContentLoaded', () => {
         window.__wsReconnectTimer = window.setTimeout(connectWebSocket, waitMs);
       }
     };
+
     state.socket.onerror = (err) => console.error('WebSocket error:', err);
   }
 
   async function startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+
       state.audioChunks = [];
       state.currentAudioBlob = null;
-      const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+
+      const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : '';
+
       state.currentAudioMimeType = preferredMimeType || 'audio/webm';
-      state.mediaRecorder = preferredMimeType ? new MediaRecorder(stream, { mimeType: preferredMimeType }) : new MediaRecorder(stream);
-      state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.audioChunks.push(e.data); };
+      state.mediaRecorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
+
+      state.mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) state.audioChunks.push(e.data);
+      };
+
       state.mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
+
         if (state.skipAudioSubmit) {
           state.currentAudioBlob = null;
           state.skipAudioSubmit = false;
@@ -605,6 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.currentAudioBlob = audioBlob;
         await submitAudio(audioBlob);
       };
+
       setAnswerUIState('recording');
       state.mediaRecorder.start(1000);
     } catch (e) {
@@ -635,13 +612,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (isExamTimeExpired()) {
       setSubmittingAnswer(false);
-      forceExamTermination('Da het gio thi.');
+      forceExamTermination('Đã hết giờ thi.');
       return;
     }
 
     if (!blob || !blob.size) {
       setSubmittingAnswer(false);
-      showAlert('Khong ghi nhan duoc file ghi am.');
+      showAlert('Không ghi nhận được file ghi âm.');
       setQuestionListLocked(false);
       showScreen('selection');
       setAnswerUIState('interaction');
@@ -651,26 +628,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
       setSubmittingAnswer(false);
-      showAlert('Kenh cham diem chua san sang. Vui long thu lai.');
+      showAlert('Kênh chấm điểm chưa sẵn sàng. Vui lòng thử lại.');
       setQuestionListLocked(false);
       showScreen('selection');
       setAnswerUIState('interaction');
       state.currentQuestion = null;
       return;
     }
+
     const { id } = state.currentQuestion;
 
-    state.socket.send(JSON.stringify({ type: 'asr.stream.start', session_id: SESSION_ID }));
-    state.socket.send(await blob.arrayBuffer());
-
-    const endMessage = {
-      type: 'asr.stream.end',
-      mode: 'main',
-      process_type: 'main',
+    state.socket.send(JSON.stringify({
+      action: 'start_stream',
       session_id: SESSION_ID,
       question_id: id
-    };
-    state.socket.send(JSON.stringify(endMessage));
+    }));
+
+    state.socket.send(await blob.arrayBuffer());
+
+    state.socket.send(JSON.stringify({
+      action: 'end_stream',
+      mode: 'main',
+      session_id: SESSION_ID,
+      question_id: id
+    }));
   }
 
   function blobToWebmFile(blob, fileName) {
@@ -679,7 +660,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function saveResultAudio(questionId) {
     if (!state.currentAudioBlob) return '';
-    const file = await blobToWebmFile(state.currentAudioBlob, `audio_${SESSION_ID}_${questionId}.webm`);
+
+    const file = blobToWebmFile(state.currentAudioBlob, `audio_${SESSION_ID}_${questionId}.webm`);
     const formData = new FormData();
     formData.append('session_id', SESSION_ID);
     formData.append('question_id', questionId);
@@ -690,20 +672,21 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: { 'X-CSRFToken': csrfToken },
       body: formData
     });
+
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.message || 'Khong the dinh kem file ghi am.');
+      throw new Error(data.message || 'Không thể đính kèm file ghi âm.');
     }
+
     return data.audio_url || '';
   }
 
-  /* ==========================================================================
-     RESULT HANDLING & EXAM FLOW
-     ========================================================================== */
   async function handleExamResult(payload) {
     const data = payload.data || {};
+
     if (payload.type === 'main_question_complete') {
       let localResult = state.mainResults.find(r => r.question_id === data.question_id);
+
       if (!localResult) {
         localResult = {
           question_id: data.question_id,
@@ -726,14 +709,14 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         console.error('Save audio error:', error);
         localResult.audioUrl = '';
-        showAlert(error.message || 'Da cham diem xong nhung khong the dinh kem file ghi am.');
+        showAlert(error.message || 'Đã chấm điểm xong nhưng không thể đính kèm file ghi âm.');
       }
 
       const btn = document.querySelector(`.question-choice-btn[data-question-id="${data.question_id}"]`);
       if (btn) {
         btn.classList.add('opacity-60', 'pointer-events-none');
         const statusEl = btn.querySelector('.q-status');
-        if(statusEl) {
+        if (statusEl) {
           statusEl.textContent = 'Đã trả lời';
           statusEl.className = 'q-status inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700';
         }
@@ -754,22 +737,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function onFinishMainExam() {
-    state.totalScoreMain = calculateTotalScoreMain();
-
-    document.getElementById('summaryScore').textContent = formatScore(state.totalScoreMain);
-    const noteEl = document.getElementById('summaryNote');
-    const btnExit = document.getElementById('btnSummaryExit');
-
-    const parts = ['Bạn có thể xem kết quả chi tiết.'];
-    if (showNonTenWarning && scoreScaleWarning) {
-      parts.push(scoreScaleWarning);
-    }
-    noteEl.textContent = parts.join(' ');
-    btnExit.onclick = () => { modal.hide('summaryModal'); showFinalResult(); };
-    modal.show('summaryModal');
-  }
-
   async function finalizeAndShowResult(isTimeout = false, forcedNote = '') {
     clearInterval(mainTimerInterval);
     state.examFinished = true;
@@ -784,8 +751,6 @@ document.addEventListener('DOMContentLoaded', () => {
       scoreScaleSuffix = data.score_scale_suffix || '';
       showNonTenWarning = Boolean(data.show_non_ten_scale_warning);
       scoreScaleWarning = data.score_scale_warning || '';
-      appealDeadlineMs = Number(data.appeal_deadline_ms || 0);
-      startAppealCountdown();
     } catch (error) {
       console.error('Finalize error:', error);
     }
@@ -806,9 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="flex items-center justify-between border-t border-gray-200 pt-3">
             <div class="text-sm text-gray-500">
               <span class="font-semibold text-gray-800">Câu ${index + 1}:</span>
-               <b class="ml-2 font-mono text-lg text-blue-600">
-                 ${result ? formatScore(result.score) : '0.00'}
-               </b>
+              <b class="ml-2 font-mono text-lg text-blue-600">${result ? formatScore(result.score) : '0.00'}</b>
               <div class="mt-1 ${result ? 'text-green-600' : 'text-gray-400'}">
                 ${result ? 'Đã trả lời' : 'Chưa trả lời'}
               </div>
@@ -821,6 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('detailMain').innerHTML = rows.join('');
     document.getElementById('finalTotalScore').textContent = formatScore(state.totalScoreMain);
+
     const scoreSuffixEl = document.getElementById('finalScoreSuffix');
     if (scoreSuffixEl) {
       scoreSuffixEl.textContent = scoreScaleSuffix || '';
@@ -835,12 +799,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (showNonTenWarning && scoreScaleWarning) {
       notes.push(scoreScaleWarning);
     }
-    document.getElementById('finalScoreNote').textContent = notes.join(' ');
 
+    document.getElementById('finalScoreNote').textContent = notes.join(' ');
     modal.show('finalResultModal');
   }
 
-  function showAnswerDetail({ title, question, transcript, feedback, analysis, score, max, audioUrl }, context) {
+  function showAnswerDetail({ title, question, transcript, feedback, analysis, score, max, audioUrl }) {
     document.getElementById('detailTitle').textContent = title || 'Chi tiết câu trả lời';
     document.getElementById('detailQuestion').textContent = question || '';
     document.getElementById('detailTranscript').textContent = transcript || 'Chưa có bản ghi';
@@ -848,17 +812,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const analysisBlock = document.getElementById('detailAnalysisBlock');
     const analysisList = document.getElementById('detailAnalysis');
+
     if (Array.isArray(analysis) && analysis.length > 0) {
       analysisBlock.style.display = 'block';
       analysisList.innerHTML = analysis.map(a => `<li>${a}</li>`).join('');
     } else {
       analysisBlock.style.display = 'none';
     }
+
     document.getElementById('detailScore').textContent = formatScore(score);
     document.getElementById('detailMax').textContent = ` / ${formatScore(max)}`;
 
     const audioBlock = document.getElementById('detailAudioBlock');
     const audioEl = document.getElementById('detailAudio');
+
     if (audioUrl) {
       audioBlock.style.display = 'block';
       audioEl.src = audioUrl;
@@ -870,9 +837,6 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.show('answerDetailModal');
   }
 
-  /* ==========================================================================
-     EVENT LISTENERS
-     ========================================================================== */
   function setupEventListeners() {
     document.getElementById('question-list').addEventListener('click', (e) => {
       const btn = e.target.closest('.question-choice-btn');
@@ -883,21 +847,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('finalResultModal').addEventListener('click', (e) => {
-        const btn = e.target.closest('.detail-btn');
-        if (!btn) return;
-        const qid = Number(btn.dataset.questionId);
-        const question = state.questions.find(q => q.id === qid);
-        const result = state.mainResults.find(r => r.question_id === qid);
-        showAnswerDetail({
-            title: `Câu ${question?.order || ''}`,
-            question: question?.question_text || '',
-            transcript: result?.transcript || 'Không có câu trả lời',
-            feedback: result?.feedback || 'Chưa có nhận xét',
-            analysis: result?.analysis || [],
-            score: result?.score || 0,
-            max: 10.0,
-            audioUrl: result?.audioUrl || ''
-        });
+      const btn = e.target.closest('.detail-btn');
+      if (!btn) return;
+
+      const qid = Number(btn.dataset.questionId);
+      const question = state.questions.find(q => q.id === qid);
+      const result = state.mainResults.find(r => r.question_id === qid);
+
+      showAnswerDetail({
+        title: `Câu ${question?.order || ''}`,
+        question: question?.question_text || '',
+        transcript: result?.transcript || 'Không có câu trả lời',
+        feedback: result?.feedback || 'Chưa có nhận xét',
+        analysis: result?.analysis || [],
+        score: result?.score || 0,
+        max: 10.0,
+        audioUrl: result?.audioUrl || ''
+      });
     });
 
     elements.backBtn.onclick = () => {
@@ -906,9 +872,11 @@ document.addEventListener('DOMContentLoaded', () => {
       setQuestionListLocked(false);
       showScreen('selection');
     };
+
     elements.stopBtn.onclick = stopRecording;
     document.getElementById('finish-exam-btn').onclick = () => modal.show('confirmFinishModal');
     document.getElementById('btnCancelFinish').onclick = () => modal.hide('confirmFinishModal');
+
     document.getElementById('btnConfirmFinish').onclick = async () => {
       if (state.isSubmittingAnswer || state.mediaRecorder?.state === 'recording') {
         showAlert('Hãy nộp xong câu hỏi hiện tại trước khi kết thúc bài thi.');
@@ -921,6 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnCancelStopRecording').onclick = () => {
       modal.hide('confirmStopRecordingModal');
     };
+
     document.getElementById('btnConfirmStopRecording').onclick = () => {
       modal.hide('confirmStopRecordingModal');
       confirmAndStopRecording();
@@ -931,42 +900,6 @@ document.addEventListener('DOMContentLoaded', () => {
       window.location.href = "{% url 'qna:dashboard' %}";
     };
 
-    document.getElementById('submitAppealBtn').onclick = async () => {
-      const textarea = document.getElementById('appealReason');
-      const btn = document.getElementById('submitAppealBtn');
-      const reason = (textarea.value || '').trim();
-      if (reason.length < 10) {
-        alert('Lý do phúc khảo quá ngắn.');
-        return;
-      }
-
-      btn.disabled = true;
-      try {
-        const response = await fetch(API_ENDPOINTS.APPEAL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-          body: JSON.stringify({ reason }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          alert(data.message || 'Không thể gửi phúc khảo.');
-          btn.disabled = false;
-          return;
-        }
-
-        alert(data.message || 'Đã gửi yêu cầu phúc khảo.');
-        textarea.disabled = true;
-        btn.disabled = true;
-        btn.textContent = 'Đã gửi phúc khảo';
-      } catch (error) {
-        alert('Không thể gửi phúc khảo.');
-        btn.disabled = false;
-      }
-    };
-
     window.addEventListener('beforeunload', (event) => {
       if (!state.examFinished && state.hasUnloadGuard) {
         event.preventDefault();
@@ -975,9 +908,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ==========================================================================
-      INIT
-      ========================================================================== */
   const proctoringState = {
     video: null,
     canvas: null,
@@ -997,6 +927,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const PROCTORING_MAX_WARNINGS = 3;
+  let noFaceTimeout = null;
+  let multipleFaceTimeout = null;
+  let cameraOffTimeout = null;
 
   function shouldTerminateByViolations() {
     return (
@@ -1023,7 +956,8 @@ document.addEventListener('DOMContentLoaded', () => {
     videoContainer.style.cssText = `position: relative; width: 200px; height: 150px;`;
 
     proctoringState.video = document.createElement('video');
-    proctoringState.video.autoplay = true; proctoringState.video.muted = true;
+    proctoringState.video.autoplay = true;
+    proctoringState.video.muted = true;
     proctoringState.video.style.cssText = `width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);`;
 
     proctoringState.canvas = document.createElement('canvas');
@@ -1038,7 +972,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     videoContainer.appendChild(proctoringState.video);
     videoContainer.appendChild(proctoringState.canvas);
-    container.appendChild(header); container.appendChild(videoContainer); container.appendChild(statusBar);
+    container.appendChild(header);
+    container.appendChild(videoContainer);
+    container.appendChild(statusBar);
     document.body.appendChild(container);
   }
 
@@ -1047,20 +983,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
       console.log('FaceAPI models loaded');
-    } catch (error) { console.error('Failed to load FaceAPI models:', error); }
+    } catch (error) {
+      console.error('Failed to load FaceAPI models:', error);
+    }
   }
 
   async function initializeCamera() {
     try {
-      proctoringState.stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } });
+      proctoringState.stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        }
+      });
+
       const [videoTrack] = proctoringState.stream.getVideoTracks();
       if (videoTrack) {
         videoTrack.onended = () => handleCameraInterrupted();
         videoTrack.onmute = () => handleCameraInterrupted();
       }
+
       proctoringState.video.srcObject = proctoringState.stream;
       await proctoringState.video.play();
-      if (cameraOffTimeout) { clearTimeout(cameraOffTimeout); cameraOffTimeout = null; }
+
+      if (cameraOffTimeout) {
+        clearTimeout(cameraOffTimeout);
+        cameraOffTimeout = null;
+      }
+
       return true;
     } catch (error) {
       console.error('Camera access error:', error);
@@ -1095,16 +1046,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const element = document.getElementById(`violation-${type}`);
     if (element) {
       element.textContent = count;
-      element.style.color = count >= PROCTORING_CONFIG.VIOLATION_WARNING_LIMIT ? '#ef4444' : count >= Math.ceil(PROCTORING_CONFIG.VIOLATION_WARNING_LIMIT / 2) ? '#f59e0b' : '#10b981';
+      element.style.color =
+        count >= PROCTORING_CONFIG.VIOLATION_WARNING_LIMIT
+          ? '#ef4444'
+          : count >= Math.ceil(PROCTORING_CONFIG.VIOLATION_WARNING_LIMIT / 2)
+            ? '#f59e0b'
+            : '#10b981';
     }
   }
 
   function handleCameraInterrupted() {
     if (cameraOffTimeout) return;
+
     cameraOffTimeout = setTimeout(() => {
       if (proctoringState.cameraInterrupted) return;
       proctoringState.cameraInterrupted = true;
-      if (noFaceTimeout) { clearTimeout(noFaceTimeout); noFaceTimeout = null; }
+
+      if (noFaceTimeout) {
+        clearTimeout(noFaceTimeout);
+        noFaceTimeout = null;
+      }
+
       proctoringState.violations.noFace++;
       updateViolationDisplay('noface', proctoringState.violations.noFace);
       sendProctoringViolation('CAMERA_OFF', 0);
@@ -1112,30 +1074,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 3000);
   }
 
-  // --- HÀM GỬI ẢNH GIAN LẬN QUA WEBSOCKET ---
   function sendProctoringViolation(violationType, detectedCount = 0) {
     if (state.socket && state.socket.readyState === WebSocket.OPEN) {
-        const snapCanvas = document.createElement('canvas');
-        snapCanvas.width = proctoringState.video.videoWidth;
-        snapCanvas.height = proctoringState.video.videoHeight;
-        const ctx = snapCanvas.getContext('2d');
-        ctx.translate(snapCanvas.width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(proctoringState.video, 0, 0);
-        const imageBase64 = snapCanvas.toDataURL('image/jpeg', 0.6);
+      const snapCanvas = document.createElement('canvas');
+      snapCanvas.width = proctoringState.video.videoWidth;
+      snapCanvas.height = proctoringState.video.videoHeight;
+      const ctx = snapCanvas.getContext('2d');
+      ctx.translate(snapCanvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(proctoringState.video, 0, 0);
+      const imageBase64 = snapCanvas.toDataURL('image/jpeg', 0.6);
 
-        state.socket.send(JSON.stringify({
-            type: 'proctor_violation',
-            violation_type: violationType,
-            image_base64: imageBase64,
-            detected_count: detectedCount
-        }));
+      state.socket.send(JSON.stringify({
+        action: 'violation',
+        violation_type: violationType,
+        image: imageBase64,
+        detected_count: detectedCount
+      }));
     }
   }
-
-  let noFaceTimeout = null;
-  let multipleFaceTimeout = null;
-  let cameraOffTimeout = null;
 
   async function startMonitoring() {
     if (proctoringState.isMonitoring) return;
@@ -1146,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const monitor = async () => {
       if (!proctoringState.isMonitoring) return;
+
       try {
         const videoTrack = proctoringState.stream?.getVideoTracks?.()[0] || null;
         if (!videoTrack || videoTrack.readyState !== 'live' || videoTrack.muted || videoTrack.enabled === false) {
@@ -1158,55 +1116,69 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = proctoringState.canvas.getContext('2d');
         ctx.clearRect(0, 0, proctoringState.canvas.width, proctoringState.canvas.height);
 
-        // KHÔNG CÓ MẶT
         if (detections.length === 0) {
           if (!noFaceTimeout) {
             noFaceTimeout = setTimeout(() => {
               proctoringState.violations.noFace++;
               updateViolationDisplay('noface', proctoringState.violations.noFace);
+
               if (shouldTerminateByViolations()) {
                 sendProctoringViolation('NO_FACE', 0);
                 noFaceTimeout = null;
                 forceExamTermination('Bạn đã vi phạm quy định giám sát quá nhiều lần.');
                 return;
               }
+
               showProctoringWarning('Không phát hiện khuôn mặt trong 4 giây. Vui lòng ngồi trước camera.');
               sendProctoringViolation('NO_FACE', 0);
               noFaceTimeout = null;
             }, PROCTORING_CONFIG.NO_FACE_THRESHOLD);
           }
         } else {
-          if (noFaceTimeout) { clearTimeout(noFaceTimeout); noFaceTimeout = null; }
+          if (noFaceTimeout) {
+            clearTimeout(noFaceTimeout);
+            noFaceTimeout = null;
+          }
         }
 
-        // NHIỀU MẶT
         if (detections.length > PROCTORING_CONFIG.MULTIPLE_FACES_LIMIT) {
           if (!multipleFaceTimeout) {
             multipleFaceTimeout = setTimeout(() => {
               proctoringState.violations.multipleFaces++;
               updateViolationDisplay('multiface', proctoringState.violations.multipleFaces);
+
               if (shouldTerminateByViolations()) {
                 sendProctoringViolation('TWO_FACES', detections.length);
                 multipleFaceTimeout = null;
                 forceExamTermination('Bạn đã vi phạm quy định giám sát quá nhiều lần.');
                 return;
               }
+
               showProctoringWarning(`Phát hiện ${detections.length} khuôn mặt. Chỉ được phép 1 người trong khung hình.`);
               sendProctoringViolation('TWO_FACES', detections.length);
               multipleFaceTimeout = null;
             }, PROCTORING_CONFIG.MULTIPLE_FACE_COOLDOWN);
           }
         } else {
-          if (multipleFaceTimeout) { clearTimeout(multipleFaceTimeout); multipleFaceTimeout = null; }
+          if (multipleFaceTimeout) {
+            clearTimeout(multipleFaceTimeout);
+            multipleFaceTimeout = null;
+          }
         }
 
         detections.forEach(detection => {
           const box = detection.detection.box;
-          ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2; ctx.strokeRect(box.x, box.y, box.width, box.height);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
         });
-      } catch (error) { console.error('Monitoring error:', error); }
+      } catch (error) {
+        console.error('Monitoring error:', error);
+      }
+
       requestAnimationFrame(monitor);
     };
+
     monitor();
   }
 
@@ -1228,9 +1200,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ==========================================================================
-     INITIALIZATION
-     ========================================================================== */
   function init() {
     const sidebar = document.getElementById('sidebar');
     if (sidebar) sidebar.classList.add('collapsed');
@@ -1239,6 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('popstate', () => {
       history.pushState({ examLocked: true }, '', window.location.href);
     });
+
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && !state.examFinished) {
         alert('Không được chuyển tab khi thi!');
@@ -1248,7 +1218,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     connectWebSocket();
     startMainTimer();
-    startAppealCountdown();
 
     initializeProctoring().catch(err => {
       console.error('Proctoring initialization failed:', err);
@@ -1258,9 +1227,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('beforeunload', () => {
     window.clearTimeout(window.__wsReconnectTimer);
-    clearInterval(window.__appealTimer);
     stopMonitoring();
   });
+
   init();
 });
 </script>

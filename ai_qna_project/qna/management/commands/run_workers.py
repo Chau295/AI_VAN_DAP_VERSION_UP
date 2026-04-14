@@ -1,4 +1,4 @@
-# qna/management/commands/run_workers.py
+﻿# qna/management/commands/run_workers.py
 import logging
 import json
 import os
@@ -10,15 +10,22 @@ from unicodedata import normalize
 from uuid import uuid4
 import wave
 from array import array
-from typing import Optional, Dict, Any
+from typing import Optional
 
 try:
     import torch
 except ImportError:  # pragma: no cover - optional dependency
     torch = None
+
 import fitz
 import openai
 from docx import Document
+
+try:
+    from transformers import AutoTokenizer, AutoModel
+except ImportError:  # pragma: no cover - optional dependency
+    AutoTokenizer = None
+    AutoModel = None
 
 from django.core.management.base import BaseCommand
 from django.conf import settings
@@ -36,9 +43,17 @@ from django.core.cache import cache
 from django.utils import timezone
 from django.db import IntegrityError, transaction
 
+logger = logging.getLogger(__name__)
+
+# ====== HẰNG SỐ / HELPERS ======
+EBML_MAGIC = b"\x1A\x45\xDF\xA3"
+
+
+def has_ebml_header(first_bytes: bytes) -> bool:
+    return first_bytes.startswith(EBML_MAGIC)
+
 
 def _is_exam_group_open(exam_group):
-    """Check if exam group is currently open for taking exam"""
     if not exam_group or exam_group.status == "CANCELLED":
         return False
     now = timezone.now()
@@ -52,10 +67,12 @@ def _is_exam_group_open(exam_group):
 @database_sync_to_async
 def _load_main_question_context(session_id, question_id):
     session = (
-        ExamSession.objects.select_related("exam_session_group_id")
+        ExamSession.objects
+        .select_related("exam_session_group_id")
         .prefetch_related("questions")
         .get(pk=session_id)
     )
+
     ordered_question_ids = [item.pk for item in session.questions.all()]
     if int(question_id) not in ordered_question_ids:
         raise ValueError("Question does not belong to this session.")
@@ -65,14 +82,16 @@ def _load_main_question_context(session_id, question_id):
         exam_session_id_id=session_id,
         question_id_id=question_id,
     ).exists()
-    exam_is_open = _is_exam_group_open(session.exam_session_group_id)
+
+    exam_group = getattr(session, "exam_session_group_id", None)
+    exam_is_open = _is_exam_group_open(exam_group)
     session_is_active = (
-        session.session_status == "STARTED"
-        and session.started_at is not None
-        and session.completed_at is None
-        and session.session_status != "COMPLETED"
+        getattr(session, "session_status", "") == "STARTED"
+        and getattr(session, "started_at", None) is not None
+        and getattr(session, "completed_at", None) is None
         and exam_is_open
     )
+
     return {
         "question_text": question.question_text,
         "ordered_question_ids": ordered_question_ids,
@@ -102,26 +121,25 @@ def _create_main_exam_result(session_id, question_id, transcript, score, feedbac
         return {"id": exam_result.id, "score": exam_result.score, "created": False}
 
 
-logger = logging.getLogger(__name__)
-
-# ====== HẰNG SỐ / HELPERS ======
-EBML_MAGIC = b"\x1A\x45\xDF\xA3"
-
-
-def has_ebml_header(first_bytes: bytes) -> bool:
-    return first_bytes.startswith(EBML_MAGIC)
-
-
 def wav_duration_and_rms(path: str):
     try:
-        with wave.open(path, 'rb') as w:
-            fr, n, sw, ch = w.getframerate(), w.getnframes(), w.getsampwidth(), w.getnchannels()
-            if fr <= 0 or n <= 0: return 0.0, 0.0
+        with wave.open(path, "rb") as w:
+            fr = w.getframerate()
+            n = w.getnframes()
+            sw = w.getsampwidth()
+            ch = w.getnchannels()
+            if fr <= 0 or n <= 0:
+                return 0.0, 0.0
             duration = n / float(fr)
             raw = w.readframes(n)
-        if sw != 2 or ch != 1: return duration, 0.0
-        samples = array('h', raw)
-        if not samples: return duration, 0.0
+
+        if sw != 2 or ch != 1:
+            return duration, 0.0
+
+        samples = array("h", raw)
+        if not samples:
+            return duration, 0.0
+
         acc = sum(float(s) * float(s) for s in samples)
         rms = (acc / len(samples)) ** 0.5
         return duration, rms
@@ -132,9 +150,17 @@ def wav_duration_and_rms(path: str):
 
 def preprocess_text_vietnamese(text: str) -> str:
     text = text.lower()
-    text = normalize('NFC', text)
-    text = re.sub(r'[^\w\s]', '', text)
-    return re.sub(r'\s+', ' ', text).strip()
+    text = normalize("NFC", text)
+    text = re.sub(r"[^\w\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def get_sentence_embedding(text, tokenizer, model, device):
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=256)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    with torch.no_grad():
+        outputs = model(**inputs)
+    return outputs.last_hidden_state.mean(dim=1)
 
 
 async def rephrase_text_with_chatgpt(text, question_text, client):
@@ -159,7 +185,7 @@ VÍ DỤ:
 
 Chỉ trả về văn bản đã sửa, KHÔNG thêm giải thích."""
 
-    user_prompt = f"""Câu trả lời sau đây được nhận dạng từ giọng nói, cần sửa lỗi:
+    user_prompt = f"""Câu trả lời sau được nhận dạng từ giọng nói, cần sửa lỗi:
 
 --- CÂU HỎI ---
 {question_text}
@@ -203,7 +229,8 @@ Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
 
 
 async def score_student_answer_with_openai(student_answer_raw, question_text, openai_client, model_name="gpt-4o-mini"):
-    if openai_client is None: return 0.0, "OpenAI client chưa được khởi tạo."
+    if openai_client is None:
+        return 0.0, "OpenAI client chưa được khởi tạo."
 
     max_score = 10.0
 
@@ -212,8 +239,8 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
         "NGUYÊN TẮC CHẤM ĐIỂM:\n"
         f"1. Chấm điểm trực tiếp theo chất lượng nội dung. Điểm tối đa: {max_score:.2f}\n"
         "2. Đánh giá độ chính xác, độ đầy đủ, mức độ giải thích và sự liên quan với câu hỏi.\n"
-        "3. ẢO GIÁC DETECTION: Nếu câu trả lời có vẻ được AI tạo ra (ví dụ: quá hoàn hảo, "
-        "cấu trúc không tự nhiên, từ vựng không phù hợp với sinh viên), giảm 30-50% điểm.\n"
+        "3. ẢO GIÁC DETECTION: Nếu câu trả lời có vẻ được AI tạo ra "
+        "(ví dụ: quá hoàn hảo, cấu trúc không tự nhiên, từ vựng không phù hợp với sinh viên), giảm 30-50% điểm.\n"
         "4. Câu trả lời quá ngắn hoặc không liên quan: 0 điểm.\n"
         "5. Câu trả lời chỉ đọc lại câu hỏi: 0 điểm.\n"
         "6. Phải có nội dung thực sự từ sinh viên mới có điểm.\n\n"
@@ -228,7 +255,7 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
         f"--- CHẤM ĐIỂM ---\n"
         f"1. Đánh giá: Câu trả lời có được sinh viên thực sự nói không?\n"
         f"2. Chấm điểm dựa trên độ đúng, độ đầy đủ và chiều sâu giải thích.\n"
-        f"3. Nếu có ảo giác AI, ghi rõ trong phần hồi và giảm điểm.\n\n"
+        f"3. Nếu có ảo giác AI, ghi rõ trong phản hồi và giảm điểm.\n\n"
         f"Trả về JSON duy nhất, KHÔNG thêm chữ nào khác."
     )
 
@@ -237,10 +264,9 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
             openai_client.chat.completions.create,
             model=model_name,
             temperature=0,
-            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
         )
         data = json.loads(resp.choices[0].message.content)
@@ -256,8 +282,18 @@ def convert_webm_to_wav(webm_path: str) -> Optional[str]:
     wav_path = webm_path.replace(".webm", ".wav")
     try:
         ffmpeg_binary = getattr(settings, "FFMPEG_BINARY", "ffmpeg")
-        command = [ffmpeg_binary, "-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts",
-                   "-i", webm_path, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-y", wav_path]
+        command = [
+            ffmpeg_binary,
+            "-hide_banner",
+            "-loglevel", "warning",
+            "-nostdin",
+            "-fflags", "+genpts",
+            "-i", webm_path,
+            "-ac", "1",
+            "-ar", "16000",
+            "-c:a", "pcm_s16le",
+            "-y", wav_path,
+        ]
         subprocess.run(command, check=True, capture_output=True, text=True)
         logger.info(f"Đã chuyển đổi thành công {webm_path} sang {wav_path}")
         return wav_path
@@ -298,16 +334,33 @@ def extract_material_text(material) -> str:
     return ""
 
 
-# ====== WORKER CLASS ======
 class Command(BaseCommand):
-    help = 'Chạy worker lắng nghe các tác vụ AI từ channel layer'
+    help = "Chạy worker lắng nghe các tác vụ AI từ channel layer"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.channel_layer = get_channel_layer()
         self.audio_chunks = {}
         self.device = "cuda" if (torch is not None and torch.cuda.is_available()) else "cpu"
+
         self.stdout.write(f"Sử dụng thiết bị: {self.device}")
+        self.stdout.write("Đang tải PhoBERT model...")
+
+        if torch is None or AutoTokenizer is None or AutoModel is None:
+            self.phobert_model = None
+            self.phobert_tokenizer = None
+            self.stderr.write("PhoBERT dependencies chưa sẵn sàng - sẽ bỏ qua mô hình cục bộ.")
+        else:
+            try:
+                self.phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+                self.phobert_model = AutoModel.from_pretrained("vinai/phobert-base").to(self.device)
+                self.phobert_model.eval()
+                self.stdout.write("PhoBERT đã sẵn sàng.")
+            except Exception as e:
+                self.phobert_model = None
+                self.phobert_tokenizer = None
+                self.stderr.write(f"Lỗi khi tải PhoBERT: {e} - sẽ bỏ qua mô hình cục bộ.")
+
         self.stdout.write("Đang cấu hình OpenAI client...")
         try:
             self.openai_client = openai.OpenAI()
@@ -321,35 +374,64 @@ class Command(BaseCommand):
         if not chunks:
             logger.warning("Không có chunk âm thanh nào để xử lý.")
             return None
+
         first = chunks[0]
         if len(first) < 4 or not has_ebml_header(first[:4]):
             logger.error("Các chunk không chứa EBML header. Dữ liệu audio không hợp lệ.")
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error',
-                                                          'message': 'Dữ liệu audio không hợp lệ (thiếu header).'})
+            await self.channel_layer.send(
+                reply_channel,
+                {
+                    "type": "exam.error",
+                    "message": "Dữ liệu audio không hợp lệ (thiếu header).",
+                },
+            )
             return None
-        unique_id = re.sub(r'[^a-zA-Z0-9]', '_', reply_channel)
-        webm_path = os.path.join(settings.BASE_DIR, f'temp_audio_{unique_id}_{uuid4().hex[:8]}.webm')
+
+        unique_id = re.sub(r"[^a-zA-Z0-9]", "_", reply_channel)
+        webm_path = os.path.join(settings.BASE_DIR, f"temp_audio_{unique_id}_{uuid4().hex[:8]}.webm")
+
         try:
-            with open(webm_path, 'wb') as f:
-                for c in chunks: f.write(c)
+            with open(webm_path, "wb") as f:
+                for c in chunks:
+                    f.write(c)
         except Exception as e:
             logger.error(f"Lỗi ghi file tạm: {e}")
-            await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.error', 'message': 'Lỗi hệ thống khi ghi file âm thanh.'})
+            await self.channel_layer.send(
+                reply_channel,
+                {
+                    "type": "exam.error",
+                    "message": "Lỗi hệ thống khi ghi file âm thanh.",
+                },
+            )
             return None
+
         wav_path = await asyncio.to_thread(convert_webm_to_wav, webm_path)
-        if os.path.exists(webm_path): os.remove(webm_path)
+        if os.path.exists(webm_path):
+            os.remove(webm_path)
+
         if not wav_path:
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': 'Lỗi xử lý file âm thanh.'})
+            await self.channel_layer.send(
+                reply_channel,
+                {
+                    "type": "exam.error",
+                    "message": "Lỗi xử lý file âm thanh.",
+                },
+            )
             return None
+
         duration, rms = wav_duration_and_rms(wav_path)
         logger.info(f"WAV duration ~ {duration:.2f}s; RMS ~ {rms:.1f}")
 
         RMS_THRESHOLD = 50.0
         if rms < RMS_THRESHOLD:
             logger.info(f"Phát hiện silence (RMS={rms:.1f} < {RMS_THRESHOLD}). Trả về 'Không có âm thanh'.")
-            await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+            await self.channel_layer.send(
+                reply_channel,
+                {
+                    "type": "exam.error",
+                    "message": "Không có âm thanh được phát hiện.",
+                },
+            )
             return None
 
         try:
@@ -380,8 +462,13 @@ class Command(BaseCommand):
 
             if not raw:
                 logger.info("Whisper trả về chuỗi rỗng. Trả về 'Không có âm thanh'.")
-                await self.channel_layer.send(reply_channel,
-                                              {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+                await self.channel_layer.send(
+                    reply_channel,
+                    {
+                        "type": "exam.error",
+                        "message": "Không có âm thanh được phát hiện.",
+                    },
+                )
                 return None
 
             return raw
@@ -389,54 +476,85 @@ class Command(BaseCommand):
             logger.error(f"Lỗi Whisper: {e}")
             return ""
         finally:
-            if os.path.exists(wav_path): os.remove(wav_path)
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
 
     async def process_main_question(self, message):
-        reply_channel = message['reply_channel']
-        question_id = message.get('question_id')
-        session_id = message.get('session_id')
-        chunks = message.get('__chunks', [])
+        reply_channel = message["reply_channel"]
+        question_id = message.get("question_id")
+        session_id = message.get("session_id")
+        chunks = message.get("__chunks", [])
+
         if not all([session_id, question_id, chunks]):
             logger.error(
-                f"Tác vụ 'main' thiếu dữ liệu. session_id={session_id}, question_id={question_id}, chunks={len(chunks)}")
+                f"Tác vụ 'main' thiếu dữ liệu. "
+                f"session_id={session_id}, question_id={question_id}, chunks={len(chunks)}"
+            )
             return
+
         try:
             question_context = await _load_main_question_context(session_id, question_id)
             question_id_int = int(question_id)
 
             if not question_context["session_is_active"]:
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Phiên thi không còn hợp lệ để nộp câu trả lời.'
-                })
+                await self.channel_layer.send(
+                    reply_channel,
+                    {
+                        "type": "exam.error",
+                        "message": "Phiên thi không còn hợp lệ để nộp câu trả lời.",
+                    },
+                )
                 return
 
             if not question_context["exam_is_open"]:
                 logger.warning(f"Exam time has ended for session {session_id}. Rejecting audio processing.")
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Thời gian thi đã kết thúc. Không thể gửi câu trả lời.'
-                })
+                await self.channel_layer.send(
+                    reply_channel,
+                    {
+                        "type": "exam.error",
+                        "message": "Thời gian thi đã kết thúc. Không thể gửi câu trả lời.",
+                    },
+                )
                 return
 
             if question_context["already_answered"]:
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Câu hỏi này đã được nộp trước đó.'
-                })
+                await self.channel_layer.send(
+                    reply_channel,
+                    {
+                        "type": "exam.error",
+                        "message": "Câu hỏi này đã được nộp trước đó.",
+                    },
+                )
                 return
 
             ordered_question_ids = question_context["ordered_question_ids"]
-            question_order = next((index + 1 for index, item_id in enumerate(ordered_question_ids) if item_id == question_id_int), None)
+            question_order = next(
+                (index + 1 for index, item_id in enumerate(ordered_question_ids) if item_id == question_id_int),
+                None,
+            )
             question_label = f"Câu {question_order}" if question_order else f"Q{question_id}"
-            raw_transcript = await self.process_audio_and_transcribe(reply_channel, chunks,
-                                                                     whisper_prompt=question_context["question_text"])
+
+            raw_transcript = await self.process_audio_and_transcribe(
+                reply_channel,
+                chunks,
+                whisper_prompt=question_context["question_text"],
+            )
             if raw_transcript is None or raw_transcript == "":
                 return
-            rephrased = await rephrase_text_with_chatgpt(raw_transcript, question_context["question_text"], self.openai_client)
-            final_score, feedback = await score_student_answer_with_openai(rephrased, question_context["question_text"], self.openai_client)
+
+            rephrased = await rephrase_text_with_chatgpt(
+                raw_transcript,
+                question_context["question_text"],
+                self.openai_client,
+            )
+            final_score, feedback = await score_student_answer_with_openai(
+                rephrased,
+                question_context["question_text"],
+                self.openai_client,
+            )
             final_score = float(min(max(final_score, 0.0), 10.0))
             logger.info(f"Chấm điểm {question_label} -> Final={final_score:.2f}")
+
             exam_result = await _create_main_exam_result(
                 session_id=session_id,
                 question_id=question_id_int,
@@ -445,22 +563,40 @@ class Command(BaseCommand):
                 feedback=feedback,
             )
             if not exam_result["created"]:
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Câu hỏi này đã được nộp trước đó.'
-                })
+                await self.channel_layer.send(
+                    reply_channel,
+                    {
+                        "type": "exam.error",
+                        "message": "Câu hỏi này đã được nộp trước đó.",
+                    },
+                )
                 return
-            await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.result', 'message': {'type': 'main_question_complete',
-                                                                              'data': {'result_id': exam_result['id'],
-                                                                                       'score': exam_result['score'],
-                                                                                       'question_id': question_id_int,
-                                                                                       'transcript': rephrased,
-                                                                                       'feedback': feedback}
-                                                                              }})
+
+            await self.channel_layer.send(
+                reply_channel,
+                {
+                    "type": "exam.result",
+                    "message": {
+                        "type": "main_question_complete",
+                        "data": {
+                            "result_id": exam_result["id"],
+                            "score": exam_result["score"],
+                            "question_id": question_id_int,
+                            "transcript": rephrased,
+                            "feedback": feedback,
+                        },
+                    },
+                },
+            )
         except Exception as e:
             logger.error(f"Lỗi không mong muốn trong process_main_question: {e}", exc_info=True)
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': f'Lỗi worker: {str(e)}'})
+            await self.channel_layer.send(
+                reply_channel,
+                {
+                    "type": "exam.error",
+                    "message": f"Lỗi worker: {str(e)}",
+                },
+            )
 
     async def process_generate_questions(self, message):
         job_id = message["job_id"]
@@ -472,13 +608,17 @@ class Command(BaseCommand):
         cache_key = f"qna_question_job_{job_id}"
 
         try:
-            cache.set(cache_key, {
-                "status": "PROCESSING",
-                "progress": 20,
-                "questions": [],
-                "summary": {},
-                "error_message": "",
-            }, timeout=1800)
+            cache.set(
+                cache_key,
+                {
+                    "status": "PROCESSING",
+                    "progress": 20,
+                    "questions": [],
+                    "summary": {},
+                    "error_message": "",
+                },
+                timeout=1800,
+            )
 
             subject = await sync_to_async(Subject.objects.get)(id=subject_id)
             materials = await sync_to_async(list)(
@@ -498,20 +638,21 @@ class Command(BaseCommand):
 
             system_prompt = (
                 "Bạn là một chuyên gia học thuật ra đề thi vấn đáp đại học.\n"
-                "Nhiệm vụ: Dựa vào nội dung tài liệu được cung cấp, tạo câu hỏi đúng với số lượng và mức độ được yêu cầu.\n"
+                "Nhiệm vụ: Dựa vào nội dung tài liệu được cung cấp, tạo câu hỏi đúng với số lượng "
+                "và mức độ được yêu cầu.\n"
                 "ĐẦU RA BẮT BUỘC: JSON object theo format "
                 '{"questions": [{"content": "...", "difficulty": "EASY|MEDIUM|HARD", "source": "tên tài liệu"}]}'
             )
 
             user_prompt = f"""
-                Tạo tổng cộng {total_count} câu hỏi:
-                - EASY: {easy}
-                - MEDIUM: {medium}
-                - HARD: {hard}
+Tạo tổng cộng {total_count} câu hỏi:
+- EASY: {easy}
+- MEDIUM: {medium}
+- HARD: {hard}
 
-                Dựa trên tài liệu sau:
-                {doc_text}
-                """
+Dựa trên tài liệu sau:
+{doc_text}
+"""
 
             if self.openai_client is None:
                 raise RuntimeError("OpenAI client chưa được khởi tạo.")
@@ -542,16 +683,18 @@ class Command(BaseCommand):
                     subject=subject,
                     question_text=content,
                     difficulty=diff,
-                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}"
+                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}",  # Lưu dưới dạng nháp
                 )
 
-                formatted_questions.append({
-                    "id": new_q.id,
-                    "content": content,
-                    "difficulty": diff,
-                    "source": q.get("source", subject.name),
-                    "created_at": timezone.now().strftime("%d/%m/%Y"),
-                })
+                formatted_questions.append(
+                    {
+                        "id": new_q.id,
+                        "content": content,
+                        "difficulty": diff,
+                        "source": q.get("source", subject.name),
+                        "created_at": timezone.now().strftime("%d/%m/%Y"),
+                    }
+                )
 
             summary = {
                 "all": len(formatted_questions),
@@ -560,49 +703,57 @@ class Command(BaseCommand):
                 "hard": len([q for q in formatted_questions if q["difficulty"] == "HARD"]),
             }
 
-            cache.set(cache_key, {
-                "status": "COMPLETE",
-                "progress": 100,
-                "questions": formatted_questions,
-                "summary": summary,
-                "error_message": "",
-            }, timeout=1800)
+            cache.set(
+                cache_key,
+                {
+                    "status": "COMPLETE",
+                    "progress": 100,
+                    "questions": formatted_questions,
+                    "summary": summary,
+                    "error_message": "",
+                },
+                timeout=1800,
+            )
 
             logger.info(f"Đã sinh xong {len(formatted_questions)} câu hỏi cho job_id={job_id}")
 
         except Exception as exc:
             logger.error(f"Lỗi khi sinh câu hỏi (job {job_id}): {exc}", exc_info=True)
-            cache.set(cache_key, {
-                "status": "FAIL",
-                "progress": 100,
-                "questions": [],
-                "summary": {},
-                "error_message": str(exc),
-            }, timeout=1800)
+            cache.set(
+                cache_key,
+                {
+                    "status": "FAIL",
+                    "progress": 100,
+                    "questions": [],
+                    "summary": {},
+                    "error_message": str(exc),
+                },
+                timeout=1800,
+            )
 
     async def run(self):
         logger.info("Worker đang lắng nghe trên kênh 'asr-tasks'.")
         while True:
-            message = await self.channel_layer.receive('asr-tasks')
-            task_type = message.get('type')
+            message = await self.channel_layer.receive("asr-tasks")
+            task_type = message.get("type")
 
-            if task_type == 'ai.generate_questions':
+            if task_type == "ai.generate_questions":
                 logger.info(f"Nhận lệnh sinh câu hỏi AI, job_id={message.get('job_id')}")
                 asyncio.create_task(self.process_generate_questions(message))
                 continue
 
-            reply_channel = message.get('reply_channel')
+            reply_channel = message.get("reply_channel")
             if not reply_channel:
                 continue
 
-            if task_type == 'asr.stream.start':
+            if task_type == "asr.stream.start":
                 logger.info(f"Bắt đầu stream cho kênh {reply_channel}")
                 self.audio_chunks[reply_channel] = []
-            elif task_type == 'asr.chunk':
+            elif task_type == "asr.chunk":
                 if reply_channel in self.audio_chunks:
-                    self.audio_chunks[reply_channel].append(message.get('audio_chunk', b''))
-            elif task_type == 'asr.stream.end':
-                mode = message.get('mode') or 'main'
+                    self.audio_chunks[reply_channel].append(message.get("audio_chunk", b""))
+            elif task_type == "asr.stream.end":
+                mode = message.get("mode") or "main"
                 logger.info(f"Kết thúc stream, nhận lệnh xử lý '{mode}' cho kênh {reply_channel}")
 
                 chunks = self.audio_chunks.pop(reply_channel, [])
@@ -610,15 +761,15 @@ class Command(BaseCommand):
                     logger.warning(f"Không có chunk audio nào để xử lý cho kênh {reply_channel}. Bỏ qua.")
                     continue
 
-                message['__chunks'] = chunks
+                message["__chunks"] = chunks
                 asyncio.create_task(self.process_main_question(message))
             else:
                 logger.warning(f"Bỏ qua message không hỗ trợ: {task_type}")
 
     def handle(self, *args, **options):
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        self.stdout.write(self.style.SUCCESS('Starting AI Worker...'))
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+        self.stdout.write(self.style.SUCCESS("Starting AI Worker..."))
         try:
             asyncio.run(self.run())
         except KeyboardInterrupt:
-            self.stdout.write(self.style.WARNING('Worker stopped by user.'))
+            self.stdout.write(self.style.WARNING("Worker stopped by user."))

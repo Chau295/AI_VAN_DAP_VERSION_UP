@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import io
@@ -45,7 +45,7 @@ User = get_user_model()
 def _ensure_lecturer(request):
     profile = getattr(request.user, "userprofile", None)
     if not profile or not profile.is_lecturer:
-        raise PermissionDenied("KhÃ´ng cÃ³ quyá»n truy cáº­p.")
+        raise PermissionDenied("Không có quyền truy cập.")
 
 
 def _get_lecturer_subjects(request):
@@ -66,12 +66,12 @@ def _student_default_academic_year():
 
 
 SESSION_STATUS_CHOICES = [
-    ("ALL", "Táº¥t cáº£"),
-    ("DRAFT", "LÆ°u nhÃ¡p"),
-    ("SCHEDULED", "Sáº¯p diá»…n ra"),
-    ("ONGOING", "Äang diá»…n ra"),
-    ("COMPLETED", "ÄÃ£ káº¿t thÃºc"),
-    ("CANCELLED", "ÄÃ£ há»§y"),
+    ("ALL", "Tất cả"),
+    ("DRAFT", "Lưu nháp"),
+    ("SCHEDULED", "Sắp diễn ra"),
+    ("ONGOING", "Đang diễn ra"),
+    ("COMPLETED", "Đã kết thúc"),
+    ("CANCELLED", "Đã hủy"),
 ]
 
 
@@ -91,9 +91,9 @@ def _session_safe_float(value, default=0.0):
 
 def _locked_exam_group_mutation_response(exam_group):
     message = (
-        "KhÃ´ng thá»ƒ chá»‰nh sá»­a khi ca thi Ä‘ang diá»…n ra."
+        "Không thể chỉnh sửa khi ca thi đang diễn ra."
         if exam_group.is_entry_open
-        else "Ca thi nÃ y Ä‘Ã£ khÃ³a chá»‰nh sá»­a."
+        else "Ca thi này đã khóa chỉnh sửa."
     )
     return JsonResponse(
         {
@@ -145,7 +145,7 @@ def _serialize_exam_code_for_session(exam_code):
         "code_name": exam_code.code_name,
         "total_questions": total_qs,
         "total_score": _session_total_score_for_code(exam_code),
-        "status_label": "ÄÃ£ duyá»‡t" if exam_code.is_approved else "ChÆ°a duyá»‡t",
+        "status_label": "Đã duyệt" if exam_code.is_approved else "Chưa duyệt",
         "is_approved": exam_code.is_approved,
     }
 
@@ -321,7 +321,7 @@ def _build_session_initial_state(subject, exam_group=None):
         "description": "",
         "exam_password": "",
         "status": "DRAFT",
-        "status_label": "LÆ°u nhÃ¡p",
+        "status_label": "Lưu nháp",
         "room_configs": [],
         "roster_configs": [],
     }
@@ -345,15 +345,15 @@ def _normalize_session_configuration(request, payload, exam_group=None):
     is_draft = submit_action in {"DRAFT", "SAVE_DRAFT"}
 
     if not group_name:
-        errors.append("Vui lÃ²ng nháº­p tÃªn ká»³ thi.")
+        errors.append("Vui lòng nhập tên kỳ thi.")
     if not academic_year or not re.match(r"^\d{4}-\d{4}$", academic_year):
-        errors.append("NÄƒm há»c khÃ´ng há»£p lá»‡.")
+        errors.append("Năm học không hợp lệ.")
     if semester not in {choice[0] for choice in SemesterChoices.choices}:
-        errors.append("Há»c ká»³ khÃ´ng há»£p lá»‡.")
+        errors.append("Học kỳ không hợp lệ.")
     if not exam_date_value:
-        errors.append("Vui lÃ²ng chá»n ngÃ y thi.")
+        errors.append("Vui lòng chọn ngày thi.")
     if not start_time_value or not end_time_value:
-        errors.append("Vui lÃ²ng nháº­p Ä‘áº§y Ä‘á»§ thá»i gian báº¯t Ä‘áº§u vÃ  káº¿t thÃºc.")
+        errors.append("Vui lòng nhập đầy đủ thời gian bắt đầu và kết thúc.")
 
     start_at = None
     end_at = None
@@ -368,15 +368,15 @@ def _normalize_session_configuration(request, payload, exam_group=None):
                 timezone.get_current_timezone(),
             )
         except ValueError:
-            errors.append("Äá»‹nh dáº¡ng ngÃ y giá» khÃ´ng há»£p lá»‡.")
+            errors.append("Định dạng ngày giờ không hợp lệ.")
 
     duration_minutes = 0
     if start_at and end_at:
         duration_minutes = int((end_at - start_at).total_seconds() // 60)
         if duration_minutes <= 0:
-            errors.append("Thá»i gian káº¿t thÃºc pháº£i sau thá»i gian báº¯t Ä‘áº§u.")
+            errors.append("Thời gian kết thúc phải sau thời gian bắt đầu.")
         if start_at < timezone.now():
-            errors.append("KhÃ´ng thá»ƒ Ä‘áº·t thá»i gian báº¯t Ä‘áº§u nhá» hÆ¡n thá»i Ä‘iá»ƒm hiá»‡n táº¡i.")
+            errors.append("Không thể đặt thời gian bắt đầu nhỏ hơn thời điểm hiện tại.")
 
     roster_ids = [_session_safe_int(item) for item in payload.get("roster_ids") or [] if _session_safe_int(item)]
     roster_qs = (
@@ -394,7 +394,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
             roster_students_by_code[normalize_student_code(row.student_code)] = row
 
     if not is_draft and not roster_configs:
-        errors.append("Vui lÃ²ng chá»n Ã­t nháº¥t má»™t nguá»“n danh sÃ¡ch sinh viÃªn.")
+        errors.append("Vui lòng chọn ít nhất một nguồn danh sách sinh viên.")
 
     rooms_payload = payload.get("rooms") or []
     normalized_rooms = []
@@ -405,7 +405,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
         rooms_payload = []
 
     if not is_draft and not rooms_payload:
-        errors.append("Vui lÃ²ng thÃªm Ã­t nháº¥t má»™t phÃ²ng thi.")
+        errors.append("Vui lòng thêm ít nhất một phòng thi.")
 
     for index, raw_room in enumerate(rooms_payload, start=1):
         room_name = (raw_room.get("room_name") or "").strip()
@@ -436,17 +436,17 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
         if not is_draft:
             if not room_name:
-                errors.append(f"PhÃ²ng thi dÃ²ng {index} chÆ°a cÃ³ tÃªn phÃ²ng.")
+                errors.append(f"Phòng thi dòng {index} chưa có tên phòng.")
             if student_count <= 0:
-                errors.append(f"PhÃ²ng thi dÃ²ng {index} pháº£i cÃ³ sá»‘ lÆ°á»£ng sinh viÃªn lá»›n hÆ¡n 0.")
+                errors.append(f"Phòng thi dòng {index} phải có số lượng sinh viên lớn hơn 0.")
             if not room_password:
                 room_password = _generate_room_password()
             elif len(room_password) != 5:
-                errors.append(f"PhÃ²ng thi dÃ²ng {index} pháº£i cÃ³ máº­t kháº©u Ä‘Ãºng 5 kÃ½ tá»±.")
+                errors.append(f"Phòng thi dòng {index} phải có mật khẩu đúng 5 ký tự.")
             if not exam_set:
-                errors.append(f"PhÃ²ng thi dÃ²ng {index} chÆ°a gáº¯n bá»™ Ä‘á».")
+                errors.append(f"Phòng thi dòng {index} chưa gắn bộ đề.")
             if not valid_codes:
-                errors.append(f"PhÃ²ng thi dÃ²ng {index} chÆ°a chá»n mÃ£ Ä‘á» Ä‘Ã£ duyá»‡t.")
+                errors.append(f"Phòng thi dòng {index} chưa chọn mã đề đã duyệt.")
 
         valid_code_map = {code.pk: code for code in valid_codes}
         if isinstance(assignments_payload, list):
@@ -462,19 +462,19 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
                 if not roster_student:
                     errors.append(
-                        f"Sinh viÃªn dÃ²ng {assignment_index} cá»§a phÃ²ng {room_name or index} khÃ´ng thuá»™c nguá»“n danh sÃ¡ch Ä‘Ã£ chá»n."
+                        f"Sinh viên dòng {assignment_index} của phòng {room_name or index} không thuộc nguồn danh sách đã chọn."
                     )
                     continue
 
                 normalized_code = normalize_student_code(roster_student.student_code)
                 if normalized_code in seen_student_codes:
-                    errors.append(f"Sinh viÃªn {roster_student.student_code} Ä‘ang bá»‹ phÃ¢n trÃ¹ng nhiá»u phÃ²ng.")
+                    errors.append(f"Sinh viên {roster_student.student_code} đang bị phân trùng nhiều phòng.")
                     continue
 
                 exam_code_id = _session_safe_int(raw_assignment.get("exam_code_id"))
                 if exam_code_id and exam_code_id not in valid_code_map:
                     errors.append(
-                        f"Sinh viÃªn {roster_student.student_code} cá»§a phÃ²ng {room_name or index} Ä‘ang gáº¯n mÃ£ Ä‘á» khÃ´ng há»£p lá»‡."
+                        f"Sinh viên {roster_student.student_code} của phòng {room_name or index} đang gắn mã đề không hợp lệ."
                     )
                     continue
 
@@ -497,7 +497,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
         if not is_draft and len(normalized_assignments) > student_count:
             errors.append(
-                f"PhÃ²ng {room_name or index} Ä‘ang cÃ³ {len(normalized_assignments)} sinh viÃªn, vÆ°á»£t quÃ¡ sá»©c chá»©a Ä‘Ã£ cáº¥u hÃ¬nh {student_count}."
+                f"Phòng {room_name or index} đang có {len(normalized_assignments)} sinh viên, vượt quá sức chứa đã cấu hình {student_count}."
             )
 
         selected_code_ids.update(code.pk for code in valid_codes)
@@ -525,7 +525,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
         missing_student_count = len(selected_student_codes - seen_student_codes)
         if missing_student_count:
             errors.append(
-                f"Hiá»‡n cÃ²n {missing_student_count} sinh viÃªn chÆ°a Ä‘Æ°á»£c phÃ¢n bá»• vÃ o phÃ²ng thi. Vui lÃ²ng kiá»ƒm tra láº¡i sá»©c chá»©a vÃ  thao tÃ¡c random."
+                f"Hiện còn {missing_student_count} sinh viên chưa được phân bổ vào phòng thi. Vui lòng kiểm tra lại sức chứa và thao tác random."
             )
 
     if errors:
@@ -620,7 +620,7 @@ def _exam_group_base_queryset():
 def _get_lecturer_exam_group_or_404(request, exam_group_id):
     exam_group = get_object_or_404(_exam_group_base_queryset(), pk=exam_group_id)
     if exam_group.subject not in _get_lecturer_subjects(request):
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p ca thi nÃ y.")
+        raise PermissionDenied("Bạn không có quyền truy cập ca thi này.")
     return exam_group
 
 
@@ -679,7 +679,7 @@ def _build_exam_group_student_rows(exam_group):
     student_rows = []
 
     for room_index, room in enumerate(room_configs, start=1):
-        room_name = (room.get("room_name") or "").strip() or f"PhÃ²ng {room_index}"
+        room_name = (room.get("room_name") or "").strip() or f"Phòng {room_index}"
         assignments = room.get("assignments") or []
         for assignment_index, assignment in enumerate(assignments, start=1):
             roster_student_id = _session_safe_int(assignment.get("roster_student_id"))
@@ -721,7 +721,7 @@ def _build_exam_group_detail_context(exam_group):
     total_expected_students = 0
 
     for room_index, room in enumerate(_get_exam_group_room_configs(exam_group), start=1):
-        room_name = (room.get("room_name") or "").strip() or f"PhÃ²ng {room_index}"
+        room_name = (room.get("room_name") or "").strip() or f"Phòng {room_index}"
         student_count = _session_safe_int(room.get("student_count"), 0)
         total_expected_students += student_count
         exam_set_id = _session_safe_int(room.get("exam_set_id"))
@@ -778,7 +778,7 @@ def lecturer_create_session_screen(request):
             pk=session_id,
         )
         if exam_group.subject not in subjects:
-            raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p ca thi nÃ y.")
+            raise PermissionDenied("Bạn không có quyền truy cập ca thi này.")
         selected_subject = exam_group.subject
     else:
         selected_subject = _get_selected_subject_for_lecturer(request, request.GET.get("subject_id"))
@@ -798,9 +798,9 @@ def lecturer_create_session_screen(request):
         "exam_group": exam_group,
         "screen_mode": requested_mode,
         "screen_mode_label": {
-            "create": "Táº¡o ca thi má»›i",
-            "edit": "Chá»‰nh sá»­a ca thi",
-            "view": "Chi tiáº¿t ca thi",
+            "create": "Tạo ca thi mới",
+            "edit": "Chỉnh sửa ca thi",
+            "view": "Chi tiết ca thi",
         }[requested_mode],
         "catalog_json": mark_safe(json.dumps(_build_session_catalog(selected_subject), ensure_ascii=False)),
         "initial_state_json": mark_safe(
@@ -829,7 +829,7 @@ def lecturer_create_exam_group_screen(request):
     exam_group = _save_session_configuration(normalized, request.user)
     messages.success(
         request,
-        "ÄÃ£ lÆ°u nhÃ¡p ca thi thÃ nh cÃ´ng." if normalized["is_draft"] else "Cáº¥u hÃ¬nh ca thi má»›i thÃ nh cÃ´ng",
+        "Đã lưu nháp ca thi thành công." if normalized["is_draft"] else "Cấu hình ca thi mới thành công",
     )
     return JsonResponse(
         {
@@ -1028,8 +1028,8 @@ def lecturer_exam_session_common_list_export(request, exam_group_id):
 
     workbook = OpenpyxlWorkbook()
     worksheet = workbook.active
-    worksheet.title = "Danh sÃ¡ch chung"
-    worksheet.append(["STT", "MÃ£ sinh viÃªn", "TÃªn", "Lá»›p", "NgÃ y sinh", "PhÃ²ng thi", "Thá»i gian thi", "MÃ£ Ä‘á»"])
+    worksheet.title = "Danh sách chung"
+    worksheet.append(["STT", "Mã sinh viên", "Tên", "Lớp", "Ngày sinh", "Phòng thi", "Thời gian thi", "Mã đề"])
 
     for index, row in enumerate(student_rows, start=1):
         worksheet.append(
@@ -1064,14 +1064,14 @@ def lecturer_delete_exam_group(request, exam_group_id):
     if not exam_group.can_modify:
         messages.error(
             request,
-            "Ca thi Ä‘ang diá»…n ra nÃªn khÃ´ng thá»ƒ xÃ³a."
+            "Ca thi đang diễn ra nên không thể xóa."
             if exam_group.is_entry_open
-            else "Ca thi nÃ y Ä‘Ã£ khÃ³a chá»‰nh sá»­a nÃªn khÃ´ng thá»ƒ xÃ³a.",
+            else "Ca thi này đã khóa chỉnh sửa nên không thể xóa.",
         )
         return redirect(detail_url)
 
     exam_group.delete()
-    messages.success(request, "XÃ³a ca thi thÃ nh cÃ´ng")
+    messages.success(request, "Xóa ca thi thành công")
     return redirect(reverse("qna:lecturer_exam_sessions_list"))
 
 
@@ -1094,7 +1094,7 @@ def lecturer_create_exam_group(request, subject_code):
         return JsonResponse({"success": False, "error": normalized["errors"][0]}, status=400)
 
     exam_group = _save_session_configuration(normalized, request.user)
-    messages.success(request, "ÄÃ£ táº¡o ca thi thÃ nh cÃ´ng.")
+    messages.success(request, "Đã tạo ca thi thành công.")
     return JsonResponse({"success": True, "exam_group_id": exam_group.pk})
 
 
@@ -1104,9 +1104,19 @@ def lecturer_update_exam_group(request, exam_group_id):
     _ensure_lecturer(request)
     exam_group = get_object_or_404(ExamSessionGroup.objects.select_related("subject_id"), pk=exam_group_id)
     if exam_group.subject not in _get_lecturer_subjects(request):
-        return JsonResponse({"success": False, "message": "KhÃ´ng cÃ³ quyá»n truy cáº­p"}, status=403)
+        return JsonResponse({"success": False, "message": "Không có quyền truy cập"}, status=403)
     if not exam_group.can_modify:
-        return _locked_exam_group_mutation_response(exam_group)
+        return JsonResponse(
+            {
+                "success": False,
+                "status": "FAIL",
+                "message": "Ca thi đang diễn ra, không được chỉnh sửa."
+                if exam_group.is_entry_open
+                else "Ca thi này đã khóa chỉnh sửa.",
+                "redirect_url": reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.pk]),
+            },
+            status=400,
+        )
 
     normalized = _normalize_session_configuration(request, _session_get_payload(request), exam_group=exam_group)
     if normalized["errors"]:
@@ -1123,7 +1133,7 @@ def lecturer_update_exam_group(request, exam_group_id):
     updated_group = _save_session_configuration(normalized, request.user, exam_group=exam_group)
     messages.success(
         request,
-        "ÄÃ£ lÆ°u nhÃ¡p ca thi thÃ nh cÃ´ng." if normalized["is_draft"] else "Cáº­p nháº­t ca thi thÃ nh cÃ´ng",
+        "Đã lưu nháp ca thi thành công." if normalized["is_draft"] else "Cập nhật ca thi thành công",
     )
     return JsonResponse(
         {
@@ -1144,13 +1154,13 @@ def lecturer_import_students_to_room(request, session_room_id):
         pk=session_room_id,
     )
     if session_room.exam_group.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p."}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập."}, status=403)
     if not session_room.exam_group.can_modify:
         return _locked_exam_group_mutation_response(session_room.exam_group)
 
     file_obj = request.FILES.get("csv_file")
     if not file_obj:
-        return JsonResponse({"success": False, "error": "Thiáº¿u file."}, status=400)
+        return JsonResponse({"success": False, "error": "Thiếu file."}, status=400)
 
     try:
         decoded = file_obj.read().decode("utf-8-sig")
@@ -1174,7 +1184,7 @@ def lecturer_import_students_to_room(request, session_room_id):
         if imported_users:
             session_room.students.add(*imported_users)
 
-        messages.success(request, f"ÄÃ£ import {imported_count} sinh viÃªn thÃ nh cÃ´ng.")
+        messages.success(request, f"Đã import {imported_count} sinh viên thành công.")
         return JsonResponse({"success": True, "imported_count": imported_count})
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)
@@ -1189,13 +1199,13 @@ def lecturer_random_assign_students(request, exam_group_id):
         pk=exam_group_id,
     )
     if exam_group.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p."}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập."}, status=403)
     if not exam_group.can_modify:
         return _locked_exam_group_mutation_response(exam_group)
 
     session_rooms = list(exam_group.session_rooms.all().order_by("display_order", "pk"))
     if not session_rooms:
-        return JsonResponse({"success": False, "error": "Ca thi chÆ°a cÃ³ phÃ²ng Ä‘á»ƒ random."}, status=400)
+        return JsonResponse({"success": False, "error": "Ca thi chưa có phòng để random."}, status=400)
 
     all_students = []
     for sr in session_rooms:
@@ -1203,13 +1213,13 @@ def lecturer_random_assign_students(request, exam_group_id):
         sr.students.clear()
 
     if not all_students:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ sinh viÃªn nÃ o Ä‘á»ƒ random."}, status=400)
+        return JsonResponse({"success": False, "error": "Không có sinh viên nào để random."}, status=400)
 
     random.shuffle(all_students)
     for index, student in enumerate(all_students):
         session_rooms[index % len(session_rooms)].students.add(student)
 
-    messages.success(request, "ÄÃ£ random sinh viÃªn vÃ o cÃ¡c phÃ²ng thi thÃ nh cÃ´ng.")
+    messages.success(request, "Đã random sinh viên vào các phòng thi thành công.")
     return JsonResponse({"success": True})
 
 
@@ -1227,4 +1237,3 @@ __all__ = [
     "lecturer_random_assign_students",
     "lecturer_update_exam_group",
 ]
-

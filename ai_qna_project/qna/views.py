@@ -52,7 +52,6 @@ from .exam_guards import subject_has_active_exam_group
 from .forms import LecturerManualQuestionForm, LecturerMaterialUploadForm
 from .models import (
     DifficultyLevel,
-    ExamAppeal,
     ExamCode,
     ExamCodeQuestion,
     ExamResult,
@@ -80,8 +79,6 @@ from .student_accounts import normalize_student_code
 logger = logging.getLogger(__name__)
 User = get_user_model()
 LECTURER_HIDDEN_VIOLATION_TYPES = {"NO_FACE"}
-APPEAL_WINDOW_MINUTES = 6
-APPEAL_WINDOW_DELTA = timedelta(minutes=APPEAL_WINDOW_MINUTES)
 TEN_POINT_SCALE = 10.0
 PASSWORD_ATTEMPT_LIMIT = 5
 PASSWORD_ATTEMPT_WINDOW = 300
@@ -93,7 +90,7 @@ PASSWORD_ATTEMPT_WINDOW = 300
 def _ensure_lecturer(request):
     profile = getattr(request.user, "userprofile", None)
     if not profile or not profile.is_lecturer:
-        raise PermissionDenied("KhÃ´ng cÃ³ quyá»n truy cáº­p.")
+        raise PermissionDenied("Không có quyền truy cập.")
 
 
 def _get_lecturer_subjects(request):
@@ -139,22 +136,19 @@ def _draft_prefix(workspace_id: str) -> str:
 
 
 def _ensure_owner(session: ExamSession, user: User) -> None:
-    if session.user_id_id != getattr(user, "id", None):
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p phiÃªn thi nÃ y.")
-
-
-def _require_seb(request: HttpRequest) -> HttpResponse | None:
-    user_agent = request.META.get("HTTP_USER_AGENT", "")
-    request_hash = request.META.get("HTTP_X_SAFEEXAMBROWSER_REQUESTHASH", "")
-    if "SEB" in user_agent.upper() or request_hash:
-        return None
-    return render(
-        request,
-        "qna/student/seb_required.html",
-        {"download_url": "https://safeexambrowser.org/download_en.html"},
-        status=403,
+    session_owner = (
+        getattr(session, "user", None)
+        or getattr(session, "user_id", None)
     )
 
+    session_owner_pk = getattr(session_owner, "pk", None)
+    if session_owner_pk is None:
+        session_owner_pk = getattr(session, "user_id_id", None)
+
+    request_user_pk = getattr(user, "pk", None)
+
+    if session_owner_pk != request_user_pk:
+        raise PermissionDenied("Bạn không có quyền truy cập phiên thi này.")
 
 def _get_avatar_data_url(profile: UserProfile) -> str:
     if profile.profile_image_blob:
@@ -218,7 +212,7 @@ def _get_student_display_room_for_subject(user, subject):
         room
         for room in rooms
         if room.exam_session_group_id.computed_status in {"SCHEDULED", "DRAFT"}
-        and room.exam_session_group_id.start_at >= now
+           and room.exam_session_group_id.start_at >= now
     ]
     if upcoming_rooms:
         return min(upcoming_rooms, key=lambda room: room.exam_session_group_id.start_at)
@@ -255,7 +249,7 @@ def _is_exam_group_open(exam_group):
 
 def _deny_if_exam_closed(request, exam_group, subject_code):
     if not exam_group or exam_group.status == "CANCELLED":
-        messages.error(request, "Ca thi khÃ´ng kháº£ dá»¥ng.")
+        messages.error(request, "Ca thi không khả dụng.")
         return redirect("qna:dashboard")
 
     now = timezone.now()
@@ -264,7 +258,7 @@ def _deny_if_exam_closed(request, exam_group, subject_code):
         return redirect("qna:dashboard")
 
     if now > exam_group.end_at:
-        messages.error(request, "Ca thi Ä‘Ã£ káº¿t thÃºc.")
+        messages.error(request, "Ca thi đã kết thúc.")
         return redirect("qna:dashboard")
 
     return None
@@ -282,11 +276,11 @@ def _get_student_exam_access_context(user, subject):
 
 
 def _student_exam_access_denied_message(display_room, *, no_room_message):
-    return "ChÆ°a Ä‘áº¿n giá» hoáº·c Ä‘Ã£ háº¿t giá» thi." if display_room else no_room_message
+    return "Chưa đến giờ hoặc đã hết giờ thi." if display_room else no_room_message
 
 
 def _locked_subject_mutation_response(response_style="status"):
-    message = "KhÃ´ng thá»ƒ chá»‰nh sá»­a khi ca thi Ä‘ang diá»…n ra."
+    message = "Không thể chỉnh sửa khi ca thi đang diễn ra."
     if response_style == "legacy":
         return JsonResponse({"success": False, "error": message}, status=403)
     return JsonResponse({"status": "FAIL", "message": message}, status=403)
@@ -314,9 +308,9 @@ def _room_password_attempts_key(user_id: int, subject_code: str) -> str:
 
 
 def _store_student_room_password_access(
-    request: HttpRequest,
-    exam_group: ExamSessionGroup | None,
-    room: ExamSessionRoom | None,
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+        room: ExamSessionRoom | None,
 ) -> None:
     if not exam_group or not room:
         return
@@ -328,9 +322,9 @@ def _store_student_room_password_access(
 
 
 def _student_has_room_password_access(
-    request: HttpRequest,
-    exam_group: ExamSessionGroup | None,
-    room: ExamSessionRoom | None,
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+        room: ExamSessionRoom | None,
 ) -> bool:
     if not exam_group or not room:
         return False
@@ -342,12 +336,12 @@ def _student_has_room_password_access(
 
 
 def _store_student_exam_entry_payload(
-    request: HttpRequest,
-    exam_group: ExamSessionGroup | None,
-    room: ExamSessionRoom | None,
-    *,
-    face_image_b64: str,
-    face_image_mime: str,
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+        room: ExamSessionRoom | None,
+        *,
+        face_image_b64: str,
+        face_image_mime: str,
 ) -> dict[str, Any]:
     payload = {
         "entry_token": uuid4().hex,
@@ -363,8 +357,8 @@ def _store_student_exam_entry_payload(
 
 
 def _get_student_exam_entry_payload(
-    request: HttpRequest,
-    exam_group: ExamSessionGroup | None,
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
 ) -> dict[str, Any] | None:
     if not exam_group:
         return None
@@ -575,7 +569,7 @@ def _build_session_question_details(session: ExamSession) -> list[SimpleNamespac
                     question=question,
                     result=result,
                     is_answered=bool(result),
-                    status_label="ÄÃ£ tráº£ lá»i" if result else "ChÆ°a tráº£ lá»i",
+                    status_label="Đã trả lời" if result else "ChÆ°a tráº£ lá»i",
                     raw_question_score=float(item.score or 0),
                 )
             )
@@ -589,7 +583,7 @@ def _build_session_question_details(session: ExamSession) -> list[SimpleNamespac
                     question=question,
                     result=result,
                     is_answered=bool(result),
-                    status_label="ÄÃ£ tráº£ lá»i" if result else "ChÆ°a tráº£ lá»i",
+                    status_label="Đã trả lời" if result else "ChÆ°a tráº£ lá»i",
                     raw_question_score=None,
                 )
             )
@@ -604,7 +598,7 @@ def _build_session_question_details(session: ExamSession) -> list[SimpleNamespac
                 question=result.question_id,
                 result=result,
                 is_answered=True,
-                status_label="ÄÃ£ tráº£ lá»i",
+                status_label="Đã trả lời",
                 raw_question_score=None,
             )
         )
@@ -624,9 +618,9 @@ def _format_duration_display(total_seconds: int | None) -> str:
     if hours:
         parts.append(f"{hours} giá»")
     if minutes:
-        parts.append(f"{minutes} phÃºt")
+        parts.append(f"{minutes} phút")
     if seconds or not parts:
-        parts.append(f"{seconds} giÃ¢y")
+        parts.append(f"{seconds} giây")
     return " ".join(parts)
 
 
@@ -639,7 +633,8 @@ def _get_session_duration_seconds(session: ExamSession) -> int | None:
     if end_at is None:
         latest_answered_at = getattr(session, "latest_answered_at", None)
         if latest_answered_at is None:
-            latest_answered_at = ExamResult.objects.filter(exam_session_id=session).aggregate(latest=Max("answered_at"))["latest"]
+            latest_answered_at = \
+            ExamResult.objects.filter(exam_session_id=session).aggregate(latest=Max("answered_at"))["latest"]
         end_at = latest_answered_at
 
     if end_at is None:
@@ -659,26 +654,14 @@ def _attach_session_assignment_meta(session: ExamSession):
     session.room_display = (room_cfg or {}).get("room_name") or "-"
 
     exam_code_id = _get_session_assigned_exam_code_id(session)
-    exam_code = ExamCode.objects.filter(pk=exam_code_id).only("code_name", "code_number").first() if exam_code_id else None
+    exam_code = ExamCode.objects.filter(pk=exam_code_id).only("code_name",
+                                                              "code_number").first() if exam_code_id else None
     if exam_code:
         session.exam_code_display = exam_code.code_name or str(exam_code.code_number or exam_code.pk)
     else:
         session.exam_code_display = "-"
 
     return session
-
-
-def _get_session_appeal_deadline(session: ExamSession):
-    if not session.completed_at:
-        return None
-    return session.completed_at + APPEAL_WINDOW_DELTA
-
-
-def _is_session_appeal_open(session: ExamSession, reference_time=None) -> bool:
-    deadline = _get_session_appeal_deadline(session)
-    if deadline is None:
-        return False
-    return (reference_time or timezone.now()) <= deadline
 
 
 def _is_session_finalized(session: ExamSession) -> bool:
@@ -701,7 +684,18 @@ def _sync_session_completion_flags(session: ExamSession) -> None:
 
     if update_fields:
         session.save(update_fields=update_fields)
+def _get_session_appeal_deadline(session: ExamSession):
+    completed_at = getattr(session, "completed_at", None)
+    if not completed_at:
+        return None
+    return completed_at + timedelta(days=7)
 
+
+def _is_session_appeal_open(session: ExamSession) -> bool:
+    deadline = _get_session_appeal_deadline(session)
+    if not deadline:
+        return False
+    return timezone.now() <= deadline
 
 # =========================================================
 # AUTH / ROOT
@@ -871,14 +865,14 @@ def lecturer_profile_view(request: HttpRequest) -> HttpResponse:
 @require_POST
 def lecturer_create_question(request):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
 
     subject_id = request.POST.get("subject_id")
     question_text = (request.POST.get("question_text") or "").strip()
     difficulty = request.POST.get("difficulty")
 
     if not all([subject_id, question_text, difficulty]):
-        return JsonResponse({"success": False, "error": "Thiáº¿u thÃ´ng tin báº¯t buá»™c"}, status=400)
+        return JsonResponse({"success": False, "error": "Thiếu thông tin bắt buộc"}, status=400)
 
     subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
     if _subject_has_ongoing_exam_group(subject):
@@ -897,7 +891,7 @@ def lecturer_create_question(request):
         question_id_in_barem=f"Q_{subject.subject_code}_{uuid4().hex[:8]}",
     )
 
-    messages.success(request, "ÄÃ£ táº¡o cÃ¢u há»i thÃ nh cÃ´ng.")
+    messages.success(request, "Đã tạo câu hỏi thành công.")
     return JsonResponse({"success": True, "question_id": question.id})
 
 
@@ -905,7 +899,7 @@ def lecturer_create_question(request):
 @require_POST
 def lecturer_update_question(request, question_id):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
 
     question = get_object_or_404(Question, pk=question_id)
     if question.is_exam_clone:
@@ -914,7 +908,7 @@ def lecturer_update_question(request, question_id):
             status=400,
         )
     if question.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p mÃ´n há»c nÃ y"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập môn học này"}, status=403)
     if _subject_has_ongoing_exam_group(question.subject):
         return _locked_subject_mutation_response(response_style="legacy")
 
@@ -933,7 +927,7 @@ def lecturer_update_question(request, question_id):
         question.difficulty = difficulty
     question.save()
 
-    messages.success(request, "ÄÃ£ cáº­p nháº­t cÃ¢u há»i thÃ nh cÃ´ng.")
+    messages.success(request, "Đã cập nhật câu hỏi thành công.")
     return JsonResponse({"success": True})
 
 
@@ -941,7 +935,7 @@ def lecturer_update_question(request, question_id):
 @require_POST
 def lecturer_delete_question(request, question_id):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
 
     question = get_object_or_404(Question, pk=question_id)
     if question.is_exam_clone:
@@ -950,12 +944,12 @@ def lecturer_delete_question(request, question_id):
             status=400,
         )
     if question.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p mÃ´n há»c nÃ y"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập môn học này"}, status=403)
     if _subject_has_ongoing_exam_group(question.subject):
         return _locked_subject_mutation_response(response_style="legacy")
 
     question.delete()
-    messages.success(request, "ÄÃ£ xoÃ¡ cÃ¢u há»i thÃ nh cÃ´ng.")
+    messages.success(request, "Đã xoá câu hỏi thành công.")
     return JsonResponse({"success": True})
 
 
@@ -963,12 +957,12 @@ def lecturer_delete_question(request, question_id):
 @require_POST
 def lecturer_import_questions(request):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
 
     subject_id = request.POST.get("subject_id")
     file_obj = request.FILES.get("file")
     if not subject_id or not file_obj:
-        return JsonResponse({"success": False, "error": "Thiáº¿u thÃ´ng tin"}, status=400)
+        return JsonResponse({"success": False, "error": "Thiếu thông tin"}, status=400)
 
     subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
     if _subject_has_ongoing_exam_group(subject):
@@ -1004,7 +998,7 @@ def lecturer_import_questions(request):
 
         messages.success(
             request,
-            f"ÄÃ£ import {imported_count} cÃ¢u há»i thÃ nh cÃ´ng. Bá» qua {duplicated_count} cÃ¢u bá»‹ trÃ¹ng vÃ  {invalid_count} dÃ²ng khÃ´ng há»£p lá»‡.",
+            f"Đã import {imported_count} câu hỏi thành công. Bỏ qua {duplicated_count} câu bị trùng và {invalid_count} dòng không hợp lệ.",
         )
         return JsonResponse(
             {
@@ -1080,7 +1074,7 @@ def _serialize_question(question: Question):
     elif "IMP_" in barem_id:
         source_text = "Import tá»« file CSV/Excel"
     else:
-        source_text = "Giáº£ng viÃªn thÃªm thá»§ cÃ´ng"
+        source_text = "Giảng viên thêm thủ công"
 
     time_str = ""
     if question.created_at:
@@ -1212,7 +1206,7 @@ def _read_txt_file(file_path: str) -> str:
         with open(file_path, "r", encoding="latin-1") as f:
             return f.read()
     except Exception as exc:
-        logger.exception("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c TXT: %s", exc)
+        logger.exception("Không đọc được TXT: %s", exc)
         return ""
 
 
@@ -1222,7 +1216,7 @@ def _read_docx_file(file_path: str) -> str:
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         return "\n".join(paragraphs)
     except Exception as exc:
-        logger.exception("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c DOCX: %s", exc)
+        logger.exception("Không đọc được DOCX: %s", exc)
         return ""
 
 
@@ -1234,7 +1228,7 @@ def _read_pdf_file(file_path: str) -> str:
         for page_num in range(pdf_document.page_count):
             try:
                 page = pdf_document.load_page(page_num)
-                # get_text("text") giÃºp láº¥y text báº£o toÃ n bá»‘ cá»¥c tá»‘t hÆ¡n
+                # get_text("text") giúp lấy text bảo toàn bộ cục tốt hơn
                 page_text = page.get_text("text") or ""
                 if page_text.strip():
                     texts.append(page_text.strip())
@@ -1242,7 +1236,7 @@ def _read_pdf_file(file_path: str) -> str:
                 continue
         return "\n".join(texts)
     except Exception as exc:
-        logger.exception("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c PDF: %s", exc)
+        logger.exception("Không đọc được PDF: %s", exc)
         return ""
 
 
@@ -1278,7 +1272,7 @@ def _build_material_context(materials) -> str:
 
         if text.strip():
             blocks.append(
-                f"TÃ€I LIá»†U {idx}: {material.title}\n"
+                f"TÀI LIỆU {idx}: {material.title}\n"
                 f"Ná»˜I DUNG:\n{text}"
             )
     return "\n\n" + ("\n\n" + "=" * 80 + "\n\n").join(blocks)
@@ -1293,7 +1287,7 @@ def _normalize_requested_question_counts(total_count: int, level_config: dict) -
     hard_count = max(int(level_config.get("hard", 0) or 0), 0)
 
     if easy_count + medium_count + hard_count != total_count:
-        raise ValueError("PhÃ¢n bá»• Ä‘á»™ khÃ³ khÃ´ng khá»›p vá»›i tá»•ng sá»‘ lÆ°á»£ng cÃ¢u há»i yÃªu cáº§u.")
+        raise ValueError("Phân bổ độ khó không khớp với tổng số lượng câu hỏi yêu cầu.")
 
     return {
         "EASY": easy_count,
@@ -1363,11 +1357,11 @@ def _generate_questions_from_ai(
     if not api_key:
         api_key = os.getenv("OPENAI_API_KEY", "")
         if not api_key:
-            raise Exception("Thiáº¿u OPENAI_API_KEY trong settings.py hoáº·c biáº¿n mÃ´i trÆ°á»ng")
+            raise Exception("Thiếu OPENAI_API_KEY trong settings.py hoặc biến môi trường")
 
     context_text = _build_material_context(materials)
     if not context_text.strip():
-        raise Exception("KhÃ´ng trÃ­ch xuáº¥t Ä‘Æ°á»£c ná»™i dung tá»« tÃ i liá»‡u táº£i lÃªn.")
+        raise Exception("Không trích xuất được nội dung từ tài liệu tải lên.")
 
     target_counts = _normalize_requested_question_counts(total_count, level_config)
 
@@ -1385,20 +1379,20 @@ def _generate_questions_from_ai(
     }
 
     system_prompt = """
-Báº¡n lÃ  trá»£ lÃ½ táº¡o cÃ¢u há»i váº¥n Ä‘Ã¡p cho giáº£ng viÃªn Ä‘áº¡i há»c.
+Bạn là trợ lý tạo câu hỏi văn đáp cho giảng viên đại học.
 
 NHIá»†M Vá»¤:
 - Chá»‰ Ä‘Æ°á»£c táº¡o cÃ¢u há»i dá»±a trÃªn ná»™i dung tÃ i liá»‡u Ä‘Æ°á»£c cung cáº¥p.
 - KhÃ´ng bá»‹a thÃªm kiáº¿n thá»©c ngoÃ i tÃ i liá»‡u.
-- CÃ¢u há»i pháº£i rÃµ rÃ ng, Ä‘Ãºng ngá»¯ cáº£nh mÃ´n há»c.
-- CÃ¢u há»i dáº¡ng váº¥n Ä‘Ã¡p, phÃ¹ há»£p Ä‘á»ƒ giáº£ng viÃªn há»i sinh viÃªn trá»±c tiáº¿p.
-- KhÃ´ng Ä‘Æ°á»£c táº¡o cÃ¢u há»i trÃ¹ng Ã½ nhau quÃ¡ nhiá»u.
-- PhÃ¢n loáº¡i Ä‘Ãºng má»©c Ä‘á»™ EASY / MEDIUM / HARD.
+- Câu hỏi phải rõ ràng, đúng ngữ cảnh môn học.
+- Câu hỏi dạng văn đáp, phù hợp để giảng viên hỏi sinh viên trực tiếp.
+- Không được tạo câu hỏi trùng ý nhau quá nhiều.
+- Phân loại đúng mức độ EASY / MEDIUM / HARD.
 
 Má»¨C Äá»˜:
-- EASY: há»i khÃ¡i niá»‡m, Ä‘á»‹nh nghÄ©a, trÃ¬nh bÃ y cÆ¡ báº£n
-- MEDIUM: há»i phÃ¢n tÃ­ch, so sÃ¡nh, giáº£i thÃ­ch, liÃªn há»‡
-- HARD: há»i váº­n dá»¥ng, Ä‘Ã¡nh giÃ¡, tÃ¬nh huá»‘ng, láº­p luáº­n sÃ¢u
+- EASY: hỏi khái niệm, định nghĩa, trình bày cơ bản
+- MEDIUM: hỏi phân tích, so sánh, giải thích, liên hệ
+- HARD: hỏi vận dụng, đánh giá, tình huống, lập luận sâu
 
 Äáº¦U RA:
 Tráº£ vá» JSON há»£p lá»‡ theo Ä‘Ãºng format:
@@ -1407,13 +1401,13 @@ Tráº£ vá» JSON há»£p lá»‡ theo Ä‘Ãºng format:
     {
       "content": "....",
       "difficulty": "EASY",
-      "source": "TÃªn tÃ i liá»‡u liÃªn quan"
+      "source": "Tên tài liệu liên quan"
     }
   ]
 }
-KhÃ´ng thÃªm markdown, khÃ´ng thÃªm giáº£i thÃ­ch ngoÃ i JSON.
-Pháº£i tuÃ¢n thá»§ chÃ­nh xÃ¡c sá»‘ lÆ°á»£ng tá»«ng má»©c Ä‘á»™ Ä‘Æ°á»£c yÃªu cáº§u.
-KhÃ´ng Ä‘Æ°á»£c tráº£ vá» cÃ¢u há»i trÃ¹ng láº·p hoáº·c gáº§n nhÆ° trÃ¹ng láº·p.
+Không thêm markdown, không thêm giải thích ngoài JSON.
+Phải tuân thủ chính xác số lượng từng mức độ được yêu cầu.
+Không được trả về câu hỏi trùng lặp hoặc gần như trùng lặp.
 """
 
     collected_questions = []
@@ -1430,29 +1424,29 @@ KhÃ´ng Ä‘Æ°á»£c tráº£ vá» cÃ¢u há»i trÃ¹ng láº·p ho�
         )[-20:]
         excluded_block = ""
         if excluded_items:
-            excluded_block = "\n\nCÃC CÃ‚U KHÃ”NG ÄÆ¯á»¢C Láº¶P Láº I:\n" + "\n".join(
+            excluded_block = "\n\nCÁC CÂU KHÔNG ĐƯỢC LẶP LẠI:\n" + "\n".join(
                 f"- {item}" for item in excluded_items
             )
 
         user_prompt = f"""
-MÃ´n há»c: {subject.name}
-MÃ£ mÃ´n: {subject.subject_code}
+Môn học: {subject.name}
+Mã môn: {subject.subject_code}
 
 HÃ£y táº¡o chÃ­nh xÃ¡c {remaining_total} cÃ¢u há»i váº¥n Ä‘Ã¡p má»›i dá»±a trÃªn ná»™i dung tÃ i liá»‡u bÃªn dÆ°á»›i.
 
-YÃŠU Cáº¦U Sá» LÆ¯á»¢NG Báº®T BUá»˜C:
+YÊU CẦU SỐ LƯỢNG BẮT BUỘC:
 - EASY: {remaining_counts['EASY']}
 - MEDIUM: {remaining_counts['MEDIUM']}
 - HARD: {remaining_counts['HARD']}
 
-YÃŠU Cáº¦U CHáº¤T LÆ¯á»¢NG:
+YÊU CẦU CHẤT LƯỢNG:
 - CÃ¢u há»i pháº£i bÃ¡m sÃ¡t tÃ i liá»‡u
-- CÃ¢u há»i ngáº¯n gá»n, rÃµ rÃ ng, cÃ³ chiá»u sÃ¢u
-- KhÃ´ng láº·p láº¡i ná»™i dung giá»¯a cÃ¡c cÃ¢u
-- Tá»•ng sá»‘ pháº§n tá»­ trong máº£ng questions pháº£i Ä‘Ãºng báº±ng {remaining_total}
-- KhÃ´ng Ä‘Æ°á»£c tráº£ vá» cÃ¢u há»i thá»«a so vá»›i tá»«ng má»©c Ä‘á»™ yÃªu cáº§u{excluded_block}
+- Câu hỏi ngắn gọn, rõ ràng, có chiều sâu
+- Không lặp lại nội dung giữa các câu
+- Tổng số phần tử trong mảng questions phải đúng bằng {remaining_total}
+- Không được trả về câu hỏi thừa so với từng mức độ yêu cầu{excluded_block}
 
-TÃ€I LIá»†U:
+TÀI LIỆU:
 {context_text}
 """
 
@@ -1493,7 +1487,7 @@ TÃ€I LIá»†U:
             if count > 0
         ]
         shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
-        raise Exception(f"AI khÃ´ng táº¡o Ä‘á»§ cÃ¢u há»i theo sá»‘ lÆ°á»£ng yÃªu cáº§u ({shortage_text}).")
+        raise Exception(f"AI không tạo đủ câu hỏi theo số lượng yêu cầu ({shortage_text}).")
 
     return collected_questions
 
@@ -1515,7 +1509,7 @@ def lecturer_questions_screen(request):
     selected_subject = _get_selected_subject_for_lecturer(request, subject_id)
     question_banks = []
     documents = []
-    selected_bank_name = "NgÃ¢n hÃ ng cÃ¢u há»i"
+    selected_bank_name = "Ngân hàng câu hỏi"
 
     if selected_subject:
         banks = _get_lecturer_question_banks_with_counts(request, selected_subject).order_by("-created_at")
@@ -1629,7 +1623,7 @@ def api_create_question_bank(request):
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
     if _subject_has_ongoing_exam_group(subject):
         return _locked_subject_mutation_response()
-    bank_name = (payload.get("name") or f"NgÃ¢n hÃ ng - {subject.subject_code}").strip()
+    bank_name = (payload.get("name") or f"Ngân hàng - {subject.subject_code}").strip()
 
     if QuestionBank.objects.filter(subject_id=subject, name__iexact=bank_name).exists():
         return JsonResponse({
@@ -1644,7 +1638,7 @@ def api_create_question_bank(request):
             "status": "SUCCESS",
             "bank_id": str(bank.id),
             "bank_name": bank.name,
-            "message": "Táº¡o ngÃ¢n hÃ ng cÃ¢u há»i thÃ nh cÃ´ng.",
+            "message": "Tạo ngân hàng câu hỏi thành công.",
         }
     )
 
@@ -1699,7 +1693,7 @@ def api_save_question_bank_questions(request, bank_id):
         {
             "status": "SUCCESS",
             "subject_id": subject.id,
-            "message": "LÆ°u ngÃ¢n hÃ ng cÃ¢u há»i thÃ nh cÃ´ng.",
+            "message": "Lưu ngân hàng câu hỏi thành công.",
             "saved_count": len(selected_drafts),
             "discarded_count": discarded_count,
             "question_count": int(getattr(bank_with_count, "question_count_value", 0) or 0),
@@ -1738,7 +1732,7 @@ def api_delete_question_bank(request, bank_id):
                 pass
         materials.delete()
         bank.delete()
-        return JsonResponse({"status": "SUCCESS", "message": "ÄÃ£ xÃ³a ngÃ¢n hÃ ng cÃ¢u há»i thÃ nh cÃ´ng."})
+        return JsonResponse({"status": "SUCCESS", "message": "Đã xóa ngân hàng câu hỏi thành công."})
     except Exception as exc:
         return JsonResponse({"status": "FAIL", "message": f"Lá»—i: {str(exc)}"}, status=500)
 
@@ -1747,7 +1741,7 @@ def api_delete_question_bank(request, bank_id):
 @require_POST
 def api_material_presign(request):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"status": "FAIL", "message": "KhÃ´ng cÃ³ quyá»n truy cáº­p."}, status=403)
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập."}, status=403)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -1760,7 +1754,7 @@ def api_material_presign(request):
     if not file_name:
         return JsonResponse({"status": "FAIL", "message": "TÃªn file khÃ´ng há»£p lá»‡."}, status=400)
     if file_size > 50 * 1024 * 1024:
-        return JsonResponse({"status": "FAIL", "message": "File vÆ°á»£t quÃ¡ 50MB."}, status=400)
+        return JsonResponse({"status": "FAIL", "message": "File vượt quá 50MB."}, status=400)
 
     file_key = f"lecture_materials/tmp/{uuid4().hex}_{file_name}"
     return JsonResponse(
@@ -1768,7 +1762,7 @@ def api_material_presign(request):
             "status": "SUCCESS",
             "presigned_url": f"/media/{file_key}",
             "file_key": file_key,
-            "message": "Táº¡o phiÃªn upload thÃ nh cÃ´ng.",
+            "message": "Tạo phiên upload thành công.",
         }
     )
 
@@ -1863,7 +1857,7 @@ def api_material_upload_complete(request):
             "status": "SUCCESS",
             "document_id": str(material.id),
             "file_name": material.title,
-            "message": "Upload thÃ nh cÃ´ng.",
+            "message": "Upload thành công.",
         }
     )
 
@@ -1874,10 +1868,11 @@ def lecturer_delete_material(request, material_id):
     material = get_object_or_404(LectureMaterial, pk=material_id)
 
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"status": "FAIL", "message": "KhÃ´ng cÃ³ quyá»n truy cáº­p."}, status=403)
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập."}, status=403)
 
     if material.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"status": "FAIL", "message": "Báº¡n khÃ´ng cÃ³ quyá»n xÃ³a tÃ i liá»‡u nÃ y."}, status=403)
+        return JsonResponse({"status": "FAIL", "message": "Báº¡n khÃ´ng cÃ³ quyá»n xÃ³a tÃ i liá»‡u nÃ y."},
+                            status=403)
     if _subject_has_ongoing_exam_group(material.subject):
         return _locked_subject_mutation_response()
 
@@ -2025,7 +2020,8 @@ def api_create_manual_question(request):
         if real_bank_id:
             bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=real_bank_id).first()
             if bank_obj is None:
-                return JsonResponse({"status": "FAIL", "message": "NgÃ¢n hÃ ng cÃ¢u há»i khÃ´ng há»£p lá»‡."}, status=404)
+                return JsonResponse({"status": "FAIL", "message": "NgÃ¢n hÃ ng cÃ¢u há»i khÃ´ng há»£p lá»‡."},
+                                    status=404)
         question_code = f"MAN_{subject.subject_code}_{uuid4().hex[:8]}"
 
     try:
@@ -2046,7 +2042,7 @@ def api_create_manual_question(request):
         {
             "status": "SUCCESS",
             "question": _serialize_question(question),
-            "message": "ThÃªm cÃ¢u há»i thÃ nh cÃ´ng.",
+            "message": "Thêm câu hỏi thành công.",
         }
     )
 
@@ -2058,7 +2054,7 @@ def api_update_question_bank_question(request, question_id):
 
     question = get_object_or_404(Question, pk=question_id)
     if question.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"status": "FAIL", "message": "KhÃ´ng cÃ³ quyá»n truy cáº­p mÃ´n há»c nÃ y."}, status=403)
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập môn học này."}, status=403)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -2099,7 +2095,7 @@ def api_update_question_bank_question(request, question_id):
         {
             "status": "SUCCESS",
             "question": _serialize_question(question),
-            "message": "Cáº­p nháº­t cÃ¢u há»i thÃ nh cÃ´ng.",
+            "message": "Cập nhật câu hỏi thành công.",
         }
     )
 
@@ -2116,12 +2112,12 @@ def api_delete_question_bank_question(request, question_id):
             status=400,
         )
     if question.subject not in request.user.userprofile.subjects_taught.all():
-        return JsonResponse({"status": "FAIL", "message": "KhÃ´ng cÃ³ quyá»n truy cáº­p mÃ´n há»c nÃ y."}, status=403)
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập môn học này."}, status=403)
     if _subject_has_ongoing_exam_group(question.subject):
         return _locked_subject_mutation_response()
 
     question.delete()
-    return JsonResponse({"status": "SUCCESS", "message": "XÃ³a cÃ¢u há»i thÃ nh cÃ´ng."})
+    return JsonResponse({"status": "SUCCESS", "message": "Xóa câu hỏi thành công."})
 
 
 @login_required
@@ -2188,7 +2184,7 @@ def api_bulk_delete_questions(request):
         {
             "status": "SUCCESS",
             "affected": deleted_count,
-            "message": "XÃ³a cÃ¢u há»i thÃ nh cÃ´ng.",
+            "message": "Xóa câu hỏi thành công.",
         }
     )
 
@@ -2223,7 +2219,7 @@ def api_generate_questions(request):
 
     if not workspace_id:
         return JsonResponse(
-            {"status": "FAIL", "message": "Thiáº¿u workspace_id cho phiÃªn táº¡o cÃ¢u há»i."},
+            {"status": "FAIL", "message": "Thiếu workspace_id cho phiên tạo câu hỏi."},
             status=400,
         )
 
@@ -2346,10 +2342,10 @@ def api_generate_questions(request):
                 "status": "SUCCESS",
                 "job_id": job_id,
                 "message": (
-                    f"ÄÃ£ táº¡o {len(created_questions)}/{total_count} cÃ¢u há»i thÃ nh cÃ´ng. "
+                    f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công. "
                     f"Há»‡ thá»‘ng Ä‘Ã£ tá»± sinh bÃ¹ {skipped_duplicates} cÃ¢u bá»‹ trÃ¹ng."
                     if skipped_duplicates
-                    else f"ÄÃ£ táº¡o {len(created_questions)}/{total_count} cÃ¢u há»i thÃ nh cÃ´ng."
+                    else f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công."
                 ),
                 "questions": created_questions,
                 "summary": summary,
@@ -2374,7 +2370,7 @@ def api_generate_questions(request):
         )
         return JsonResponse({"status": "FAIL", "message": message}, status=400)
     except Exception:
-        message = "Táº¡o cÃ¢u há»i tháº¥t báº¡i. Vui lÃ²ng thá»­ láº¡i sau."
+        message = "Tạo câu hỏi thất bại. Vui lòng thử lại sau."
         logger.exception("Generate questions direct failed")
         _save_question_job(
             job_id,
@@ -2400,7 +2396,7 @@ def api_generate_questions_status(request):
 
     job = _get_question_job(job_id)
     if not job:
-        return JsonResponse({"status": "FAIL", "message": "KhÃ´ng tÃ¬m tháº¥y job."}, status=404)
+        return JsonResponse({"status": "FAIL", "message": "Không tìm thấy job."}, status=404)
 
     return JsonResponse(
         {
@@ -2420,7 +2416,7 @@ def api_generate_questions_status(request):
 @login_required
 def lecturer_question_management(request, subject_code):
     if not request.user.userprofile.is_lecturer:
-        messages.error(request, "Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p.")
+        messages.error(request, "Bạn không có quyền truy cập.")
         return redirect("qna:dashboard")
 
     subject = get_object_or_404(
@@ -2434,7 +2430,7 @@ def lecturer_question_management(request, subject_code):
     question_banks = [
         {
             "bank_id": subject.id,
-            "name": f"NgÃ¢n hÃ ng cÃ¢u há»i - {subject.subject_code}",
+            "name": f"Ngân hàng câu hỏi - {subject.subject_code}",
             "detail_url": f"{request.path}?mode=detail",
             "question_count": Question.objects.filter(subject_id=subject, is_exam_clone=False).count(),
         }
@@ -2482,7 +2478,7 @@ def lecturer_question_management(request, subject_code):
 @require_POST
 def lecturer_upload_material_screen(request):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n truy cáº­p"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
 
     subject_id = request.POST.get("subject_id")
     title = request.POST.get("title") or request.POST.get("material_name")
@@ -2517,7 +2513,7 @@ def lecturer_upload_material_screen(request):
 @require_POST
 def lecturer_upload_material(request, subject_code):
     if not request.user.userprofile.is_lecturer:
-        return JsonResponse({"success": False, "error": "KhÃ´ng cÃ³ quyá»n"}, status=403)
+        return JsonResponse({"success": False, "error": "Không có quyền"}, status=403)
 
     subject = get_object_or_404(request.user.userprofile.subjects_taught, subject_code=subject_code)
     if _subject_has_ongoing_exam_group(subject):
@@ -2525,7 +2521,7 @@ def lecturer_upload_material(request, subject_code):
     title = request.POST.get("title")
     file_obj = request.FILES.get("file")
     if not title or not file_obj:
-        return JsonResponse({"success": False, "error": "Thiáº¿u thÃ´ng tin"}, status=400)
+        return JsonResponse({"success": False, "error": "Thiếu thông tin"}, status=400)
 
     upload_dir = os.path.join(settings.MEDIA_ROOT, "lecture_materials", subject_code)
     os.makedirs(upload_dir, exist_ok=True)
@@ -2618,10 +2614,10 @@ def _compute_scores(session: ExamSession) -> tuple[float, float]:
     """
     total_main_questions = max(_get_session_total_question_count(session), 0)
     total_answer_score = (
-        ExamResult.objects.filter(exam_session_id=session)
-        .aggregate(total=Sum("score"))
-        .get("total")
-        or 0.0
+            ExamResult.objects.filter(exam_session_id=session)
+            .aggregate(total=Sum("score"))
+            .get("total")
+            or 0.0
     )
 
     if total_main_questions <= 0:
@@ -2632,46 +2628,54 @@ def _compute_scores(session: ExamSession) -> tuple[float, float]:
     return main_avg, final_total
 
 
-def _attach_review_status_meta(session: ExamSession) -> None:
-    """
-    Chỉ gán các field tạm thời KHÔNG đụng vào property.
-    """
-    resolved_status = getattr(session, "display_status", None)
-    if not resolved_status:
-        if getattr(session, "session_status", "") == "COMPLETED" or getattr(session, "is_completed", False):
-            resolved_status = "COMPLETED"
-        else:
-            exam_group = getattr(session, "exam_session_group_id", None) or getattr(session, "exam_group", None)
-            if exam_group and getattr(exam_group, "computed_status", None) == "COMPLETED":
-                answered_count = _get_answered_question_count(session) if getattr(session, "id", None) else 0
-                resolved_status = "ENDED" if answered_count > 0 else "ABSENT"
-            else:
-                resolved_status = "IN_PROGRESS"
+def _attach_review_status_meta(session) -> None:
+    exam_group = getattr(session, "exam_session_group_id", None) or getattr(session, "exam_group", None)
 
-    if resolved_status == "COMPLETED":
+    answered_count = 0
+    if getattr(session, "id", None):
+        answered_count = _get_answered_question_count(session)
+
+    started_exam = bool(
+        getattr(session, "started_at", None)
+        or answered_count > 0
+        or getattr(session, "session_status", "") in {"STARTED", "COMPLETED"}
+    )
+
+    is_completed = bool(
+        getattr(session, "session_status", "") == "COMPLETED"
+        or getattr(session, "completed_at", None) is not None
+    )
+
+    if is_completed:
         session.review_status_label = "Đã hoàn thành"
         session.review_status_class = "status-completed"
         session.can_view_detail = True
         session.can_display_score = True
-    elif resolved_status == "ENDED":
-        session.review_status_label = "Đã kết thúc"
-        session.review_status_class = "status-ended"
-        session.can_view_detail = True
-        session.can_display_score = True
-    elif resolved_status == "ABSENT":
-        session.review_status_label = "Vắng thi"
-        session.review_status_class = "status-absent"
-        session.can_view_detail = False
-        session.can_display_score = False
+    elif exam_group and getattr(exam_group, "computed_status", None) in {"COMPLETED", "CANCELLED"}:
+        if started_exam:
+            session.review_status_label = "Đã kết thúc"
+            session.review_status_class = "status-ended"
+            session.can_view_detail = True
+            session.can_display_score = True
+        else:
+            session.review_status_label = "Vắng thi"
+            session.review_status_class = "status-absent"
+            session.can_view_detail = False
+            session.can_display_score = False
     else:
-        session.review_status_label = "Đang thực hiện"
-        session.review_status_class = "status-in-progress"
-        session.can_view_detail = False
-        session.can_display_score = False
+        if started_exam:
+            session.review_status_label = "Đã kết thúc"
+            session.review_status_class = "status-ended"
+            session.can_view_detail = True
+            session.can_display_score = True
+        else:
+            session.review_status_label = "Vắng thi"
+            session.review_status_class = "status-absent"
+            session.can_view_detail = False
+            session.can_display_score = False
 
     session.status_label = session.review_status_label
     session.status_class = session.review_status_class
-
 
 def _apply_review_status(row):
     row.has_violation_warning = bool(getattr(row, "visible_violation_count", 0))
@@ -2716,6 +2720,7 @@ def _build_missing_review_rows(exam_groups, existing_session_keys):
 
     return rows
 
+
 @login_required
 def lecturer_student_review_screen(request):
     if not request.user.userprofile.is_lecturer:
@@ -2759,27 +2764,36 @@ def lecturer_student_review_screen(request):
         session.main_avg = main_avg
         if session.final_score != final_total:
             session.final_score = final_total
+
         _attach_session_score_meta(session)
-        profile = getattr(session.user, "userprofile", None)
-        session.student_identifier = getattr(profile, "student_id", None) or session.user.username
-        session.student_name = getattr(profile, "full_name", None) or session.user.username
+
+        user_obj = getattr(session, "user_id", None)
+        profile = getattr(user_obj, "userprofile", None)
+
+        session.student_identifier = getattr(profile, "student_id", None) or getattr(user_obj, "username", "") or "-"
+        session.student_name = getattr(profile, "full_name", None) or getattr(user_obj, "username", "") or "-"
         session.student_class_name = getattr(profile, "class_name", None) or "-"
+
+        exam_group = getattr(session, "exam_session_group_id", None)
+
         session.exam_date_display = None
-        if session.exam_group and session.exam_group.exam_date:
-            session.exam_date_display = session.exam_group.exam_date
+        if exam_group and exam_group.exam_date:
+            session.exam_date_display = exam_group.exam_date
         elif session.completed_at:
             session.exam_date_display = session.completed_at.date()
         else:
             session.exam_date_display = session.created_at.date()
+
+        session.exam_group = exam_group
+        session.user = user_obj
         session.has_violation_warning = bool(getattr(session, "visible_violation_count", 0))
         _attach_review_status_meta(session)
         review_rows.append(session)
 
-        if session.exam_group:
+        if exam_group:
             session_key = normalize_student_code(session.student_identifier)
             if session_key:
-                existing_session_keys.add((session.exam_group.pk, session_key))
-
+                existing_session_keys.add((exam_group.pk, session_key))
     review_rows.extend(_build_missing_review_rows(selected_exam_groups, existing_session_keys))
 
     if student_filter:
@@ -2788,9 +2802,9 @@ def lecturer_student_review_screen(request):
             row
             for row in review_rows
             if keyword in (row.student_identifier or "").lower()
-            or keyword in (row.student_name or "").lower()
-            or keyword in (row.student_class_name or "").lower()
-            or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
+               or keyword in (row.student_name or "").lower()
+               or keyword in (row.student_class_name or "").lower()
+               or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
         ]
 
     default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
@@ -2831,7 +2845,6 @@ def lecturer_student_review_screen(request):
     )
 
 
-
 @login_required
 def lecturer_student_review(request, subject_code):
     if not request.user.userprofile.is_lecturer:
@@ -2862,40 +2875,33 @@ def lecturer_session_detail(request, session_id):
         pk=session_id,
     )
     if session.subject not in request.user.userprofile.subjects_taught.all():
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n")
+        raise PermissionDenied("Bạn không có quyền")
 
     if not session.is_completed and session.exam_group and session.exam_group.computed_status == "ONGOING":
         messages.warning(request, "PhiÃªn thi Ä‘ang diá»…n ra, chÆ°a thá»ƒ xem chi tiáº¿t.")
         return redirect("qna:lecturer_student_review_screen")
 
     main_avg, final_total = _compute_scores(session)
-    session.detail_status_label = "Äang thá»±c hiá»‡n"
-    session.detail_status_class = "status-in-progress"
-    if session.is_completed:
-        session.detail_status_label = "ÄÃ£ hoÃ n thÃ nh"
-        session.detail_status_class = "status-completed"
-    elif session.exam_group and session.exam_group.computed_status == "COMPLETED":
-        session.detail_status_label = "Váº¯ng thi"
-        session.detail_status_class = "status-absent"
-    elif session.exam_group and session.exam_group.computed_status == "CANCELLED":
-        session.detail_status_label = "ÄÃ£ há»§y"
-        session.detail_status_class = "status-absent"
+    _attach_review_status_meta(session)
+    session.detail_status_label = session.review_status_label
+    session.detail_status_class = session.review_status_class
 
-    # Láº¥y danh sÃ¡ch áº£nh gian láº­n
+    # Lấy danh sách ảnh gian lận
+    # violation_images = []
+    # for image in session.violation_images.exclude(
+    #     violation_type__in=LECTURER_HIDDEN_VIOLATION_TYPES
+    # ).order_by('-timestamp'):
+    #     image.violation_description = {
+    #         "TWO_FACES": "PhÃ¡t hiá»‡n nhiá»u hÆ¡n 1 gÆ°Æ¡ng máº·t",
+    #         "NO_FACE": "KhÃ´ng phÃ¡t hiá»‡n khuÃ´n máº·t trong khung hÃ¬nh",
+    #         "CAMERA_OFF": "Camera bá»‹ táº¯t hoáº·c ngáº¯t káº¿t ná»‘i",
+    #     }.get(image.violation_type, "PhÃ¡t hiá»‡n dáº¥u hiá»‡u báº¥t thÆ°á»ng")
+    #     image.image_data_url = (
+    #         f"data:{image.image_mime};base64,{b64encode(image.image_blob).decode('ascii')}"
+    #         if image.image_blob and image.image_mime else None
+    #     )
+    #     violation_images.append(image)
     violation_images = []
-    for image in session.violation_images.exclude(
-        violation_type__in=LECTURER_HIDDEN_VIOLATION_TYPES
-    ).order_by('-timestamp'):
-        image.violation_description = {
-            "TWO_FACES": "PhÃ¡t hiá»‡n nhiá»u hÆ¡n 1 gÆ°Æ¡ng máº·t",
-            "NO_FACE": "KhÃ´ng phÃ¡t hiá»‡n khuÃ´n máº·t trong khung hÃ¬nh",
-            "CAMERA_OFF": "Camera bá»‹ táº¯t hoáº·c ngáº¯t káº¿t ná»‘i",
-        }.get(image.violation_type, "PhÃ¡t hiá»‡n dáº¥u hiá»‡u báº¥t thÆ°á»ng")
-        image.image_data_url = (
-            f"data:{image.image_mime};base64,{b64encode(image.image_blob).decode('ascii')}"
-            if image.image_blob and image.image_mime else None
-        )
-        violation_images.append(image)
 
     return render(
         request,
@@ -2942,7 +2948,7 @@ def lecturer_export_exam_results_screen(request):
     ws.title = "Káº¿t quáº£ thi"
 
     # YÃŠU Cáº¦U 1: Loáº¡i bá» cá»™t Ä‘iá»ƒm phá»¥
-    headers = ["STT", "MÃ£ SV", "Há» tÃªn", "Lá»›p", "NgÃ y thi", "Äiá»ƒm tá»•ng", "Cáº£nh bÃ¡o gian láº­n"]
+    headers = ["STT", "Mã SV", "Họ tên", "Lá»›p", "Ngày thi", "Äiá»ƒm tá»•ng", "Cảnh báo gian lận"]
     ws.append(headers)
 
     header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
@@ -2991,7 +2997,7 @@ def lecturer_export_exam_results_screen(request):
 @login_required
 def lecturer_export_exam_results(request, subject_code):
     if not request.user.userprofile.is_lecturer:
-        messages.error(request, "Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p.")
+        messages.error(request, "Bạn không có quyền truy cập.")
         return redirect("qna:dashboard")
 
     subject = get_object_or_404(
@@ -3018,18 +3024,18 @@ def lecturer_export_exam_results(request, subject_code):
 
     headers = [
         "STT",
-        "Há» tÃªn",
+        "Họ tên",
         "Username",
-        "MÃ£ sinh viÃªn",
+        "Mã sinh viên",
         "Lá»›p",
-        "MÃ´n há»c",
-        "MÃ£ mÃ´n",
+        "Môn học",
+        "Mã môn",
         "Ca thi",
-        "NgÃ y thi",
+        "Ngày thi",
         "Äiá»ƒm cuá»‘i",
-        "Tráº¡ng thÃ¡i hoÃ n thÃ nh",
-        "XÃ¡c thá»±c khuÃ´n máº·t",
-        "Cáº£nh bÃ¡o gian láº­n"
+        "Trạng thái hoàn thành",
+        "Xác thực khuôn mặt",
+        "Cảnh báo gian lận"
     ]
     ws.append(headers)
 
@@ -3047,7 +3053,7 @@ def lecturer_export_exam_results(request, subject_code):
                 session.exam_group.group_name if session.exam_group else "",
                 session.created_at.strftime("%d/%m/%Y %H:%M") if session.created_at else "",
                 session.final_score if session.final_score is not None else "",
-                "ÄÃ£ hoÃ n thÃ nh" if session.is_completed else "ChÆ°a hoÃ n thÃ nh",
+                "Đã hoàn thành" if session.is_completed else "Chưa hoàn thành",
                 session.get_verification_status_display() if hasattr(session,
                                                                      "get_verification_status_display") else session.verification_status,
                 "CÃ“" if _has_lecturer_visible_violation(session) else "KHÃ”NG"
@@ -3086,7 +3092,8 @@ def lecturer_export_questions_word(request):
 # =========================================================
 class RegistrationForm(forms.Form):
     full_name = forms.CharField(label=mark_safe('Há» vÃ  tÃªn <span class="text-red-500">*</span>'), max_length=150)
-    username = forms.CharField(label=mark_safe('TÃªn Ä‘Äƒng nháº­p <span class="text-red-500">*</span>'), max_length=150)
+    username = forms.CharField(label=mark_safe('TÃªn Ä‘Äƒng nháº­p <span class="text-red-500">*</span>'),
+                               max_length=150)
     class_name = forms.CharField(label=mark_safe('Lá»›p <span class="text-red-500">*</span>'), max_length=100)
     email = forms.EmailField(label="Email", required=False)
     faculty = forms.CharField(label="Khoa", required=False, max_length=150)
@@ -3184,27 +3191,46 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def history_view(request: HttpRequest) -> HttpResponse:
-    sessions = ExamSession.objects.filter(user_id=request.user).select_related("subject_id", "exam_session_group_id").order_by("-created_at")
+    sessions = (
+        ExamSession.objects.filter(user_id=request.user)
+        .select_related("subject_id", "exam_session_group_id")
+        .order_by("-created_at")
+    )
+
     for session in sessions:
         main_avg, final_total = _compute_scores(session)
         session.main_avg = main_avg
         if session.final_score != final_total:
             session.final_score = final_total
-        _attach_session_score_meta(session)
-    return render(request, "qna/student/history.html", {"sessions": sessions})
 
+        _attach_session_score_meta(session)
+        _attach_review_status_meta(session)
+
+        if session.review_status_label == "Đã hoàn thành":
+            session.history_status = "COMPLETED"
+        elif session.review_status_label == "Đã kết thúc":
+            session.history_status = "ENDED"
+        else:
+            session.history_status = "ABSENT"
+
+    return render(request, "qna/student/history.html", {"sessions": sessions})
 
 @login_required
 def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
-    session = get_object_or_404(ExamSession.objects.select_related("subject_id", "user_id"), pk=session_id)
-    _ensure_owner(session, request.user)
+    session = get_object_or_404(
+        ExamSession.objects.select_related("subject_id", "user_id"),
+        pk=session_id,
+        user_id=request.user,
+    )
 
     question_details = _build_session_question_details(session)
     _, final_total = _compute_scores(session)
     if session.final_score != final_total:
         session.final_score = final_total
+
     _attach_session_score_meta(session)
     _attach_session_duration_meta(session)
+    _attach_review_status_meta(session)
 
     return render(
         request,
@@ -3217,11 +3243,8 @@ def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
         },
     )
 
-
 @login_required
 def pre_exam_verification_view(request: HttpRequest, subject_code: str) -> HttpResponse:
-    # TEMP DISABLED: seb_block = _require_seb(request)
-    # if seb_block: return seb_block
     subject = get_object_or_404(Subject, subject_code=subject_code)
     active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
     blocked = _deny_if_exam_closed(request, exam_group, subject_code)
@@ -3251,8 +3274,6 @@ def pre_exam_verification_view(request: HttpRequest, subject_code: str) -> HttpR
 
 @login_required
 def exam_password_view(request, subject_code):
-    # TEMP DISABLED: seb_block = _require_seb(request)
-    # if seb_block: return seb_block
     subject = get_object_or_404(Subject, subject_code=subject_code)
     active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
     blocked = _deny_if_exam_closed(request, exam_group, subject_code)
@@ -3281,9 +3302,6 @@ def exam_password_view(request, subject_code):
 def verify_exam_password(request, subject_code):
     if request.method != "POST":
         return redirect("qna:exam_password", subject_code=subject_code)
-
-    # TEMP DISABLED: seb_block = _require_seb(request)
-    # if seb_block: return seb_block
 
     subject = get_object_or_404(Subject, subject_code=subject_code)
     active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
@@ -3322,8 +3340,6 @@ def verify_exam_password(request, subject_code):
 
 @login_required
 def exam_page_view(request: HttpRequest, subject_code: str) -> HttpResponse:
-    # TEMP DISABLED: seb_block = _require_seb(request)
-    # if seb_block: return seb_block
     subject = get_object_or_404(Subject, subject_code=subject_code)
 
     active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
@@ -3432,7 +3448,8 @@ def profile_view(request: HttpRequest) -> HttpResponse:
     except UserProfile.DoesNotExist:
         profile = None
     avatar_url = _get_avatar_data_url(profile) if profile else None
-    return render(request, "qna/student/profile.html", {"user": request.user, "profile": profile, "avatar_url": avatar_url})
+    return render(request, "qna/student/profile.html",
+                  {"user": request.user, "profile": profile, "avatar_url": avatar_url})
 
 
 @login_required
@@ -3532,7 +3549,7 @@ def save_violation_image(request: HttpRequest) -> JsonResponse:
             session.cheating_flag = True
             session.save(update_fields=['cheating_flag'])
 
-        return JsonResponse({"status": "success", "message": "ÄÃ£ ghi nháº­n gian láº­n."})
+        return JsonResponse({"status": "success", "message": "Đã ghi nhận gian lận."})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
@@ -3543,10 +3560,9 @@ def finalize_session_view(request: HttpRequest, session_id: int) -> JsonResponse
     session = get_object_or_404(
         ExamSession.objects.select_related("exam_session_group_id", "subject_id", "user_id"),
         pk=session_id,
+        user_id=request.user,
     )
-    _ensure_owner(session, request.user)
 
-    # Idempotent finalize
     already_finalized = _is_session_finalized(session)
     if not already_finalized:
         _sync_session_completion_flags(session)
@@ -3556,9 +3572,9 @@ def finalize_session_view(request: HttpRequest, session_id: int) -> JsonResponse
         session.save(update_fields=["final_score"])
 
     _attach_session_score_meta(session)
-    if "_attach_session_duration_meta" in (globals() or {}):
-        _attach_session_duration_meta(session)
+    _attach_session_duration_meta(session)
     deadline = _get_session_appeal_deadline(session)
+
     return JsonResponse(
         {
             "status": "success",
@@ -3575,35 +3591,6 @@ def finalize_session_view(request: HttpRequest, session_id: int) -> JsonResponse
 
 @login_required
 @require_POST
-def submit_exam_appeal(request: HttpRequest, session_id: int) -> JsonResponse:
-    session = get_object_or_404(ExamSession, pk=session_id)
-    _ensure_owner(session, request.user)
-
-    if not _is_session_finalized(session):
-        return JsonResponse({"status": "error", "message": "BÃ i thi chÆ°a Ä‘Æ°á»£c chá»‘t."}, status=400)
-
-    if not _is_session_appeal_open(session):
-        return JsonResponse({"status": "error", "message": "ÄÃ£ háº¿t thá»i gian phÃºc kháº£o."}, status=403)
-
-    payload = _json_body(request) or request.POST
-    reason = re.sub(r"\s+", " ", (payload.get("reason") or "")).strip()
-    if len(reason) < 10:
-        return JsonResponse({"status": "error", "message": "LÃ½ do phÃºc kháº£o quÃ¡ ngáº¯n."}, status=400)
-
-    appeal, created = ExamAppeal.objects.update_or_create(
-        exam_session_id=session,
-        defaults={"request_content": reason},
-    )
-    return JsonResponse(
-        {
-            "status": "success",
-            "created": created,
-            "appeal_id": appeal.pk,
-            "message": "ÄÃ£ gá»­i yÃªu cáº§u phÃºc kháº£o.",
-        }
-    )
-
-
 @login_required
 @require_POST
 def verify_student_face(request: HttpRequest) -> JsonResponse:
@@ -3666,7 +3653,7 @@ def verify_student_face(request: HttpRequest) -> JsonResponse:
 def get_verification_images(request: HttpRequest, session_id: int) -> HttpResponse:
     session = get_object_or_404(ExamSession, pk=session_id)
     if not (request.user.userprofile.is_lecturer or session.user_id == request.user):
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n xem áº£nh xÃ¡c thá»±c nÃ y.")
+        raise PermissionDenied("Bạn không có quyền xem ảnh xác thực này.")
 
     face_data_url = (
         f"data:{session.face_image_mime};base64,{b64encode(session.face_image_blob).decode('ascii')}"
@@ -3881,12 +3868,12 @@ def _student_parse_records(file_name, file_bytes):
         )
 
         if not student_code or not full_name:
-            skipped_rows.append({"row_number": row_number, "message": f"DÃ²ng {row_number}: thiáº¿u MSSV hoáº·c há» tÃªn."})
+            skipped_rows.append({"row_number": row_number, "message": f"Dòng {row_number}: thiếu MSSV hoặc họ tên."})
             continue
 
         if student_code in seen_codes:
             skipped_rows.append(
-                {"row_number": row_number, "message": f"DÃ²ng {row_number}: trÃ¹ng MSSV {student_code} trong cÃ¹ng file."}
+                {"row_number": row_number, "message": f"Dòng {row_number}: trùng MSSV {student_code} trong cùng file."}
             )
             continue
         seen_codes.add(student_code)
@@ -3931,7 +3918,7 @@ def _student_parse_records(file_name, file_bytes):
 
 def _student_create_roster(subject, created_by, academic_year, semester, uploaded_file, mode="new"):
     if mode == "replace":
-        # XÃ³a cÃ¡c roster cÅ© cÃ¹ng subject/academic_year/semester
+        # Xóa các roster cũ cùng subject/academic_year/semester
         existing_rosters = StudentRosterUpload.objects.filter(
             subject_id=subject,
             academic_year=academic_year,
@@ -3965,8 +3952,8 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
         skipped_rows.append({
             "row": None,
             "message": f"CÃ¡c MSSV sau Ä‘Ã£ tá»“n táº¡i trong danh sÃ¡ch khÃ¡c cá»§a mÃ´n {subject.subject_name} "
-                      f"nÄƒm há»c {academic_year} há»c ká»³ {semester}: {', '.join(sorted(duplicate_codes))}. "
-                      "CÃ³ thá»ƒ lÃ  import trÃ¹ng hoáº·c há»c láº¡i."
+                       f"nÄƒm há»c {academic_year} há»c ká»³ {semester}: {', '.join(sorted(duplicate_codes))}. "
+                       "CÃ³ thá»ƒ lÃ  import trÃ¹ng hoáº·c há»c láº¡i."
         })
 
     # Kiá»ƒm tra náº¿u Ä‘Ã£ cÃ³ roster cho cÃ¹ng subject/academic_year/semester
@@ -3978,9 +3965,9 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
     if existing_roster_count > 0:
         skipped_rows.append({
             "row": None,
-            "message": f"ÄÃ£ cÃ³ {existing_roster_count} danh sÃ¡ch sinh viÃªn cho mÃ´n {subject.subject_name} "
-                      f"nÄƒm há»c {academic_year} há»c ká»³ {semester}. "
-                      "CÃ³ thá»ƒ lÃ  import trÃ¹ng hoáº·c há»c láº¡i. Há»‡ thá»‘ng váº«n táº¡o danh sÃ¡ch má»›i."
+            "message": f"Đã có {existing_roster_count} danh sách sinh viên cho môn {subject.subject_name} "
+                       f"nÄƒm há»c {academic_year} há»c ká»³ {semester}. "
+                       "CÃ³ thá»ƒ lÃ  import trÃ¹ng hoáº·c há»c láº¡i. Há»‡ thá»‘ng váº«n táº¡o danh sÃ¡ch má»›i."
         })
 
     roster = StudentRosterUpload(
@@ -4176,8 +4163,8 @@ def lecturer_student_list_template(request, subject_code):
 
     workbook = OpenpyxlWorkbook()
     worksheet = workbook.active
-    worksheet.title = "Danh sÃ¡ch sinh viÃªn"
-    worksheet.append(["MÃ£ sá»‘ sinh viÃªn", "Há» vÃ  tÃªn", "Giá»›i tÃ­nh", "NgÃ y sinh", "Lá»›p", "Email"])
+    worksheet.title = "Danh sách sinh viên"
+    worksheet.append(["MÃ£ sá»‘ sinh viÃªn", "Họ và tên", "Giá»›i tÃ­nh", "Ngày sinh", "Lá»›p", "Email"])
     worksheet.append(["SV2024001", "Nguyá»…n VÄƒn An", "Nam", "12/05/2003", "CNT01", "sv2024001@example.com"])
     worksheet.append(["SV2024002", "Tráº§n Thá»‹ BÃ­ch", "Ná»¯", "24/08/2003", "CNT01", "sv2024002@example.com"])
 
@@ -4197,7 +4184,7 @@ def lecturer_student_list_detail(request, roster_id):
         pk=roster_id,
     )
     if roster.subject not in request.user.userprofile.subjects_taught.all():
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p danh sÃ¡ch nÃ y.")
+        raise PermissionDenied("Bạn không có quyền truy cập danh sách này.")
 
     keyword = (request.GET.get("q") or "").strip()
     students_qs = roster.students.select_related("linked_user_id").order_by("row_number")
@@ -4253,7 +4240,7 @@ def _student_account_modal_error(request, roster, message, existing_students=Non
 
 def _validate_student_batch_password(password):
     if not str(password or "").strip():
-        raise ValidationError("Vui lÃ²ng nháº­p máº­t kháº©u.")
+        raise ValidationError("Vui lòng nhập mật khẩu.")
 
 
 @login_required
@@ -4262,7 +4249,7 @@ def lecturer_student_list_delete(request, roster_id):
     _ensure_lecturer(request)
     roster = get_object_or_404(StudentRosterUpload.objects.select_related("subject_id"), pk=roster_id)
     if roster.subject not in request.user.userprofile.subjects_taught.all():
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n xÃ³a danh sÃ¡ch nÃ y.")
+        raise PermissionDenied("Bạn không có quyền xóa danh sách này.")
 
     subject_code = roster.subject.subject_code
     if roster.uploaded_file:
@@ -4288,7 +4275,7 @@ def lecturer_student_list_upload(request, subject_code):
         wants_json = _is_ajax_request(request)
 
         if not files:
-            message = "Vui lÃ²ng chá»n Ã­t nháº¥t 1 file danh sÃ¡ch sinh viÃªn."
+            message = "Vui lòng chọn ít nhất 1 file danh sách sinh viên."
             if wants_json:
                 return JsonResponse({"success": False, "message": message}, status=400)
             messages.error(request, message)
@@ -4332,7 +4319,7 @@ def lecturer_student_list_upload(request, subject_code):
                     "results": success_items,
                     "errors": errors,
                     "message": (
-                        f"Táº£i lÃªn thÃ nh cÃ´ng {len(success_items)} file danh sÃ¡ch sinh viÃªn."
+                        f"Tải lên thành công {len(success_items)} file danh sách sinh viên."
                         if success_items
                         else "Táº£i file tháº¥t báº¡i."
                     ),
@@ -4341,13 +4328,13 @@ def lecturer_student_list_upload(request, subject_code):
             )
 
         if success_items:
-            messages.success(request, f"Táº£i lÃªn thÃ nh cÃ´ng {len(success_items)} file danh sÃ¡ch sinh viÃªn.")
+            messages.success(request, f"Tải lên thành công {len(success_items)} file danh sách sinh viên.")
             for item in success_items:
                 warnings = item.get("warnings") or []
                 if warnings:
                     preview = "; ".join(warning["message"] for warning in warnings[:5])
                     extra_count = max(0, len(warnings) - 5)
-                    extra_suffix = f" (+{extra_count} dÃ²ng khÃ¡c)" if extra_count else ""
+                    extra_suffix = f" (+{extra_count} dòng khác)" if extra_count else ""
                     messages.warning(
                         request,
                         f"{item['file_name']}: bá» qua {len(warnings)} dÃ²ng khÃ´ng há»£p lá»‡ hoáº·c trÃ¹ng láº·p. {preview}{extra_suffix}",
@@ -4374,14 +4361,14 @@ def lecturer_student_list_create_accounts(request, roster_id):
     _ensure_lecturer(request)
     roster = get_object_or_404(StudentRosterUpload.objects.select_related("subject_id"), pk=roster_id)
     if roster.subject not in request.user.userprofile.subjects_taught.all():
-        raise PermissionDenied("Báº¡n khÃ´ng cÃ³ quyá»n thao tÃ¡c danh sÃ¡ch nÃ y.")
+        raise PermissionDenied("Bạn không có quyền thao tác danh sách này.")
 
     default_password = (request.POST.get("default_password") or "").strip()
     confirm_password = (request.POST.get("confirm_password") or "").strip()
     skip_existing = str(request.POST.get("skip_existing") or "").strip() in {"1", "true", "yes", "on"}
 
     if not default_password:
-        return _student_account_modal_error(request, roster, "Vui lÃ²ng nháº­p máº­t kháº©u.")
+        return _student_account_modal_error(request, roster, "Vui lòng nhập mật khẩu.")
 
     if default_password != confirm_password:
         return _student_account_modal_error(request, roster, "Máº­t kháº©u xÃ¡c nháº­n khÃ´ng khá»›p.")
@@ -4505,10 +4492,533 @@ from .session_management import (
 )
 
 
+# =========================================================
+# PATCH OVERRIDES - AI QUESTION GENERATION / WORKSPACE FIX
+# =========================================================
+def _save_question_job(job_id, payload):
+    cache_key = _question_job_cache_key(job_id)
+
+    normalized_payload = {
+        "status": payload.get("status", "PROCESSING"),
+        "progress": int(payload.get("progress", 0) or 0),
+        "questions": payload.get("questions", []) or [],
+        "summary": payload.get("summary", {}) or {},
+        "error_message": payload.get("error_message", "") or "",
+        "shortage_counts": payload.get("shortage_counts", {}) or {},
+        "message": payload.get("message", "") or "",
+        "workspace_id": payload.get("workspace_id", "") or "",
+        "subject_id": payload.get("subject_id"),
+        "view_type": payload.get("view_type", "generate") or "generate",
+    }
+
+    try:
+        cache.set(cache_key, normalized_payload, timeout=QUESTION_JOB_TIMEOUT)
+        with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+            QUESTION_JOB_LOCAL_FALLBACK.pop(cache_key, None)
+    except Exception as exc:
+        logger.warning(
+            "Question job cache unavailable for %s, using local fallback: %s",
+            job_id,
+            exc,
+        )
+        _purge_expired_local_question_jobs()
+        with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+            QUESTION_JOB_LOCAL_FALLBACK[cache_key] = {
+                "payload": normalized_payload,
+                "expires_at": timezone.now() + timedelta(seconds=QUESTION_JOB_TIMEOUT),
+            }
 
 
+def _get_question_job(job_id):
+    cache_key = _question_job_cache_key(job_id)
+
+    try:
+        cached_job = cache.get(cache_key)
+        if cached_job is not None:
+            with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+                QUESTION_JOB_LOCAL_FALLBACK.pop(cache_key, None)
+            return cached_job
+    except Exception as exc:
+        logger.warning(
+            "Question job cache read failed for %s, checking local fallback: %s",
+            job_id,
+            exc,
+        )
+
+    _purge_expired_local_question_jobs()
+    with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+        fallback_job = QUESTION_JOB_LOCAL_FALLBACK.get(cache_key)
+        if fallback_job:
+            return fallback_job["payload"]
+    return None
 
 
+@login_required
+@require_GET
+def api_get_questions(request):
+    _ensure_lecturer(request)
+
+    subject_id = request.GET.get("bank_id") or request.GET.get("subject_id")
+    real_bank_id = (request.GET.get("real_bank_id") or "").strip()
+    difficulty = (request.GET.get("difficulty") or "ALL").strip().upper()
+    view_type = (request.GET.get("view_type") or "bank").strip()
+    workspace_id = (request.GET.get("workspace_id") or "").strip()
+    search = (request.GET.get("search") or "").strip()
+
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    all_qs = Question.objects.filter(subject_id=subject, is_exam_clone=False)
+
+    if view_type == "generate":
+        if not workspace_id:
+            return JsonResponse(
+                {
+                    "status": "SUCCESS",
+                    "questions": [],
+                    "summary": {"all": 0, "easy": 0, "medium": 0, "hard": 0},
+                }
+            )
+        filtered_qs = all_qs.filter(question_id_in_barem__startswith=_draft_prefix(workspace_id))
+    elif view_type == "bank" and real_bank_id:
+        bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=real_bank_id).first()
+        if bank_obj is None:
+            return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
+
+        if workspace_id:
+            filtered_qs = all_qs.filter(
+                Q(question_bank_id=bank_obj) | Q(question_id_in_barem__startswith=_draft_prefix(workspace_id))
+            )
+        else:
+            filtered_qs = all_qs.filter(question_bank_id=bank_obj)
+    else:
+        filtered_qs = Question.objects.none()
+
+    if search:
+        filtered_qs = filtered_qs.filter(question_text__icontains=search)
+
+    summary_qs = filtered_qs
+    if difficulty and difficulty != "ALL":
+        filtered_qs = filtered_qs.filter(difficulty=difficulty)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "questions": [_serialize_question(item) for item in filtered_qs.order_by("-pk")],
+            "summary": {
+                "all": summary_qs.count(),
+                "easy": summary_qs.filter(difficulty=DifficultyLevel.EASY).count(),
+                "medium": summary_qs.filter(difficulty=DifficultyLevel.MEDIUM).count(),
+                "hard": summary_qs.filter(difficulty=DifficultyLevel.HARD).count(),
+            },
+        }
+    )
 
 
+@login_required
+@require_POST
+def api_save_question_bank_questions(request, bank_id):
+    _ensure_lecturer(request)
+    bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
+    subject = bank.subject
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
 
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        question_ids = payload.get("question_ids", [])
+    except Exception:
+        return JsonResponse({"status": "FAIL", "message": "Dữ liệu không hợp lệ."}, status=400)
+
+    workspace_id = _get_workspace_id(request, payload)
+    if not workspace_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu workspace_id."}, status=400)
+
+    if isinstance(question_ids, str):
+        try:
+            question_ids = json.loads(question_ids)
+        except Exception:
+            question_ids = []
+
+    question_ids = [int(item) for item in question_ids if str(item).isdigit()]
+    if not question_ids:
+        return JsonResponse({"status": "FAIL", "message": "Vui lòng chọn ít nhất 1 câu hỏi để lưu."}, status=400)
+
+    draft_prefix = _draft_prefix(workspace_id)
+
+    draft_qs = Question.objects.filter(
+        subject_id=subject,
+        is_exam_clone=False,
+        question_id_in_barem__startswith=draft_prefix,
+    )
+
+    selected_drafts = list(draft_qs.filter(pk__in=question_ids).order_by("pk"))
+    if not selected_drafts:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Không tìm thấy câu hỏi nháp phù hợp để lưu."},
+            status=404,
+        )
+
+    discarded_qs = draft_qs.exclude(pk__in=question_ids)
+
+    with transaction.atomic():
+        for q in selected_drafts:
+            q.question_id_in_barem = q.question_id_in_barem.replace(draft_prefix, "SAVED_", 1)
+            q.question_bank_id = bank
+            q.is_draft = False
+            q.save(update_fields=["question_id_in_barem", "question_bank_id", "is_draft"])
+
+        discarded_count = discarded_qs.count()
+        discarded_qs.delete()
+
+        LectureMaterial.objects.filter(subject_id=subject, workspace_id=workspace_id).update(
+            workspace_id="",
+            question_bank_id=bank,
+        )
+
+    bank_with_count = _get_lecturer_question_banks_with_counts(request).get(pk=bank.pk)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "subject_id": subject.id,
+            "message": "Lưu ngân hàng câu hỏi thành công.",
+            "saved_count": len(selected_drafts),
+            "discarded_count": discarded_count,
+            "question_count": int(getattr(bank_with_count, "question_count_value", 0) or 0),
+            "bank": _serialize_question_bank_item(bank_with_count),
+            "workspace_id": "",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_generate_questions(request):
+    _ensure_lecturer(request)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    subject_id = payload.get("subject_id")
+    document_ids = payload.get("document_ids", [])
+    total_count = int(payload.get("total_count", 0))
+    level_config = payload.get("level_config", {})
+    workspace_id = _get_workspace_id(request, payload)
+
+    if isinstance(document_ids, str):
+        document_ids = json.loads(document_ids)
+    if isinstance(level_config, str):
+        level_config = json.loads(level_config)
+
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    if not workspace_id:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Thiếu workspace_id cho phiên tạo câu hỏi."},
+            status=400,
+        )
+
+    if not document_ids:
+        return JsonResponse({"status": "FAIL", "message": "Bạn phải chọn ít nhất 1 tài liệu."}, status=400)
+
+    if total_count <= 0 or total_count > 100:
+        return JsonResponse({"status": "FAIL", "message": "Số lượng câu hỏi không hợp lệ."}, status=400)
+
+    try:
+        requested_counts = _normalize_requested_question_counts(total_count, level_config)
+    except ValueError as exc:
+        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+
+    materials = list(
+        LectureMaterial.objects.filter(
+            subject_id=subject,
+            pk__in=document_ids,
+        ).order_by("-uploaded_at")
+    )
+
+    if not materials:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Danh sách tài liệu không hợp lệ cho phiên hiện tại."},
+            status=400,
+        )
+
+    job_id = uuid4().hex
+    _save_question_job(
+        job_id,
+        {
+            "status": "PROCESSING",
+            "progress": 5,
+            "questions": [],
+            "summary": {},
+            "error_message": "",
+            "message": "Đã tiếp nhận yêu cầu tạo câu hỏi.",
+            "workspace_id": workspace_id,
+            "subject_id": int(subject.pk),
+            "view_type": "generate",
+        },
+    )
+
+    try:
+        skipped_duplicates = 0
+        prepared_questions = []
+        retry_excluded_texts = []
+        known_question_keys = {
+            item
+            for item in Question.objects.filter(subject_id=subject, is_exam_clone=False).values_list(
+                "question_text_normalized",
+                flat=True,
+            )
+            if item
+        }
+        draft_prefix = _draft_prefix(workspace_id)
+
+        max_outer_retries = 6
+
+        for attempt_index in range(max_outer_retries):
+            remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+            remaining_total = sum(remaining_counts.values())
+            if remaining_total <= 0:
+                break
+
+            _save_question_job(
+                job_id,
+                {
+                    "status": "PROCESSING",
+                    "progress": min(90, 10 + (attempt_index * 12)),
+                    "questions": [],
+                    "summary": {
+                        "all": len(prepared_questions),
+                        "easy": len([q for q in prepared_questions if q["difficulty"] == "EASY"]),
+                        "medium": len([q for q in prepared_questions if q["difficulty"] == "MEDIUM"]),
+                        "hard": len([q for q in prepared_questions if q["difficulty"] == "HARD"]),
+                    },
+                    "error_message": "",
+                    "message": f"Đang tạo câu hỏi... đã có {len(prepared_questions)}/{total_count} câu.",
+                    "shortage_counts": remaining_counts,
+                    "workspace_id": workspace_id,
+                    "subject_id": int(subject.pk),
+                    "view_type": "generate",
+                },
+            )
+
+            ai_questions = _generate_questions_from_ai(
+                subject=subject,
+                materials=materials,
+                total_count=remaining_total,
+                level_config=_question_generation_level_config(remaining_counts),
+                excluded_question_texts=retry_excluded_texts,
+            )
+
+            if not ai_questions:
+                break
+
+            added_this_round = 0
+
+            for item in ai_questions:
+                content_key = normalize_question_text(item["content"])
+                if not content_key:
+                    continue
+
+                if content_key in known_question_keys:
+                    skipped_duplicates += 1
+                    retry_excluded_texts.append(item["content"])
+                    continue
+
+                difficulty = item.get("difficulty")
+                current_remaining = _remaining_question_counts(requested_counts, prepared_questions)
+                if current_remaining.get(difficulty, 0) <= 0:
+                    retry_excluded_texts.append(item["content"])
+                    continue
+
+                prepared_questions.append(item)
+                known_question_keys.add(content_key)
+                retry_excluded_texts.append(item["content"])
+                added_this_round += 1
+
+            if added_this_round == 0:
+                break
+
+        remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+        remaining_total = sum(remaining_counts.values())
+
+        if not prepared_questions:
+            shortage_parts = [
+                f"{difficulty}: {count}"
+                for difficulty, count in remaining_counts.items()
+                if count > 0
+            ]
+            shortage_text = ", ".join(shortage_parts) or str(remaining_total)
+            message = f"AI chưa tạo được câu hỏi hợp lệ nào. Còn thiếu: {shortage_text}."
+            _save_question_job(
+                job_id,
+                {
+                    "status": "FAIL",
+                    "progress": 100,
+                    "questions": [],
+                    "summary": {"all": 0, "easy": 0, "medium": 0, "hard": 0},
+                    "error_message": message,
+                    "message": message,
+                    "shortage_counts": remaining_counts,
+                    "workspace_id": workspace_id,
+                    "subject_id": int(subject.pk),
+                    "view_type": "generate",
+                },
+            )
+            return JsonResponse({"status": "FAIL", "message": message}, status=400)
+
+        created_questions = []
+        with transaction.atomic():
+            for item in prepared_questions:
+                q = Question.objects.create(
+                    subject_id=subject,
+                    question_text=item["content"],
+                    difficulty=item["difficulty"],
+                    question_id_in_barem=f"{draft_prefix}{uuid4().hex[:8]}",
+                    is_draft=True,
+                )
+
+                q_data = _serialize_question(q)
+                q_data["source"] = item.get("source") or "AI từ tài liệu"
+                created_questions.append(q_data)
+
+        summary = {
+            "all": len(created_questions),
+            "easy": len([q for q in created_questions if q["difficulty"] == "EASY"]),
+            "medium": len([q for q in created_questions if q["difficulty"] == "MEDIUM"]),
+            "hard": len([q for q in created_questions if q["difficulty"] == "HARD"]),
+        }
+
+        response_status = "SUCCESS" if remaining_total == 0 else "PARTIAL_SUCCESS"
+
+        if remaining_total > 0:
+            shortage_parts = [
+                f"{difficulty}: {count}"
+                for difficulty, count in remaining_counts.items()
+                if count > 0
+            ]
+            shortage_text = ", ".join(shortage_parts) or str(remaining_total)
+            message = (
+                f"Đã tạo {len(created_questions)}/{total_count} câu hỏi. "
+                f"Còn thiếu {shortage_text}."
+            )
+        else:
+            message = (
+                f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công. "
+                f"Hệ thống đã tự bỏ qua {skipped_duplicates} câu bị trùng."
+                if skipped_duplicates
+                else f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công."
+            )
+
+        final_process_status = "COMPLETE" if response_status == "SUCCESS" else "PARTIAL_SUCCESS"
+
+        _save_question_job(
+            job_id,
+            {
+                "status": final_process_status,
+                "progress": 100,
+                "questions": created_questions,
+                "summary": summary,
+                "error_message": "",
+                "message": message,
+                "shortage_counts": remaining_counts,
+                "workspace_id": workspace_id,
+                "subject_id": int(subject.pk),
+                "view_type": "generate",
+            },
+        )
+
+        return JsonResponse(
+            {
+                "status": response_status,
+                "job_id": job_id,
+                "process_status": final_process_status,
+                "message": message,
+                "questions": created_questions,
+                "summary": summary,
+                "created_count": len(created_questions),
+                "requested_count": total_count,
+                "skipped_duplicates": skipped_duplicates,
+                "shortage_counts": remaining_counts,
+                "workspace_id": workspace_id,
+                "view_type": "generate",
+            }
+        )
+
+    except AuthenticationError:
+        message = (
+            "OpenAI API key không hợp lệ hoặc đã hết hiệu lực. "
+            "Vui lòng kiểm tra lại cấu hình OPENAI_API_KEY."
+        )
+        logger.warning("Generate questions failed due to OpenAI authentication", exc_info=True)
+        _save_question_job(
+            job_id,
+            {
+                "status": "FAIL",
+                "progress": 100,
+                "questions": [],
+                "summary": {},
+                "error_message": message,
+                "message": message,
+                "workspace_id": workspace_id,
+                "subject_id": int(subject.pk),
+                "view_type": "generate",
+            },
+        )
+        return JsonResponse({"status": "FAIL", "message": message}, status=400)
+    except Exception:
+        message = "Tạo câu hỏi thất bại. Vui lòng thử lại sau."
+        logger.exception("Generate questions direct failed")
+        _save_question_job(
+            job_id,
+            {
+                "status": "FAIL",
+                "progress": 100,
+                "questions": [],
+                "summary": {},
+                "error_message": message,
+                "message": message,
+                "workspace_id": workspace_id,
+                "subject_id": int(subject.pk),
+                "view_type": "generate",
+            },
+        )
+        return JsonResponse({"status": "FAIL", "message": message}, status=500)
+
+
+@login_required
+@require_GET
+def api_generate_questions_status(request):
+    _ensure_lecturer(request)
+
+    job_id = request.GET.get("job_id")
+    if not job_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu job_id."}, status=400)
+
+    job = _get_question_job(job_id)
+    if not job:
+        return JsonResponse({"status": "FAIL", "message": "Không tìm thấy job."}, status=404)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "process_status": job.get("status"),
+            "progress": job.get("progress", 0),
+            "questions": job.get("questions", []),
+            "summary": job.get("summary", {}),
+            "error_message": job.get("error_message", ""),
+            "message": job.get("message", ""),
+            "shortage_counts": job.get("shortage_counts", {}),
+            "workspace_id": job.get("workspace_id", ""),
+            "subject_id": job.get("subject_id"),
+            "view_type": job.get("view_type", "generate"),
+        }
+    )

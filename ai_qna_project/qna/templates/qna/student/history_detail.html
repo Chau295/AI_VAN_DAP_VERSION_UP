@@ -60,17 +60,7 @@
     </div>
   {% endif %}
 
-  {% if appeal_deadline %}
-    <div class="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
-      <div class="font-semibold">Phúc khảo</div>
-      <div class="mt-1 text-sm">
-        Hạn gửi phúc khảo: {{ appeal_deadline|timezone:"Asia/Ho_Chi_Minh"|date:"H:i, d/m/Y" }}
-      </div>
-      <div class="mt-1 text-sm {% if appeal_open %}text-green-700{% else %}text-gray-500{% endif %}">
-        {% if appeal_open %}Đang trong thời gian phúc khảo.{% else %}Đã hết thời gian phúc khảo.{% endif %}
-      </div>
-    </div>
-  {% endif %}
+
 
   <div class="mb-10">
     <div class="flex items-center mb-5">

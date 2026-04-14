@@ -22,8 +22,8 @@
         <tr>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Môn học</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ngày tạo</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hoàn thành</th>
-          <!-- ĐÃƒ BÁ»Ž cá»™t ÄŽiá»ƒm TB pháº§n chÃ­nh -->
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
+          <!-- Đã bỏ cột Điểm TB phần chính -->
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng điểm cuối</th>
           <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
         </tr>
@@ -39,18 +39,24 @@
             {{ session.created_at|timezone:"Asia/Ho_Chi_Minh"|date:"d/m/Y H:i" }}
           </td>
            <td class="px-6 py-4 whitespace-nowrap text-sm">
-             {% if session.display_status == "COMPLETED" %}
-               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Đã hoàn thành</span>
-               <div class="text-gray-500 text-xs mt-1">{{ session.completed_at|timezone:"Asia/Ho_Chi_Minh"|date:"d/m/Y H:i" }}</div>
-             {% elif session.display_status == "ENDED" %}
-               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Đã kết thúc</span>
-             {% elif session.display_status == "ABSENT" %}
-               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Vắng thi</span>
+              {% if session.history_status == "COMPLETED" %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  Đã hoàn thành
+                </span>
+                <div class="text-gray-500 text-xs mt-1">
+                  {{ session.completed_at|timezone:"Asia/Ho_Chi_Minh"|date:"d/m/Y H:i" }}
+                </div>
+              {% elif session.history_status == "ENDED" %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  Đã kết thúc
+                </span>
               {% else %}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Đang thực hiện</span>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                  Vắng thi
+                </span>
               {% endif %}
            </td>
-           <!-- CHá»ˆ GIá»® Tá»•ng Äđiá»ƒm cuá»‘i -->
+           <!-- Chỉ giữ tổng điểm cuối -->
            <td class="px-6 py-4 text-sm">
              <div class="font-bold text-blue-600">
                {{ session.calculated_final_score|default:0|floatformat:2 }}{{ session.score_scale_suffix }}

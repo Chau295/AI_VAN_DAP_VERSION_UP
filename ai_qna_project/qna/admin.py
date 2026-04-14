@@ -11,21 +11,19 @@ from .models import (
     ExamCode,
     ExamCodeQuestion,
     LectureMaterial,
-    ExamRoom,
     ExamSessionGroup,
     ExamSessionRoom,
     ExamSession,
     ExamResult,
-    ViolationImage,  # ÄÃ£ thÃªm model nÃ y Ä‘á»ƒ quáº£n lÃ½ áº£nh gian láº­n
+    ViolationImage,
     StudentRosterUpload,
     StudentRosterStudent,
 )
 
-
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
     can_delete = False
-    verbose_name_plural = "Há»“ sÆ¡ ngÆ°á»i dÃ¹ng"
+    verbose_name_plural = "Hồ sơ người dùng"
     fk_name = "user_id"
 
 
@@ -58,246 +56,88 @@ class UserProfileAdmin(admin.ModelAdmin):
         "user_id__username",
         "full_name",
         "student_id",
-        "class_name",
     )
     list_filter = ("is_lecturer",)
-    filter_horizontal = ("subjects_taught",)
 
 
 @admin.register(QuestionBank)
 class QuestionBankAdmin(admin.ModelAdmin):
     list_display = ("question_bank_id", "name", "subject_id", "created_at")
-    search_fields = ("name", "subject_id__name", "subject_id__subject_code")
     list_filter = ("subject_id",)
-    ordering = ("-created_at",)
+    search_fields = ("name",)
 
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
     list_display = (
         "question_id",
-        "short_text",
         "subject_id",
         "question_bank_id",
-        "question_id_in_barem",
         "difficulty",
-        "is_exam_clone",
-        "is_draft",
         "created_at",
     )
-    list_filter = (
-        "subject_id",
-        "question_bank_id",
-        "difficulty",
-        "is_exam_clone",
-        "is_draft",
-    )
-    search_fields = (
-        "question_text",
-        "question_text_normalized",
-        "subject_id__name",
-        "subject_id__subject_code",
-        "question_id_in_barem",
-    )
-    ordering = ("question_id_in_barem", "question_id")
+    list_filter = ("subject_id", "difficulty", "question_bank_id")
+    search_fields = ("question_text",)
 
 
-class ExamCodeInline(admin.TabularInline):
-    model = ExamCode
-    extra = 0
-    fields = ("exam_code_id", "code_name", "code_number", "is_approved", "created_at")
-    readonly_fields = ("created_at", "updated_at")
+class ExamCodeQuestionInline(admin.TabularInline):
+    model = ExamCodeQuestion
+    extra = 1
 
 
 @admin.register(ExamSet)
 class ExamSetAdmin(admin.ModelAdmin):
-    list_display = (
-        "exam_set_id",
-        "display_name",
-        "subject_id",
-        "academic_year",
-        "semester",
-        "number_of_versions",
-        "status",
-        "created_by_user_id",
-        "created_at",
-        "updated_at",
-    )
-    search_fields = (
-        "name",
-        "subject_id__name",
-        "subject_id__subject_code",
-        "academic_year",
-    )
-    list_filter = ("subject_id", "semester", "status")
-    filter_horizontal = ("question_banks",)
-    inlines = [ExamCodeInline]
+    list_display = ("exam_set_id", "name", "subject_id", "status", "created_by_user_id", "created_at")
+    list_filter = ("subject_id", "status")
+    search_fields = ("name",)
 
 
 @admin.register(ExamCode)
 class ExamCodeAdmin(admin.ModelAdmin):
-    list_display = (
-        "exam_code_id",
-        "code_name",
-        "code_number",
-        "subject_id",
-        "exam_set_id",
-        "is_approved",
-        "created_at",
-        "updated_at",
-    )
-    search_fields = (
-        "code_name",
-        "subject_id__name",
-        "subject_id__subject_code",
-        "exam_set_id__name",
-    )
-    list_filter = ("subject_id", "is_approved")
-    ordering = ("code_number", "created_at")
-
-
-@admin.register(ExamCodeQuestion)
-class ExamCodeQuestionAdmin(admin.ModelAdmin):
-    list_display = (
-        "exam_code_question_id",
-        "exam_code_id",
-        "question_id",
-        "difficulty",
-        "display_order",
-        "score",
-    )
-    search_fields = (
-        "exam_code_id__code_name",
-        "question_id__question_text",
-        "question_id__question_id_in_barem",
-    )
-    list_filter = ("difficulty", "exam_code_id__subject_id")
-    ordering = ("exam_code_id", "display_order", "exam_code_question_id")
+    list_display = ("exam_code_id", "code_name", "exam_set_id", "created_at")
+    list_filter = ("exam_set_id__subject_id", "exam_set_id")
+    search_fields = ("code_name",)
+    inlines = [ExamCodeQuestionInline]
 
 
 @admin.register(LectureMaterial)
 class LectureMaterialAdmin(admin.ModelAdmin):
-    list_display = (
-        "lecture_material_id",
-        "title",
-        "subject_id",
-        "question_bank_id",
-        "file_type",
-        "uploaded_at",
-        "workspace_id",
-    )
-    list_filter = ("subject_id", "file_type")
-    search_fields = (
-        "title",
-        "subject_id__name",
-        "subject_id__subject_code",
-        "file_path",
-        "workspace_id",
-    )
-    ordering = ("-uploaded_at",)
-
-
-@admin.register(ExamRoom)
-class ExamRoomAdmin(admin.ModelAdmin):
-    list_display = ("exam_room_id", "room_name", "room_code", "capacity")
-    search_fields = ("room_name", "room_code")
-    ordering = ("room_code",)
+    list_display = ("lecture_material_id", "title", "subject_id", "uploaded_at")
+    list_filter = ("subject_id",)
+    search_fields = ("title",)
 
 
 class ExamSessionRoomInline(admin.TabularInline):
     model = ExamSessionRoom
-    extra = 0
-    fields = (
-        "exam_session_room_id",
-        "exam_room_id",
-        "room_name",
-        "expected_students",
-        "room_password",
-        "exam_set_id",
-        "display_order",
-    )
+    extra = 1
 
 
 @admin.register(ExamSessionGroup)
 class ExamSessionGroupAdmin(admin.ModelAdmin):
-    list_display = (
-        "exam_session_group_id",
-        "group_name",
-        "subject_id",
-        "academic_year",
-        "semester",
-        "exam_date",
-        "duration_minutes",
-        "status",
-        "created_by_user_id",
-        "created_at",
-    )
-    list_filter = ("subject_id", "semester", "status")
-    search_fields = (
-        "group_name",
-        "subject_id__name",
-        "subject_id__subject_code",
-        "academic_year",
-    )
-    filter_horizontal = ("exam_codes",)
+    list_display = ("exam_session_group_id", "group_name", "subject_id", "exam_date", "status")
+    list_filter = ("status", "subject_id")
+    search_fields = ("group_name",)
     inlines = [ExamSessionRoomInline]
-
-
-@admin.register(ExamSessionRoom)
-class ExamSessionRoomAdmin(admin.ModelAdmin):
-    list_display = (
-        "exam_session_room_id",
-        "exam_session_group_id",
-        "exam_room_id",
-        "room_name",
-        "expected_students",
-        "exam_set_id",
-        "display_order",
-    )
-    search_fields = (
-        "exam_session_group_id__group_name",
-        "exam_room_id__room_name",
-        "room_name",
-    )
-    filter_horizontal = ("exam_codes", "students")
-    ordering = ("exam_session_group_id", "display_order", "exam_session_room_id")
 
 
 @admin.register(ExamSession)
 class ExamSessionAdmin(admin.ModelAdmin):
-    list_display = (
-        "exam_session_id",
-        "user_id",
-        "subject_id",
-        "exam_session_group_id",
-        "created_at",
-        "is_completed",
-        "final_score",
-        "verification_status",
-        "cheating_flag",
-    )
-    list_filter = ("subject_id", "session_status", "verification_status", "cheating_flag")
-    search_fields = ("user_id__username", "subject_id__name", "subject_id__subject_code")
-    date_hierarchy = "created_at"
-    filter_horizontal = ("questions",)
-    ordering = ("-created_at",)
+    list_display = ("exam_session_id", "user_id", "exam_session_group_id", "session_status", "started_at")
+    list_filter = ("session_status", "verification_status")
+    search_fields = ("user_id__username", "user_id__userprofile__full_name")
 
 
 @admin.register(ExamResult)
 class ExamResultAdmin(admin.ModelAdmin):
     list_display = ("exam_result_id", "exam_session_id", "question_id", "score", "answered_at")
-    list_filter = ("exam_session_id__subject_id",)
-    search_fields = ("exam_session_id__user_id__username", "question_id__question_text")
-    ordering = ("-answered_at",)
+    list_filter = ("exam_session_id__exam_session_group_id",)
+    search_fields = ("exam_session_id__user_id__username",)
 
 
-# ÄÄƒng kÃ½ hiá»ƒn thá»‹ áº£nh gian láº­n trong admin
 @admin.register(ViolationImage)
 class ViolationImageAdmin(admin.ModelAdmin):
     list_display = ("violation_image_id", "exam_session_id", "violation_type", "timestamp")
-    list_filter = ("violation_type",)
-    search_fields = ("exam_session_id__user_id__username",)
-    ordering = ("-timestamp",)
+    list_filter = ("violation_type", "timestamp")
 
 
 class StudentRosterStudentInline(admin.TabularInline):
@@ -359,8 +199,5 @@ class StudentRosterStudentAdmin(admin.ModelAdmin):
         "student_code",
         "full_name",
         "class_name",
-        "email",
-        "linked_user_id__username",
     )
-    list_filter = ("account_created", "account_status", "student_roster_upload_id__subject_id")
-    ordering = ("student_roster_upload_id", "row_number", "student_roster_student_id")
+    list_filter = ("account_status", "account_created")

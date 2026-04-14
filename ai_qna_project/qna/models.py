@@ -8,31 +8,31 @@ from django.utils import timezone
 
 
 class DifficultyLevel(models.TextChoices):
-    EASY = "EASY", "Dá»…"
-    MEDIUM = "MEDIUM", "Trung bÃ¬nh"
-    HARD = "HARD", "KhÃ³"
+    EASY = "EASY", "Dễ"
+    MEDIUM = "MEDIUM", "Trung bình"
+    HARD = "HARD", "Khó"
 
 
 class SemesterChoices(models.TextChoices):
-    HK1 = "HK1", "Há»c ká»³ 1"
-    HK2 = "HK2", "Há»c ká»³ 2"
-    SUMMER = "SUMMER", "Há»c ká»³ hÃ¨"
+    HK1 = "HK1", "Học kỳ 1"
+    HK2 = "HK2", "Học kỳ 2"
+    SUMMER = "SUMMER", "Học kỳ hè"
 
 
 class ExamSetStatus(models.TextChoices):
-    DRAFT = "DRAFT", "ChÆ°a duyá»‡t"
-    APPROVED = "APPROVED", "ÄÃ£ duyá»‡t"
+    DRAFT = "DRAFT", "Chưa duyệt"
+    APPROVED = "APPROVED", "Đã duyệt"
 
 
 class StudentListUploadStatus(models.TextChoices):
-    PENDING = "PENDING", "ChÆ°a táº¡o"
-    CREATED = "CREATED", "ÄÃ£ táº¡o"
+    PENDING = "PENDING", "Chưa tạo"
+    CREATED = "CREATED", "Đã tạo"
 
 
 class StudentRosterAccountStatus(models.TextChoices):
-    PENDING = "PENDING", "ChÆ°a cÃ³"
-    EXISTING = "EXISTING", "ÄÃ£ cÃ³ sáºµn"
-    CREATED = "CREATED", "Má»›i táº¡o"
+    PENDING = "PENDING", "Chưa có"
+    EXISTING = "EXISTING", "Đã có sẵn"
+    CREATED = "CREATED", "Mới tạo"
 
 
 def normalize_question_text(value: str) -> str:
@@ -44,27 +44,27 @@ def normalize_question_text(value: str) -> str:
 
 class Subject(models.Model):
     subject_id = models.AutoField(primary_key=True, db_column="subject_id")
-    name = models.CharField(max_length=255, verbose_name="TÃªn mÃ´n há»c")
-    subject_code = models.CharField(max_length=20, unique=True, verbose_name="MÃ£ mÃ´n há»c")
+    name = models.CharField(max_length=255, verbose_name="Tên môn học")
+    subject_code = models.CharField(max_length=20, unique=True, verbose_name="Mã môn học")
     quiz_data_file = models.CharField(
         max_length=255,
         blank=True,
         null=True,
-        help_text="VÃ­ dá»¥: data_analysis_quiz.json",
+        help_text="Ví dụ: data_analysis_quiz.json",
     )
     exam_password = models.CharField(
         max_length=100,
         blank=True,
         null=True,
-        verbose_name="Máº­t kháº©u bÃ i thi",
-        help_text="Máº­t kháº©u Ä‘á»ƒ sinh viÃªn vÃ o bÃ i thi (Ä‘á»ƒ trá»‘ng náº¿u khÃ´ng cáº§n)",
+        verbose_name="Mật khẩu bài thi",
+        help_text="Mật khẩu để sinh viên vào bài thi (để trống nếu không cần)",
     )
 
     class Meta:
         db_table = "subject"
         ordering = ["name"]
-        verbose_name = "MÃ´n há»c"
-        verbose_name_plural = "MÃ´n há»c"
+        verbose_name = "Môn học"
+        verbose_name_plural = "Môn học"
 
     def __str__(self):
         return self.name
@@ -96,8 +96,8 @@ class UserProfile(models.Model):
 
     class Meta:
         db_table = "user_profile"
-        verbose_name = "Há»“ sÆ¡ ngÆ°á»i dÃ¹ng"
-        verbose_name_plural = "Há»“ sÆ¡ ngÆ°á»i dÃ¹ng"
+        verbose_name = "Hồ sơ người dùng"
+        verbose_name_plural = "Hồ sơ người dùng"
 
     def __str__(self):
         return self.user_id.username
@@ -122,16 +122,16 @@ class QuestionBank(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="question_banks",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
-    name = models.CharField(max_length=255, verbose_name="TÃªn ngÃ¢n hÃ ng")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº¡o")
+    name = models.CharField(max_length=255, verbose_name="Tên ngân hàng")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
 
     class Meta:
         db_table = "question_bank"
         ordering = ["-created_at"]
-        verbose_name = "NgÃ¢n hÃ ng cÃ¢u há»i"
-        verbose_name_plural = "NgÃ¢n hÃ ng cÃ¢u há»i"
+        verbose_name = "Ngân hàng câu hỏi"
+        verbose_name_plural = "Ngân hàng câu hỏi"
 
     def __str__(self):
         return f"{self.name} - {self.subject_id.name}"
@@ -156,7 +156,7 @@ class Question(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="questions",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
     question_bank_id = models.ForeignKey(
         QuestionBank,
@@ -165,34 +165,34 @@ class Question(models.Model):
         null=True,
         blank=True,
         related_name="questions",
-        verbose_name="NgÃ¢n hÃ ng cÃ¢u há»i",
+        verbose_name="Ngân hàng câu hỏi",
     )
-    question_text = models.TextField(verbose_name="Ná»™i dung cÃ¢u há»i")
+    question_text = models.TextField(verbose_name="Nội dung câu hỏi")
     question_text_normalized = models.TextField(
-        verbose_name="CÃ¢u há»i chuáº©n hÃ³a",
+        verbose_name="Câu hỏi chuẩn hóa",
         blank=True,
         null=True,
     )
     question_id_in_barem = models.CharField(
         max_length=50,
-        verbose_name="ID cÃ¢u há»i trong tá»‡p barem",
-        help_text="VÃ­ dá»¥: Q1, Q2...",
+        verbose_name="ID câu hỏi trong tệp barem",
+        help_text="Ví dụ: Q1, Q2...",
     )
     difficulty = models.CharField(
         max_length=10,
         choices=DifficultyLevel.choices,
         default=DifficultyLevel.EASY,
-        verbose_name="Äá»™ khÃ³",
+        verbose_name="Độ khó",
     )
-    is_exam_clone = models.BooleanField(default=False, verbose_name="Báº£n sao dÃ¹ng cho mÃ£ Ä‘á»")
-    is_draft = models.BooleanField(default=False, verbose_name="Báº£n nhÃ¡p chÆ°a lÆ°u")
-    created_at = models.DateTimeField(auto_now_add=True, null=True, verbose_name="NgÃ y táº¡o")
+    is_exam_clone = models.BooleanField(default=False, verbose_name="Bản sao dùng cho mã đề")
+    is_draft = models.BooleanField(default=False, verbose_name="Bản nháp chưa lưu")
+    created_at = models.DateTimeField(auto_now_add=True, null=True, verbose_name="Ngày tạo")
 
     class Meta:
         db_table = "question"
         ordering = ["question_id_in_barem", "question_id"]
-        verbose_name = "CÃ¢u há»i"
-        verbose_name_plural = "CÃ¢u há»i"
+        verbose_name = "Câu hỏi"
+        verbose_name_plural = "Câu hỏi"
         constraints = [
             models.UniqueConstraint(
                 fields=["subject_id", "question_text_normalized"],
@@ -244,33 +244,33 @@ class ExamSet(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="exam_sets",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
-    name = models.CharField(max_length=255, blank=True, default="", verbose_name="TÃªn bá»™ Ä‘á»")
-    academic_year = models.CharField(max_length=20, verbose_name="NÄƒm há»c")
+    name = models.CharField(max_length=255, blank=True, default="", verbose_name="Tên bộ đề")
+    academic_year = models.CharField(max_length=20, verbose_name="Năm học")
     semester = models.CharField(
         max_length=10,
         choices=SemesterChoices.choices,
         default=SemesterChoices.HK1,
-        verbose_name="Há»c ká»³",
+        verbose_name="Học kỳ",
     )
-    number_of_versions = models.PositiveIntegerField(default=1, verbose_name="Sá»‘ mÃ£ Ä‘á»")
-    easy_pool_size = models.PositiveIntegerField(default=1, verbose_name="Sá»‘ cÃ¢u dá»… trong ma tráº­n")
-    medium_pool_size = models.PositiveIntegerField(default=1, verbose_name="Sá»‘ cÃ¢u trung bÃ¬nh trong ma tráº­n")
-    hard_pool_size = models.PositiveIntegerField(default=1, verbose_name="Sá»‘ cÃ¢u khÃ³ trong ma tráº­n")
-    easy_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.0, verbose_name="Äiá»ƒm cÃ¢u dá»…")
-    medium_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.5, verbose_name="Äiá»ƒm cÃ¢u trung bÃ¬nh")
-    hard_score = models.DecimalField(max_digits=5, decimal_places=1, default=3.0, verbose_name="Äiá»ƒm cÃ¢u khÃ³")
-    shuffle_question_order = models.BooleanField(default=True, verbose_name="Tá»± Ä‘á»™ng xÃ¡o trá»™n thá»© tá»± cÃ¢u há»i")
+    number_of_versions = models.PositiveIntegerField(default=1, verbose_name="Số mã đề")
+    easy_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu dễ trong ma trận")
+    medium_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu trung bình trong ma trận")
+    hard_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu khó trong ma trận")
+    easy_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.0, verbose_name="Điểm câu dễ")
+    medium_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.5, verbose_name="Điểm câu trung bình")
+    hard_score = models.DecimalField(max_digits=5, decimal_places=1, default=3.0, verbose_name="Điểm câu khó")
+    shuffle_question_order = models.BooleanField(default=True, verbose_name="Tự động xáo trộn thứ tự câu hỏi")
     allow_duplicate_questions = models.BooleanField(
         default=False,
-        verbose_name="Cho phÃ©p cÃ¢u há»i trÃ¹ng láº·p giá»¯a cÃ¡c mÃ£ Ä‘á»",
+        verbose_name="Cho phép câu hỏi trùng lặp giữa các mã đề",
     )
     status = models.CharField(
         max_length=20,
         choices=ExamSetStatus.choices,
         default=ExamSetStatus.DRAFT,
-        verbose_name="Tráº¡ng thÃ¡i",
+        verbose_name="Trạng thái",
     )
     created_by_user_id = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -279,22 +279,22 @@ class ExamSet(models.Model):
         null=True,
         blank=True,
         related_name="created_exam_sets",
-        verbose_name="NgÆ°á»i táº¡o",
+        verbose_name="Người tạo",
     )
     question_banks = models.ManyToManyField(
         QuestionBank,
         blank=True,
         related_name="exam_sets",
-        verbose_name="Nguá»“n cÃ¢u há»i",
+        verbose_name="Nguồn câu hỏi",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº¡o")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="NgÃ y cáº­p nháº­t")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
     class Meta:
         db_table = "exam_set"
         ordering = ["-created_at"]
-        verbose_name = "Bá»™ Ä‘á» thi"
-        verbose_name_plural = "Bá»™ Ä‘á» thi"
+        verbose_name = "Bộ đề thi"
+        verbose_name_plural = "Bộ đề thi"
 
     def __str__(self):
         return self.display_name
@@ -325,7 +325,7 @@ class ExamSet(models.Model):
 
     @property
     def linked_status_label(self):
-        return "ÄÃ£ dÃ¹ng" if self.is_linked else "ChÆ°a dÃ¹ng"
+        return "Đã dùng" if self.is_linked else "Chưa dùng"
 
     @property
     def status_label(self):
@@ -359,7 +359,7 @@ class ExamCode(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="exam_codes",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
     exam_set_id = models.ForeignKey(
         ExamSet,
@@ -368,20 +368,20 @@ class ExamCode(models.Model):
         null=True,
         blank=True,
         related_name="exam_codes",
-        verbose_name="Bá»™ Ä‘á» thi",
+        verbose_name="Bộ đề thi",
     )
-    code_name = models.CharField(max_length=100, verbose_name="TÃªn mÃ£ Ä‘á»")
-    code_number = models.PositiveIntegerField(default=0, verbose_name="Sá»‘ thá»© tá»± mÃ£ Ä‘á»")
-    source_material = models.TextField(blank=True, null=True, verbose_name="Nguá»“n tÃ i liá»‡u")
-    is_approved = models.BooleanField(default=False, verbose_name="ÄÃ£ duyá»‡t")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº¡o")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="NgÃ y cáº­p nháº­t")
+    code_name = models.CharField(max_length=100, verbose_name="Tên mã đề")
+    code_number = models.PositiveIntegerField(default=0, verbose_name="Số thứ tự mã đề")
+    source_material = models.TextField(blank=True, null=True, verbose_name="Nguồn tài liệu")
+    is_approved = models.BooleanField(default=False, verbose_name="Đã duyệt")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
     class Meta:
         db_table = "exam_code"
         ordering = ["code_number", "created_at"]
-        verbose_name = "MÃ£ Ä‘á» thi"
-        verbose_name_plural = "MÃ£ Ä‘á» thi"
+        verbose_name = "Mã đề thi"
+        verbose_name_plural = "Mã đề thi"
 
     def __str__(self):
         return f"{self.code_name} - {self.subject_id.name}"
@@ -428,31 +428,31 @@ class ExamCodeQuestion(models.Model):
         on_delete=models.CASCADE,
         db_column="exam_code_id",
         related_name="exam_code_questions",
-        verbose_name="MÃ£ Ä‘á»",
+        verbose_name="Mã đề",
     )
     question_id = models.ForeignKey(
         Question,
         on_delete=models.CASCADE,
         db_column="question_id",
         related_name="exam_code_items",
-        verbose_name="CÃ¢u há»i",
+        verbose_name="Câu hỏi",
     )
     difficulty = models.CharField(
         max_length=10,
         choices=DifficultyLevel.choices,
-        verbose_name="Äá»™ khÃ³",
+        verbose_name="Độ khó",
     )
-    display_order = models.PositiveIntegerField(default=1, verbose_name="Thá»© tá»± hiá»ƒn thá»‹")
-    score = models.DecimalField(max_digits=5, decimal_places=2, default=1, verbose_name="Äiá»ƒm")
+    display_order = models.PositiveIntegerField(default=1, verbose_name="Thứ tự hiển thị")
+    score = models.DecimalField(max_digits=5, decimal_places=2, default=1, verbose_name="Điểm")
 
     class Meta:
         db_table = "exam_code_question"
         ordering = ["display_order", "exam_code_question_id"]
-        verbose_name = "CÃ¢u há»i trong mÃ£ Ä‘á»"
-        verbose_name_plural = "CÃ¢u há»i trong mÃ£ Ä‘á»"
+        verbose_name = "Câu hỏi trong mã đề"
+        verbose_name_plural = "Câu hỏi trong mã đề"
 
     def __str__(self):
-        return f"{self.exam_code_id.code_name} - CÃ¢u {self.display_order}"
+        return f"{self.exam_code_id.code_name} - Câu {self.display_order}"
 
     @property
     def id(self):
@@ -482,7 +482,7 @@ class LectureMaterial(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="lecture_materials",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
     question_bank_id = models.ForeignKey(
         QuestionBank,
@@ -491,19 +491,30 @@ class LectureMaterial(models.Model):
         null=True,
         blank=True,
         related_name="materials",
-        verbose_name="NgÃ¢n hÃ ng cÃ¢u há»i",
+        verbose_name="Ngân hàng câu hỏi",
     )
-    title = models.CharField(max_length=255, verbose_name="TiÃªu Ä‘á» tÃ i liá»‡u")
-    file_path = models.CharField(max_length=500, verbose_name="ÄÆ°á»ng dáº«n file")
-    file_type = models.CharField(max_length=50, verbose_name="Loáº¡i file")
-    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y upload")
-    workspace_id = models.CharField(max_length=100, blank=True, null=True, verbose_name="Phi lÃ m viá»‡c")
+    title = models.CharField(max_length=255, verbose_name="Tiêu đề tài liệu")
+
+    # Nguồn sự thật hiện tại của codebase
+    file_path = models.CharField(max_length=500, blank=True, default="", verbose_name="Đường dẫn file")
+    file_type = models.CharField(max_length=150, blank=True, default="", verbose_name="Loại file")
+
+    # Giữ lại để tương thích nếu sau này muốn quay về FileField
+    file = models.FileField(
+        upload_to="lecture_materials/%Y/%m/",
+        verbose_name="Tệp tài liệu",
+        null=True,
+        blank=True,
+    )
+
+    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày upload")
+    workspace_id = models.CharField(max_length=100, blank=True, null=True, verbose_name="Phiên làm việc")
 
     class Meta:
         db_table = "lecture_material"
         ordering = ["-uploaded_at"]
-        verbose_name = "TÃ i liá»‡u bÃ i giáº£ng"
-        verbose_name_plural = "TÃ i liá»‡u bÃ i giáº£ng"
+        verbose_name = "Tài liệu bài giảng"
+        verbose_name_plural = "Tài liệu bài giảng"
 
     def __str__(self):
         return f"{self.title} - {self.subject_id.name}"
@@ -511,7 +522,11 @@ class LectureMaterial(models.Model):
     @property
     def filename(self):
         import os
-        return os.path.basename(self.file_path or "")
+        if self.file_path:
+            return os.path.basename(self.file_path)
+        if self.file:
+            return os.path.basename(self.file.name)
+        return ""
 
     @property
     def extension(self):
@@ -541,15 +556,15 @@ class LectureMaterial(models.Model):
 
 class ExamRoom(models.Model):
     exam_room_id = models.AutoField(primary_key=True, db_column="exam_room_id")
-    room_name = models.CharField(max_length=100, verbose_name="TÃªn phÃ²ng")
-    room_code = models.CharField(max_length=50, unique=True, verbose_name="MÃ£ phÃ²ng")
-    capacity = models.PositiveIntegerField(verbose_name="Sá»©c chá»©a")
+    room_name = models.CharField(max_length=100, verbose_name="Tên phòng")
+    room_code = models.CharField(max_length=50, unique=True, verbose_name="Mã phòng")
+    capacity = models.PositiveIntegerField(verbose_name="Sức chứa")
 
     class Meta:
         db_table = "exam_room"
         ordering = ["room_code"]
-        verbose_name = "PhÃ²ng thi"
-        verbose_name_plural = "PhÃ²ng thi"
+        verbose_name = "Phòng thi"
+        verbose_name_plural = "Phòng thi"
 
     def __str__(self):
         return f"{self.room_name} ({self.room_code})"
@@ -561,11 +576,11 @@ class ExamRoom(models.Model):
 
 class ExamSessionGroup(models.Model):
     STATUS_CHOICES = [
-        ("DRAFT", "NhÃ¡p"),
-        ("SCHEDULED", "ÄÃ£ lÃªn lá»‹ch"),
-        ("ONGOING", "Äang diá»…n ra"),
-        ("COMPLETED", "ÄÃ£ káº¿t thÃºc"),
-        ("CANCELLED", "ÄÃ£ há»§y"),
+        ("DRAFT", "Nháp"),
+        ("SCHEDULED", "Đã lên lịch"),
+        ("ONGOING", "Đang diễn ra"),
+        ("COMPLETED", "Đã kết thúc"),
+        ("CANCELLED", "Đã hủy"),
     ]
 
     exam_session_group_id = models.AutoField(primary_key=True, db_column="exam_session_group_id")
@@ -574,41 +589,41 @@ class ExamSessionGroup(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="exam_session_groups",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
-    group_name = models.CharField(max_length=200, verbose_name="TÃªn ca thi")
-    academic_year = models.CharField(max_length=20, blank=True, default="", verbose_name="NÄƒm há»c")
+    group_name = models.CharField(max_length=200, verbose_name="Tên ca thi")
+    academic_year = models.CharField(max_length=20, blank=True, default="", verbose_name="Năm học")
     semester = models.CharField(
         max_length=10,
         choices=SemesterChoices.choices,
         default=SemesterChoices.HK1,
-        verbose_name="Há»c ká»³",
+        verbose_name="Học kỳ",
     )
-    description = models.TextField(blank=True, default="", verbose_name="MÃ´ táº£ ká»³ thi")
-    exam_date = models.DateTimeField(verbose_name="NgÃ y giá» thi")
-    duration_minutes = models.PositiveIntegerField(default=60, verbose_name="Thá»i gian lÃ m bÃ i (phÃºt)")
-    exam_password = models.CharField(max_length=100, blank=True, null=True, verbose_name="Máº­t kháº©u bÃ i thi")
-    configuration_data = models.JSONField(default=dict, blank=True, verbose_name="Cáº¥u hÃ¬nh ca thi")
+    description = models.TextField(blank=True, default="", verbose_name="Mô tả kỳ thi")
+    exam_date = models.DateTimeField(verbose_name="Ngày giờ thi")
+    duration_minutes = models.PositiveIntegerField(default=60, verbose_name="Thời gian làm bài (phút)")
+    exam_password = models.CharField(max_length=100, blank=True, null=True, verbose_name="Mật khẩu bài thi")
+    configuration_data = models.JSONField(default=dict, blank=True, verbose_name="Cấu hình ca thi")
     exam_codes = models.ManyToManyField(
         ExamCode,
         related_name="exam_session_groups",
-        verbose_name="MÃ£ Ä‘á» thi",
+        verbose_name="Mã đề thi",
     )
     rooms = models.ManyToManyField(
         ExamRoom,
         through="ExamSessionRoom",
-        verbose_name="PhÃ²ng thi",
+        verbose_name="Phòng thi",
     )
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="DRAFT", verbose_name="Tráº¡ng thÃ¡i")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="DRAFT", verbose_name="Trạng thái")
     created_by_user_id = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         db_column="created_by_user_id",
         related_name="created_exam_groups",
-        verbose_name="NgÆ°á»i táº¡o",
+        verbose_name="Người tạo",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº¡o")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="NgÃ y cáº­p nháº­t")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
     class Meta:
         db_table = "exam_session_group"
@@ -657,11 +672,11 @@ class ExamSessionGroup(models.Model):
     @property
     def status_label(self):
         status_map = {
-            "DRAFT": "LÆ°u nhÃ¡p",
-            "SCHEDULED": "Sáº¯p diá»…n ra",
-            "ONGOING": "Äang diá»…n ra",
-            "COMPLETED": "ÄÃ£ káº¿t thÃºc",
-            "CANCELLED": "ÄÃ£ há»§y",
+            "DRAFT": "Lưu nháp",
+            "SCHEDULED": "Sắp diễn ra",
+            "ONGOING": "Đang diễn ra",
+            "COMPLETED": "Đã kết thúc",
+            "CANCELLED": "Đã hủy",
         }
         return status_map.get(self.computed_status, self.get_status_display())
 
@@ -751,9 +766,9 @@ class ExamSessionRoom(models.Model):
         blank=True,
         related_name="session_rooms",
     )
-    room_name = models.CharField(max_length=100, blank=True, default="", verbose_name="TÃªn phÃ²ng hiá»ƒn thá»‹")
-    expected_students = models.PositiveIntegerField(default=0, verbose_name="Sá»‘ lÆ°á»£ng sinh viÃªn dá»± kiáº¿n")
-    room_password = models.CharField(max_length=100, blank=True, default="", verbose_name="Máº­t kháº©u phÃ²ng")
+    room_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Tên phòng hiển thị")
+    expected_students = models.PositiveIntegerField(default=0, verbose_name="Số lượng sinh viên dự kiến")
+    room_password = models.CharField(max_length=100, blank=True, default="", verbose_name="Mật khẩu phòng")
     exam_set_id = models.ForeignKey(
         ExamSet,
         on_delete=models.SET_NULL,
@@ -761,27 +776,27 @@ class ExamSessionRoom(models.Model):
         null=True,
         blank=True,
         related_name="session_rooms",
-        verbose_name="Bá»™ Ä‘á» gáº¯n cho phÃ²ng",
+        verbose_name="Bộ đề gắn cho phòng",
     )
     exam_codes = models.ManyToManyField(
         ExamCode,
         blank=True,
         related_name="session_rooms",
-        verbose_name="MÃ£ Ä‘á» gáº¯n cho phÃ²ng",
+        verbose_name="Mã đề gắn cho phòng",
     )
-    display_order = models.PositiveIntegerField(default=1, verbose_name="Thá»© tá»± hiá»ƒn thá»‹")
+    display_order = models.PositiveIntegerField(default=1, verbose_name="Thứ tự hiển thị")
     students = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="exam_rooms",
         blank=True,
-        verbose_name="Sinh viÃªn",
+        verbose_name="Sinh viên",
     )
 
     class Meta:
         db_table = "exam_session_room"
         ordering = ["display_order", "exam_session_room_id"]
-        verbose_name = "PhÃ²ng thi trong ca thi"
-        verbose_name_plural = "PhÃ²ng thi trong ca thi"
+        verbose_name = "Phòng thi trong ca thi"
+        verbose_name_plural = "Phòng thi trong ca thi"
 
     def __str__(self):
         return f"{self.exam_session_group_id.group_name} - {self.display_room_name}"
@@ -821,10 +836,10 @@ class ExamSessionRoom(models.Model):
 
 class ExamSession(models.Model):
     STATUS_CHOICES = [
-        ("PENDING", "Chá»"),
-        ("STARTED", "ÄÃ£ báº¯t Ä‘áº§u"),
-        ("COMPLETED", "HoÃ n thÃ nh"),
-        ("CANCELLED", "Há»§y"),
+        ("PENDING", "Chờ"),
+        ("STARTED", "Đã bắt đầu"),
+        ("COMPLETED", "Hoàn thành"),
+        ("CANCELLED", "Hủy"),
     ]
 
     exam_session_id = models.AutoField(primary_key=True, db_column="exam_session_id")
@@ -849,43 +864,43 @@ class ExamSession(models.Model):
         verbose_name="Ca thi",
     )
     questions = models.ManyToManyField(Question, related_name="exam_sessions")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y thi")
-    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Thá»i gian báº¯t Ä‘áº§u lÃ m bÃ i")
-    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Thá»i gian hoÃ n thÃ nh")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày thi")
+    started_at = models.DateTimeField(null=True, blank=True, verbose_name="Thời gian bắt đầu làm bài")
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Thời gian hoàn thành")
     session_status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default="PENDING",
-        verbose_name="Tráº¡ng thÃ¡i phiÃªn thi",
+        verbose_name="Trạng thái phiên thi",
     )
     final_score = models.FloatField(null=True, blank=True)
 
-    face_image_blob = models.BinaryField(null=True, blank=True, verbose_name="áº¢nh khuÃ´n máº·t chá»¥p tá»« webcam")
-    face_image_mime = models.CharField(max_length=100, blank=True, default="", verbose_name="MIME type áº£nh khuÃ´n máº·t")
-    id_card_image_blob = models.BinaryField(null=True, blank=True, verbose_name="áº¢nh tháº» sinh viÃªn")
-    id_card_image_mime = models.CharField(max_length=100, blank=True, default="", verbose_name="MIME type áº£nh tháº»")
-    verification_score = models.FloatField(null=True, blank=True, verbose_name="Äiá»ƒm tÆ°Æ¡ng Ä‘á»“ng (0-1)")
+    face_image_blob = models.BinaryField(null=True, blank=True, verbose_name="Ảnh khuôn mặt chụp từ webcam")
+    face_image_mime = models.CharField(max_length=100, blank=True, default="", verbose_name="MIME type ảnh khuôn mặt")
+    id_card_image_blob = models.BinaryField(null=True, blank=True, verbose_name="Ảnh thẻ sinh viên")
+    id_card_image_mime = models.CharField(max_length=100, blank=True, default="", verbose_name="MIME type ảnh thẻ")
+    verification_score = models.FloatField(null=True, blank=True, verbose_name="Điểm tương đồng (0-1)")
     verification_status = models.CharField(
         max_length=20,
         choices=[
-            ("PENDING", "Chá» xÃ¡c thá»±c"),
-            ("ALLOW", "Cho phÃ©p thi"),
-            ("WARNING_ALLOW", "Cho phÃ©p thi (cáº§n kiá»ƒm tra láº¡i)"),
-            ("BLOCK", "Cháº·n thi"),
+            ("PENDING", "Chờ xác thực"),
+            ("ALLOW", "Cho phép thi"),
+            ("WARNING_ALLOW", "Cho phép thi (cần kiểm tra lại)"),
+            ("BLOCK", "Chặn thi"),
         ],
         default="PENDING",
-        verbose_name="Tráº¡ng thÃ¡i xÃ¡c thá»±c",
+        verbose_name="Trạng thái xác thực",
     )
-    needs_manual_review = models.BooleanField(default=False, verbose_name="Cáº§n kiá»ƒm tra thá»§ cÃ´ng")
-    cheating_flag = models.BooleanField(default=False, verbose_name="Cáº£nh bÃ¡o gian láº­n") # ÄÃ£ thÃªm Ä‘Ã¡nh dáº¥u gian láº­n
+    needs_manual_review = models.BooleanField(default=False, verbose_name="Cần kiểm tra thủ công")
+    cheating_flag = models.BooleanField(default=False, verbose_name="Cảnh báo gian lận")
 
     class Meta:
         db_table = "exam_session"
-        verbose_name = "PhiÃªn thi"
-        verbose_name_plural = "PhiÃªn thi"
+        verbose_name = "Phiên thi"
+        verbose_name_plural = "Phiên thi"
 
     def __str__(self):
-        return f"BÃ i thi mÃ´n {self.subject_id.name} cá»§a {self.user_id.username}"
+        return f"Bài thi môn {self.subject_id.name} của {self.user_id.username}"
 
     @property
     def id(self):
@@ -949,22 +964,22 @@ class ExamResult(models.Model):
         on_delete=models.CASCADE,
         db_column="question_id",
     )
-    transcript = models.TextField(verbose_name="Ná»™i dung tráº£ lá»i")
-    score = models.FloatField(verbose_name="Äiá»ƒm sá»‘")
-    feedback = models.TextField(verbose_name="Nháº­n xÃ©t cá»§a AI", null=True, blank=True)
-    analysis = models.JSONField(verbose_name="PhÃ¢n tÃ­ch chi tiáº¿t", null=True, blank=True)
+    transcript = models.TextField(verbose_name="Nội dung trả lời")
+    score = models.FloatField(verbose_name="Điểm số")
+    feedback = models.TextField(verbose_name="Nhận xét của AI", null=True, blank=True)
+    analysis = models.JSONField(verbose_name="Phân tích chi tiết", null=True, blank=True)
     audio_file = models.FileField(
         upload_to="student_audio/%Y/%m/",
         null=True,
         blank=True,
-        verbose_name="File ghi Ã¢m MP3"
-    ) # ÄÃ£ thÃªm file ghi Ã¢m
+        verbose_name="File ghi âm MP3"
+    )
     answered_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "exam_result"
-        verbose_name = "Káº¿t quáº£ thi"
-        verbose_name_plural = "Káº¿t quáº£ thi"
+        verbose_name = "Kết quả thi"
+        verbose_name_plural = "Kết quả thi"
         constraints = [
             models.UniqueConstraint(
                 fields=["exam_session_id", "question_id"],
@@ -973,7 +988,7 @@ class ExamResult(models.Model):
         ]
 
     def __str__(self):
-        return f"Káº¿t quáº£ cÃ¢u há»i {self.question_id.question_id} cá»§a {self.exam_session_id.user_id.username}"
+        return f"Kết quả câu hỏi {self.question_id.question_id} của {self.exam_session_id.user_id.username}"
 
     @property
     def id(self):
@@ -1003,19 +1018,19 @@ class ExamAppeal(models.Model):
         on_delete=models.CASCADE,
         db_column="exam_session_id",
         related_name="appeal",
-        verbose_name="PhiÃªn thi",
+        verbose_name="Phiên thi",
     )
-    request_content = models.TextField(verbose_name="Ná»™i dung phÃºc kháº£o")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº¡o")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="NgÃ y cáº­p nháº­t")
+    request_content = models.TextField(verbose_name="Nội dung phúc khảo")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
 
     class Meta:
         db_table = "exam_appeal"
-        verbose_name = "YÃªu cáº§u phÃºc kháº£o"
-        verbose_name_plural = "YÃªu cáº§u phÃºc kháº£o"
+        verbose_name = "Yêu cầu phúc khảo"
+        verbose_name_plural = "Yêu cầu phúc khảo"
 
     def __str__(self):
-        return f"PhÃºc kháº£o phiÃªn thi {self.exam_session_id_id}"
+        return f"Phúc khảo phiên thi {self.exam_session_id_id}"
 
     @property
     def id(self):
@@ -1031,28 +1046,27 @@ class ExamAppeal(models.Model):
 
 
 class ViolationImage(models.Model):
-    """LÆ°u hÃ¬nh áº£nh gian láº­n (vd: TWO_FACES) trong quÃ¡ trÃ¬nh thi"""
     violation_image_id = models.AutoField(primary_key=True, db_column="violation_image_id")
     exam_session_id = models.ForeignKey(
         ExamSession,
         on_delete=models.CASCADE,
         db_column="exam_session_id",
         related_name="violation_images",
-        verbose_name="PhiÃªn thi"
+        verbose_name="Phiên thi"
     )
-    image = models.ImageField(upload_to='violations/', null=True, blank=True, verbose_name="áº¢nh gian láº­n")
-    image_mime = models.CharField(max_length=100, default="image/jpeg", verbose_name="MIME type áº£nh")
-    violation_type = models.CharField(max_length=50, default="TWO_FACES", verbose_name="Loáº¡i gian láº­n")
-    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Thá»i Ä‘iá»ƒm ghi nháº­n")
+    image_blob = models.BinaryField(verbose_name="Ảnh gian lận")
+    image_mime = models.CharField(max_length=100, default="image/jpeg", verbose_name="MIME type ảnh")
+    violation_type = models.CharField(max_length=50, default="TWO_FACES", verbose_name="Loại gian lận")
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Thời điểm ghi nhận")
 
     class Meta:
         db_table = "violation_image"
         ordering = ["-timestamp"]
-        verbose_name = "HÃ¬nh áº£nh gian láº­n"
-        verbose_name_plural = "HÃ¬nh áº£nh gian láº­n"
+        verbose_name = "Hình ảnh gian lận"
+        verbose_name_plural = "Hình ảnh gian lận"
 
     def __str__(self):
-        return f"Gian láº­n {self.violation_type} - Session {self.exam_session_id.exam_session_id}"
+        return f"Gian lận {self.violation_type} - Session {self.exam_session_id.exam_session_id}"
 
     @property
     def id(self):
@@ -1068,8 +1082,9 @@ class ViolationImage(models.Model):
 
     @property
     def get_image_data_url(self):
-        if self.image:
-            return self.image.url
+        from base64 import b64encode
+        if self.image_blob:
+            return f"data:{self.image_mime};base64,{b64encode(self.image_blob).decode('ascii')}"
         return ""
 
 
@@ -1080,29 +1095,29 @@ class StudentRosterUpload(models.Model):
         on_delete=models.CASCADE,
         db_column="subject_id",
         related_name="student_roster_uploads",
-        verbose_name="MÃ´n há»c",
+        verbose_name="Môn học",
     )
-    academic_year = models.CharField(max_length=20, verbose_name="NÄƒm há»c")
+    academic_year = models.CharField(max_length=20, verbose_name="Năm học")
     semester = models.CharField(
         max_length=10,
         choices=SemesterChoices.choices,
         default=SemesterChoices.HK1,
-        verbose_name="Há»c ká»³",
+        verbose_name="Học kỳ",
     )
-    title = models.CharField(max_length=255, verbose_name="TÃªn hiá»ƒn thá»‹")
-    original_file_name = models.CharField(max_length=255, verbose_name="TÃªn file gá»‘c")
+    title = models.CharField(max_length=255, verbose_name="Tên hiển thị")
+    original_file_name = models.CharField(max_length=255, verbose_name="Tên file gốc")
     uploaded_file = models.FileField(
         upload_to="student_lists/%Y/%m/",
         null=True,
         blank=True,
-        verbose_name="Tá»‡p danh sÃ¡ch",
+        verbose_name="Tệp danh sách",
     )
-    total_students = models.PositiveIntegerField(default=0, verbose_name="Sá»‘ lÆ°á»£ng sinh viÃªn")
+    total_students = models.PositiveIntegerField(default=0, verbose_name="Số lượng sinh viên")
     status = models.CharField(
         max_length=20,
         choices=StudentListUploadStatus.choices,
         default=StudentListUploadStatus.PENDING,
-        verbose_name="Tráº¡ng thÃ¡i",
+        verbose_name="Trạng thái",
     )
     created_by_user_id = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1111,17 +1126,17 @@ class StudentRosterUpload(models.Model):
         null=True,
         blank=True,
         related_name="student_roster_uploads",
-        verbose_name="NgÆ°á»i táº£i lÃªn",
+        verbose_name="Người tải lên",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº£i lÃªn")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="NgÃ y cáº­p nháº­t")
-    account_created_at = models.DateTimeField(null=True, blank=True, verbose_name="NgÃ y táº¡o tÃ i khoáº£n")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tải lên")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Ngày cập nhật")
+    account_created_at = models.DateTimeField(null=True, blank=True, verbose_name="Ngày tạo tài khoản")
 
     class Meta:
         db_table = "student_roster_upload"
         ordering = ["-created_at"]
-        verbose_name = "Danh sÃ¡ch lá»›p táº£i lÃªn"
-        verbose_name_plural = "Danh sÃ¡ch lá»›p táº£i lÃªn"
+        verbose_name = "Danh sách lớp tải lên"
+        verbose_name_plural = "Danh sách lớp tải lên"
 
     def __str__(self):
         return f"{self.title} - {self.subject_id.subject_code}"
@@ -1183,14 +1198,14 @@ class StudentRosterStudent(models.Model):
         on_delete=models.CASCADE,
         db_column="student_roster_upload_id",
         related_name="students",
-        verbose_name="Tá»‡p danh sÃ¡ch",
+        verbose_name="Tệp danh sách",
     )
     row_number = models.PositiveIntegerField(default=1, verbose_name="STT")
-    student_code = models.CharField(max_length=50, db_index=True, verbose_name="MÃ£ sá»‘ sinh viÃªn")
-    full_name = models.CharField(max_length=255, verbose_name="Há» vÃ  tÃªn")
-    gender = models.CharField(max_length=20, blank=True, default="", verbose_name="Giá»›i tÃ­nh")
-    date_of_birth = models.DateField(null=True, blank=True, verbose_name="NgÃ y sinh")
-    class_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Lá»›p")
+    student_code = models.CharField(max_length=50, db_index=True, verbose_name="Mã số sinh viên")
+    full_name = models.CharField(max_length=255, verbose_name="Họ và tên")
+    gender = models.CharField(max_length=20, blank=True, default="", verbose_name="Giới tính")
+    date_of_birth = models.DateField(null=True, blank=True, verbose_name="Ngày sinh")
+    class_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Lớp")
     email = models.EmailField(blank=True, default="", verbose_name="Email")
     linked_user_id = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1199,22 +1214,22 @@ class StudentRosterStudent(models.Model):
         null=True,
         blank=True,
         related_name="student_list_rows",
-        verbose_name="TÃ i khoáº£n liÃªn káº¿t",
+        verbose_name="Tài khoản liên kết",
     )
-    account_created = models.BooleanField(default=False, verbose_name="ÄÃ£ cÃ³ tÃ i khoáº£n")
+    account_created = models.BooleanField(default=False, verbose_name="Đã có tài khoản")
     account_status = models.CharField(
         max_length=20,
         choices=StudentRosterAccountStatus.choices,
         default=StudentRosterAccountStatus.PENDING,
-        verbose_name="Nguá»“n tráº¡ng thÃ¡i tÃ i khoáº£n",
+        verbose_name="Nguồn trạng thái tài khoản",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="NgÃ y táº¡o")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Ngày tạo")
 
     class Meta:
         db_table = "student_roster_student"
         ordering = ["row_number", "student_roster_student_id"]
-        verbose_name = "Sinh viÃªn trong danh sÃ¡ch"
-        verbose_name_plural = "Sinh viÃªn trong danh sÃ¡ch"
+        verbose_name = "Sinh viên trong danh sách"
+        verbose_name_plural = "Sinh viên trong danh sách"
         constraints = [
             models.UniqueConstraint(
                 fields=["student_roster_upload_id", "student_code"],
@@ -1244,4 +1259,3 @@ class StudentRosterStudent(models.Model):
     @linked_user.setter
     def linked_user(self, value):
         self.linked_user_id = value
-

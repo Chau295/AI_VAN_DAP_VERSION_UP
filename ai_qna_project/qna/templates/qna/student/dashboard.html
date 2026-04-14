@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}Trang chu - He thong Thi van dap AI{% endblock %}
+{% block title %}Trang chủ - Hệ thống Thi vấn đáp AI{% endblock %}
 
 {% block content %}
-<h2 class="text-3xl font-bold text-gray-800 mb-2">Chao mung tro lai, {{ full_name }}!</h2>
-<p class="text-gray-500 mb-8">Hay chon mon hoc ben duoi de bat dau bai thi cua ban.</p>
+<h2 class="text-3xl font-bold text-gray-800 mb-2">Chào mừng trở lại, {{ full_name }}!</h2>
+<p class="text-gray-500 mb-8">Hãy chọn môn học bên dưới để bắt đầu bài thi của bạn.</p>
 
+{% if subject_cards %}
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
     {% for item in subject_cards %}
     <div
@@ -19,7 +20,7 @@
         <div class="flex items-start justify-between">
             <div class="flex-1">
                 <h3 class="text-xl font-bold text-gray-800">{{ item.subject.name }}</h3>
-                <p class="text-gray-500 text-sm mt-1">Ma HP: {{ item.subject.subject_code }}</p>
+                <p class="text-gray-500 text-sm mt-1">Mã HP: {{ item.subject.subject_code }}</p>
             </div>
             <div
                 data-status-badge
@@ -29,14 +30,22 @@
                 <span data-status-label>{{ item.status_label }}</span>
             </div>
         </div>
+
         <div class="mt-4 text-sm text-gray-500 flex-grow">
             {% if item.active_group %}
-            <p data-schedule-text><i class="fas fa-clock mr-2"></i>{{ item.active_group.start_at|date:"H:i d/m/Y" }} - {{ item.active_group.end_at|date:"H:i d/m/Y" }}</p>
+            <p data-schedule-text>
+                <i class="fas fa-clock mr-2"></i>
+                {{ item.active_group.start_at|date:"H:i d/m/Y" }} - {{ item.active_group.end_at|date:"H:i d/m/Y" }}
+            </p>
             {% else %}
-            <p data-schedule-text><i class="fas fa-calendar-xmark mr-2"></i>Hien chua co ca thi kha dung</p>
+            <p data-schedule-text>
+                <i class="fas fa-calendar-xmark mr-2"></i>
+                Hiện chưa có ca thi khả dụng
+            </p>
             {% endif %}
             <p data-live-note class="mt-2 hidden text-xs font-semibold text-gray-500"></p>
         </div>
+
         <div class="mt-4">
             <a
                 data-entry-button
@@ -51,6 +60,15 @@
     </div>
     {% endfor %}
 </div>
+{% else %}
+<div class="bg-white rounded-xl shadow-md p-8 text-center">
+    <div class="text-gray-400 text-5xl mb-4">
+        <i class="fas fa-book-open"></i>
+    </div>
+    <h3 class="text-xl font-bold text-gray-700 mb-2">Chưa có môn học khả dụng</h3>
+    <p class="text-gray-500">Hiện tại bạn chưa được phân công môn học hoặc chưa có ca thi phù hợp.</p>
+</div>
+{% endif %}
 
 <script>
 (function () {
@@ -60,73 +78,73 @@
 
     const statusMeta = {
         NONE: {
-            label: "Chua co ca thi",
+            label: "Chưa mở ca thi",
             badgeClass: "hidden",
             icon: "fa-calendar-xmark",
-            buttonLabel: "Chua the vao thi",
+            buttonLabel: "Chưa thể vào thi",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
         },
         DRAFT: {
-            label: "Chua mo ca thi",
+            label: "Chưa mở ca thi",
             badgeClass: "bg-gray-100 text-gray-700",
             icon: "fa-lock",
-            buttonLabel: "Chua the vao thi",
+            buttonLabel: "Chưa thể vào thi",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
         },
         SCHEDULED: {
-            label: "Chua den gio thi",
+            label: "Chưa đến giờ thi",
             badgeClass: "bg-gray-100 text-gray-700",
             icon: "fa-lock",
-            buttonLabel: "Chua the vao thi",
+            buttonLabel: "Chưa thể vào thi",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
         },
         ONGOING: {
-            label: "Dang mo ca thi",
+            label: "Đang mở ca thi",
             badgeClass: "bg-green-100 text-green-700",
             icon: "fa-circle-play",
-            buttonLabel: "Vao thi",
+            buttonLabel: "Vào thi",
             buttonClass: "bg-orange-500 text-white hover:bg-orange-600",
             buttonIcon: "fa-unlock-alt",
             buttonDisabled: false,
         },
         COMPLETED: {
-            label: "Ngoai thoi gian thi",
+            label: "Ngoài thời gian thi",
             badgeClass: "bg-gray-100 text-gray-700",
             icon: "fa-lock",
-            buttonLabel: "Chua the vao thi",
+            buttonLabel: "Chưa thể vào thi",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
         },
         CANCELLED: {
-            label: "Ca thi da huy",
+            label: "Ca thi đã hủy",
             badgeClass: "bg-red-100 text-red-700",
             icon: "fa-ban",
-            buttonLabel: "Chua the vao thi",
+            buttonLabel: "Chưa thể vào thi",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
         },
         LOCKED_STARTED: {
-            label: "Da bat dau ca thi",
+            label: "Đã bắt đầu ca thi",
             badgeClass: "bg-amber-100 text-amber-700",
             icon: "fa-lock",
-            buttonLabel: "Khong the vao lai",
+            buttonLabel: "Không thể vào lại",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
         },
         LOCKED_COMPLETED: {
-            label: "Da hoan thanh ca thi",
+            label: "Đã hoàn thành ca thi",
             badgeClass: "bg-slate-100 text-slate-700",
             icon: "fa-lock",
-            buttonLabel: "Khong the vao lai",
+            buttonLabel: "Không thể vào lại",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
             buttonIcon: "fa-ban",
             buttonDisabled: true,
@@ -172,12 +190,13 @@
         const hours = Math.floor((totalSeconds % 86400) / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
+
         const hh = String(hours).padStart(2, "0");
         const mm = String(minutes).padStart(2, "0");
         const ss = String(seconds).padStart(2, "0");
 
         if (days > 0) {
-            return `${days}d ${hh}:${mm}:${ss}`;
+            return `${days} ngày ${hh}:${mm}:${ss}`;
         }
 
         return `${hh}:${mm}:${ss}`;
@@ -185,34 +204,35 @@
 
     function buildLiveNote(status, startTs, endTs) {
         const nowTs = (Date.now() / 1000) + SERVER_OFFSET_TS;
+
         if (status === "LOCKED_STARTED") {
-            return "Ban da bat dau ca thi, khong the vao lai.";
+            return "Bạn đã bắt đầu ca thi, không thể vào lại.";
         }
         if (status === "LOCKED_COMPLETED") {
-            return "Ban da hoan thanh ca thi nay.";
+            return "Bạn đã hoàn thành ca thi này.";
         }
         if (!startTs || !endTs) {
             return "";
         }
 
         if (status === "SCHEDULED") {
-            return `Mo sau ${formatCountdown(startTs - nowTs)}`;
+            return `Mở sau ${formatCountdown(startTs - nowTs)}`;
         }
 
         if (status === "ONGOING") {
-            return `Con ${formatCountdown(endTs - nowTs)} de vao thi`;
+            return `Còn ${formatCountdown(endTs - nowTs)} để vào thi`;
         }
 
         if (status === "COMPLETED") {
-            return "Ca thi da ket thuc";
+            return "Ca thi đã kết thúc";
         }
 
         if (status === "CANCELLED") {
-            return "Ca thi da bi huy";
+            return "Ca thi đã bị hủy";
         }
 
         if (status === "DRAFT") {
-            return "Ca thi chua duoc mo";
+            return "Ca thi chưa được mở";
         }
 
         return "";
@@ -223,6 +243,7 @@
         const label = button.querySelector("[data-entry-label]");
 
         button.className = `w-full text-center block font-bold py-2 px-4 rounded-lg transition-colors ${meta.buttonClass}`;
+
         if (icon) {
             icon.className = `fas ${meta.buttonIcon} mr-2`;
         }
@@ -239,6 +260,7 @@
             button.removeAttribute("aria-disabled");
             button.removeAttribute("tabindex");
             button.dataset.disabled = "0";
+
             if (entryUrl) {
                 button.setAttribute("href", entryUrl);
             } else {
@@ -253,8 +275,10 @@
             const lockedStatus = lockState && statusMeta[`LOCKED_${lockState}`] ? `LOCKED_${lockState}` : "";
             const currentStatus = lockedStatus || computeRealtimeStatus(card);
             const meta = statusMeta[currentStatus] || statusMeta.NONE;
+
             const startTs = Number(card.dataset.startTs || 0);
             const endTs = Number(card.dataset.endTs || 0);
+
             const badge = card.querySelector("[data-status-badge]");
             const badgeIcon = card.querySelector("[data-status-icon]");
             const badgeLabel = card.querySelector("[data-status-label]");
@@ -264,15 +288,19 @@
             if (badge) {
                 badge.className = `${meta.badgeClass} px-3 py-1 rounded-full text-xs font-semibold flex items-center`;
             }
+
             if (badgeIcon) {
                 badgeIcon.className = `fas ${meta.icon} mr-1`;
             }
+
             if (badgeLabel) {
                 badgeLabel.textContent = meta.label;
             }
+
             if (button) {
                 applyButtonState(button, meta, lockedStatus ? "" : (card.dataset.entryUrl || ""));
             }
+
             if (liveNote) {
                 const liveNoteText = buildLiveNote(currentStatus, startTs, endTs);
                 liveNote.textContent = liveNoteText;
@@ -289,7 +317,8 @@
     });
 
     updateExamCards();
-    if (document.querySelectorAll('.exam-card').length) {
+
+    if (document.querySelectorAll(".exam-card").length) {
         window.setInterval(updateExamCards, 1000);
     }
 })();

@@ -1436,17 +1436,19 @@
 <script>
   let hasUnsavedGeneratedQuestions = false;
 
-  // Cảnh báo người dùng nếu định thoát trang khi chưa lưu câu hỏi AI
+  const qm2App = document.getElementById('qm2App') || document.getElementById('questionManagementApp') || document.body;
+  const app = qm2App;
+  const hasActiveExam = String(app?.dataset?.hasActiveExam || 'false').toLowerCase() === 'true';
+
   window.addEventListener('beforeunload', function (e) {
-      if (hasUnsavedGeneratedQuestions) {
-          e.preventDefault();
-          e.returnValue = 'Bạn có các câu hỏi vừa tạo chưa được lưu. Bạn có chắc chắn muốn thoát?';
-      }
+    if (hasUnsavedGeneratedQuestions) {
+      e.preventDefault();
+      e.returnValue = 'Bạn có các câu hỏi vừa tạo chưa được lưu. Bạn có chắc chắn muốn thoát?';
+    }
   });
 
-  const app = document.getElementById('qm2App');
   const pageMode = app?.dataset.pageMode || 'list';
-  const viewType = app?.dataset.viewType || 'bank';
+  let viewType = app?.dataset.viewType || 'bank';
   let selectedSubjectId = app?.dataset.selectedSubjectId || '';
   const subjectCode = app?.dataset.subjectCode || '';
   let workspaceId = app?.dataset.workspaceId || '';
@@ -2113,8 +2115,15 @@
 
   async function fetchQuestions() {
     if (!selectedSubjectId) return;
-    const url = `${apiQuestions}?bank_id=${selectedSubjectId}&real_bank_id=${currentBankId}&difficulty=${activeTab}&view_type=${viewType}&workspace_id=${encodeURIComponent(workspaceId)}`;
-    const res = await fetch(url);
+    const params = new URLSearchParams();
+    params.set('subject_id', selectedSubjectId);
+    params.set('bank_id', selectedSubjectId);
+    params.set('real_bank_id', currentBankId || '');
+    params.set('difficulty', activeTab);
+    params.set('view_type', viewType);
+    params.set('workspace_id', workspaceId || '');
+
+    const res = await fetch(`${apiQuestions}?${params.toString()}`);
     const data = await res.json();
     if (data.status !== 'SUCCESS') {
       showToast(data.message || 'Không thể tải danh sách câu hỏi.', 'error');
@@ -2122,6 +2131,7 @@
     }
     renderQuestions(data.questions || []);
     updateSummary(data.summary || {});
+    hasUnsavedGeneratedQuestions = Array.isArray(data.questions) && data.questions.some(item => item.is_draft);
   }
 
   function validateGenerateConfig() {
@@ -2167,8 +2177,11 @@
     }
 
     if (!workspaceId) {
-        workspaceId = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        if(app) app.dataset.workspaceId = workspaceId;
+      workspaceId = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      if (app) app.dataset.workspaceId = workspaceId;
+      const url = new URL(window.location);
+      url.searchParams.set('workspace_id', workspaceId);
+      window.history.replaceState({}, '', url);
     }
 
     btn.classList.add('is-loading');
@@ -2200,24 +2213,30 @@
         throw new Error('Máy chủ trả về phản hồi không hợp lệ khi tạo câu hỏi.');
       }
 
-      if (!res.ok || data.status !== 'SUCCESS') {
+      if (!res.ok || !['SUCCESS', 'PARTIAL_SUCCESS'].includes(data.status)) {
         throw new Error(data.message || 'Tạo câu hỏi thất bại.');
       }
 
       currentJobId = data.job_id || null;
-      if (aiGenerateStatus) aiGenerateStatus.textContent = '';
-
-      if (data.process_status === 'PROCESSING' && currentJobId) {
-        showToast(data.message || 'Đã tiếp nhận yêu cầu tạo câu hỏi.');
-        startPolling();
-        return;
+      if (data.workspace_id) {
+        workspaceId = data.workspace_id;
+        if (app) app.dataset.workspaceId = workspaceId;
       }
 
       if (Array.isArray(data.questions)) {
         renderQuestions(data.questions);
+        hasUnsavedGeneratedQuestions = data.questions.some(item => item.is_draft);
       }
       updateSummary(data.summary || {});
-      showToast(data.message || 'Tạo câu hỏi thành công');
+
+      if (data.process_status === 'PROCESSING' && currentJobId) {
+        showToast(data.message || 'Đã tiếp nhận yêu cầu tạo câu hỏi.', 'warning');
+        startPolling();
+        return;
+      }
+
+      if (aiGenerateStatus) aiGenerateStatus.textContent = '';
+      showToast(data.message || 'Tạo câu hỏi thành công', data.status === 'PARTIAL_SUCCESS' ? 'warning' : 'success');
       await fetchQuestions();
     } catch (err) {
       if (aiGenerateStatus) aiGenerateStatus.textContent = '';
@@ -2239,16 +2258,44 @@
         const data = await res.json();
         if (data.status !== 'SUCCESS') return;
 
-        if (data.process_status === 'COMPLETE') {
+        if (data.workspace_id) {
+          workspaceId = data.workspace_id;
+          if (app) app.dataset.workspaceId = workspaceId;
+        }
+
+        const aiGenerateStatus = document.getElementById('aiGenerateStatus');
+        if (aiGenerateStatus && data.message) {
+          aiGenerateStatus.textContent = data.message;
+        }
+
+        if (Array.isArray(data.questions) && data.questions.length) {
+          renderQuestions(data.questions);
+          updateSummary(data.summary || {});
+          hasUnsavedGeneratedQuestions = data.questions.some(item => item.is_draft);
+        }
+
+        if (data.process_status === 'COMPLETE' || data.process_status === 'PARTIAL_SUCCESS') {
           clearInterval(pollingTimer);
-          showToast('Tạo câu hỏi thành công');
+          pollingTimer = null;
+          if (aiGenerateStatus) aiGenerateStatus.textContent = '';
+          showToast(
+            data.message || (data.process_status === 'PARTIAL_SUCCESS'
+              ? 'Đã tạo được một phần câu hỏi theo yêu cầu.'
+              : 'Tạo câu hỏi thành công'),
+            data.process_status === 'PARTIAL_SUCCESS' ? 'warning' : 'success'
+          );
           await fetchQuestions();
         } else if (data.process_status === 'FAIL') {
           clearInterval(pollingTimer);
+          pollingTimer = null;
+          if (aiGenerateStatus) aiGenerateStatus.textContent = '';
           showToast(data.error_message || 'Tạo câu hỏi thất bại.', 'error');
         }
       } catch {
         clearInterval(pollingTimer);
+        pollingTimer = null;
+        const aiGenerateStatus = document.getElementById('aiGenerateStatus');
+        if (aiGenerateStatus) aiGenerateStatus.textContent = '';
         showToast('Lỗi kiểm tra trạng thái.', 'error');
       }
     }, 2500);
@@ -2392,6 +2439,7 @@
         if (workspaceId) {
           workspaceId = '';
           if (app) app.dataset.workspaceId = '';
+          hasUnsavedGeneratedQuestions = false;
           const cleanedUrl = `${listUrl}?subject_id=${selectedSubjectId}&bank_id=${currentBankId}&mode=detail&view=bank`;
           window.history.replaceState({}, '', cleanedUrl);
         }
@@ -2425,6 +2473,11 @@
     }
 
     const ids = getSelectedQuestionIds();
+    if (ids.length === 0) {
+      errEl.textContent = 'Vui lòng chọn ít nhất 1 câu hỏi để lưu.';
+      return;
+    }
+
     try {
       const createRes = await fetch(apiCreateBank, {
         method: 'POST',
@@ -2442,7 +2495,6 @@
       if (createData.status !== 'SUCCESS') throw new Error(createData.message || 'Lưu thất bại.');
 
       const newBankId = createData.bank_id;
-
       const saveUrl = apiSaveBankTemplate.replace('999999', String(newBankId));
       const saveRes = await fetch(saveUrl, {
         method: 'POST',
@@ -2460,10 +2512,11 @@
       if (saveData.status !== 'SUCCESS') throw new Error(saveData.message || 'Lưu thất bại.');
 
       toggleModal('saveBankModal', false);
+      hasUnsavedGeneratedQuestions = false;
       showToast('Lưu thành công');
       setTimeout(() => {
         window.location.href = `${listUrl}?subject_id=${selectedSubjectId}&bank_id=${newBankId}&mode=detail&view=bank`;
-      }, 1000);
+      }, 600);
     } catch (err) {
       errEl.textContent = err.message;
     }

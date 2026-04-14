@@ -1,25 +1,61 @@
-﻿import json
+﻿# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+import base64
+import csv
+import io
+import json
+import logging
 import os
-import shutil
-import tempfile
-from datetime import timedelta
-from unittest.mock import patch
+import random
+import re
+import unicodedata
+from base64 import b64encode
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from threading import Lock
+from types import SimpleNamespace
+from typing import Any, Dict, List
+from uuid import uuid4
+from django.conf import settings
 
+import fitz  # PyMuPDF
 from asgiref.sync import async_to_sync
-from channels.testing import WebsocketCommunicator
+from channels.layers import get_channel_layer
+from django import forms
+from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files.base import ContentFile
+from django.core.paginator import Paginator
+from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count, Max, Q, Sum
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBadRequest,
+    JsonResponse,
+)
+from django.shortcuts import get_object_or_404, redirect, render
+from django.templatetags.static import static
 from django.utils import timezone
+from django.utils.safestring import mark_safe
+from django.views.decorators.http import require_GET, require_POST
+from docx import Document
+from openai import AuthenticationError, OpenAI
+from openpyxl import Workbook as OpenpyxlWorkbook
+from openpyxl import load_workbook
 
-from . import views
+from .exam_guards import subject_has_active_exam_group
+from .forms import LecturerManualQuestionForm, LecturerMaterialUploadForm
 from .models import (
     DifficultyLevel,
-    ExamAppeal,
     ExamCode,
     ExamCodeQuestion,
     ExamResult,
+    ExamRoom,
     ExamSession,
     ExamSessionGroup,
     ExamSessionRoom,
@@ -28,3343 +64,4381 @@ from .models import (
     LectureMaterial,
     Question,
     QuestionBank,
+    SemesterChoices,
+    StudentListUploadStatus,
     StudentRosterAccountStatus,
     StudentRosterStudent,
     StudentRosterUpload,
     Subject,
     UserProfile,
+    ViolationImage,
+    normalize_question_text,
+)
+from .student_accounts import normalize_student_code
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+LECTURER_HIDDEN_VIOLATION_TYPES = {"NO_FACE"}
+TEN_POINT_SCALE = 10.0
+PASSWORD_ATTEMPT_LIMIT = 5
+PASSWORD_ATTEMPT_WINDOW = 300
+
+
+# =========================================================
+# COMMON HELPERS
+# =========================================================
+def _ensure_lecturer(request):
+    profile = getattr(request.user, "userprofile", None)
+    if not profile or not profile.is_lecturer:
+        raise PermissionDenied("Không có quyền truy cập.")
+
+
+def _get_lecturer_subjects(request):
+    return request.user.userprofile.subjects_taught.all().order_by("name")
+
+
+def _get_selected_subject_for_lecturer(request, subject_id):
+    subjects = _get_lecturer_subjects(request)
+    if subject_id:
+        return get_object_or_404(subjects, pk=subject_id)
+    return subjects.first()
+
+
+def _json_body(request: HttpRequest) -> Dict[str, Any]:
+    try:
+        if request.body:
+            return json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        pass
+    return {}
+
+
+def _is_ajax_request(request):
+    return (
+            request.headers.get("x-requested-with") == "XMLHttpRequest"
+            or "application/json" in request.headers.get("accept", "")
+    )
+
+
+def _get_workspace_id(request, payload=None):
+    payload = payload or {}
+    workspace_id = (
+            request.GET.get("workspace_id")
+            or request.POST.get("workspace_id")
+            or payload.get("workspace_id")
+            or ""
+    )
+    return str(workspace_id).strip()
+
+
+def _draft_prefix(workspace_id: str) -> str:
+    return f"DRAFT_{workspace_id}_" if workspace_id else "DRAFT_"
+
+
+def _ensure_owner(session: ExamSession, user: User) -> None:
+    if session.user_id != getattr(user, "id", None):
+        raise PermissionDenied("Bạn không có quyền truy cập phiên thi này.")
+
+
+def _get_avatar_data_url(profile: UserProfile) -> str:
+    if profile.profile_image_blob:
+        try:
+            return (
+                f"data:{profile.profile_image_mime or 'image/jpeg'};base64,"
+                f"{b64encode(profile.profile_image_blob).decode('ascii')}"
+            )
+        except Exception:
+            pass
+    # Use logo.jpg as fallback avatar if default not found
+    return static("images/logo.jpg")
+
+
+def _question_exists_in_subject(subject, question_text, exclude_question_id=None):
+    normalized = normalize_question_text(question_text)
+    queryset = Question.objects.filter(
+        subject_id=subject,
+        question_text_normalized=normalized,
+        is_exam_clone=False,
+    )
+    if exclude_question_id:
+        queryset = queryset.exclude(pk=exclude_question_id)
+    return queryset.exists()
+
+
+def _get_student_assigned_rooms_for_subject(user, subject):
+    return list(
+        ExamSessionRoom.objects.filter(
+            exam_session_group_id__subject_id=subject,
+            students=user,
+        )
+        .select_related("exam_session_group_id", "exam_set_id")
+        .prefetch_related("exam_codes")
+        .order_by("exam_session_group_id__exam_date", "display_order", "pk")
+    )
+
+
+def _get_student_current_room_for_subject(user, subject):
+    rooms = _get_student_assigned_rooms_for_subject(user, subject)
+    for room in rooms:
+        if _is_exam_group_open(room.exam_session_group_id):
+            return room
+    return None
+
+
+def _get_student_display_room_for_subject(user, subject):
+    rooms = _get_student_assigned_rooms_for_subject(user, subject)
+    if not rooms:
+        return None
+
+    now = timezone.now()
+    current_room = next(
+        (room for room in rooms if _is_exam_group_open(room.exam_session_group_id)),
+        None,
+    )
+    if current_room:
+        return current_room
+
+    upcoming_rooms = [
+        room
+        for room in rooms
+        if room.exam_session_group_id.computed_status in {"SCHEDULED", "DRAFT"}
+           and room.exam_session_group_id.start_at >= now
+    ]
+    if upcoming_rooms:
+        return min(upcoming_rooms, key=lambda room: room.exam_session_group_id.start_at)
+
+    completed_rooms = [
+        room for room in rooms if room.exam_session_group_id.computed_status == "COMPLETED"
+    ]
+    if completed_rooms:
+        return max(completed_rooms, key=lambda room: room.exam_session_group_id.end_at)
+
+    cancelled_rooms = [
+        room for room in rooms if room.exam_session_group_id.computed_status == "CANCELLED"
+    ]
+    if cancelled_rooms:
+        return max(cancelled_rooms, key=lambda room: room.exam_session_group_id.start_at)
+
+    return rooms[0]
+
+
+def _get_student_active_room_for_subject(user, subject):
+    return _get_student_current_room_for_subject(user, subject)
+
+
+def _is_exam_group_open(exam_group):
+    if not exam_group or exam_group.status == "CANCELLED":
+        return False
+    now = timezone.now()
+    start_at = getattr(exam_group, "start_at", None)
+    end_at = getattr(exam_group, "end_at", None)
+    if not start_at or not end_at:
+        return False
+    return start_at <= now <= end_at
+
+
+def _deny_if_exam_closed(request, exam_group, subject_code):
+    if not exam_group or exam_group.status == "CANCELLED":
+        messages.error(request, "Ca thi không khả dụng.")
+        return redirect("qna:dashboard")
+
+    now = timezone.now()
+    if now < exam_group.start_at:
+        messages.error(request, "Chưa đến giờ thi.")
+        return redirect("qna:dashboard")
+
+    if now > exam_group.end_at:
+        messages.error(request, "Ca thi đã kết thúc.")
+        return redirect("qna:dashboard")
+
+    return None
+
+
+def _subject_has_ongoing_exam_group(subject):
+    return subject_has_active_exam_group(subject, now=timezone.now())
+
+
+def _get_student_exam_access_context(user, subject):
+    current_room = _get_student_current_room_for_subject(user, subject)
+    display_room = current_room or _get_student_display_room_for_subject(user, subject)
+    exam_group = display_room.exam_session_group_id if display_room else None
+    return current_room, display_room, exam_group
+
+
+def _student_exam_access_denied_message(display_room, *, no_room_message):
+    return "Chưa đến giờ hoặc đã hết giờ thi." if display_room else no_room_message
+
+
+def _locked_subject_mutation_response(response_style="status"):
+    message = "Không thể chỉnh sửa khi ca thi đang diễn ra."
+    if response_style == "legacy":
+        return JsonResponse({"success": False, "error": message}, status=403)
+    return JsonResponse({"status": "FAIL", "message": message}, status=403)
+
+
+def _get_room_assignment_for_user(exam_group, user):
+    config = exam_group.configuration_data or {}
+    for room_cfg in config.get("rooms") or []:
+        for assignment in room_cfg.get("assignments") or []:
+            if str(assignment.get("linked_user_id")) == str(user.id):
+                return room_cfg, assignment
+    return None, None
+
+
+def _student_exam_entry_session_key(exam_group_id):
+    return f"exam_entry_session_{exam_group_id}"
+
+
+def _student_exam_password_session_key(exam_group_id):
+    return f"exam_password_session_{exam_group_id}"
+
+
+def _room_password_attempts_key(user_id: int, subject_code: str) -> str:
+    return f"room_pwd_attempts:{user_id}:{subject_code}"
+
+
+def _store_student_room_password_access(
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+        room: ExamSessionRoom | None,
+) -> None:
+    if not exam_group or not room:
+        return
+    request.session[_student_exam_password_session_key(exam_group.pk)] = {
+        "room_id": room.pk,
+        "verified_at": timezone.now().isoformat(),
+    }
+    request.session.modified = True
+
+
+def _student_has_room_password_access(
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+        room: ExamSessionRoom | None,
+) -> bool:
+    if not exam_group or not room:
+        return False
+    if not (room.room_password or "").strip():
+        _store_student_room_password_access(request, exam_group, room)
+        return True
+    payload = request.session.get(_student_exam_password_session_key(exam_group.pk)) or {}
+    return str(payload.get("room_id")) == str(room.pk)
+
+
+def _store_student_exam_entry_payload(
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+        room: ExamSessionRoom | None,
+        *,
+        face_image_b64: str,
+        face_image_mime: str,
+) -> dict[str, Any]:
+    payload = {
+        "entry_token": uuid4().hex,
+        "room_id": getattr(room, "pk", None),
+        "face_image_b64": face_image_b64,
+        "face_image_mime": face_image_mime or "image/jpeg",
+        "verified_at": timezone.now().isoformat(),
+    }
+    if exam_group:
+        request.session[_student_exam_entry_session_key(exam_group.pk)] = payload
+        request.session.modified = True
+    return payload
+
+
+def _get_student_exam_entry_payload(
+        request: HttpRequest,
+        exam_group: ExamSessionGroup | None,
+) -> dict[str, Any] | None:
+    if not exam_group:
+        return None
+    payload = request.session.get(_student_exam_entry_session_key(exam_group.pk)) or {}
+    if not isinstance(payload, dict):
+        return None
+    if not payload.get("entry_token") or not payload.get("face_image_b64") or not payload.get("room_id"):
+        return None
+    return payload
+
+
+def _clear_student_exam_entry_payload(request: HttpRequest, exam_group: ExamSessionGroup | None) -> None:
+    if not exam_group:
+        return
+    request.session.pop(_student_exam_entry_session_key(exam_group.pk), None)
+    request.session.modified = True
+
+
+def _get_student_exam_session(user, subject, exam_group):
+    if not exam_group:
+        return None
+    return (
+        ExamSession.objects.filter(
+            user_id=user,
+            subject_id=subject,
+            exam_session_group_id=exam_group,
+        )
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+
+
+def _student_has_started_exam(session):
+    if not session:
+        return False
+    if _is_session_finalized(session):
+        return True
+    return bool(
+        getattr(session, "started_at", None)
+        or getattr(session, "session_status", "") == "STARTED"
+        or session.results.exists()
+    )
+
+
+def _student_exam_reentry_state(session: ExamSession | None) -> str | None:
+    if not session:
+        return None
+    if _is_session_finalized(session):
+        return "COMPLETED"
+    if _student_has_started_exam(session):
+        return "STARTED"
+    return None
+
+
+def _redirect_locked_student_exam(request: HttpRequest, session: ExamSession | None) -> HttpResponse | None:
+    reentry_state = _student_exam_reentry_state(session)
+    if reentry_state == "COMPLETED":
+        messages.error(request, "Bài thi này đã hoàn thành.")
+        return redirect("qna:history_detail", session_id=session.pk)
+    if reentry_state == "STARTED":
+        messages.error(request, "Bạn chỉ được phép vào ca thi 1 lần.")
+        return redirect("qna:dashboard")
+    return None
+
+
+def _locked_student_exam_json(session: ExamSession | None) -> JsonResponse | None:
+    reentry_state = _student_exam_reentry_state(session)
+    if reentry_state == "COMPLETED":
+        return JsonResponse({"status": "error", "message": "Bài thi này đã hoàn thành."}, status=400)
+    if reentry_state == "STARTED":
+        return JsonResponse({"status": "error", "message": "Bạn chỉ được phép vào ca thi 1 lần."}, status=400)
+    return None
+
+
+def _with_lecturer_visible_violation_count(queryset):
+    return queryset.annotate(
+        visible_violation_count=Count(
+            "violation_images",
+            filter=~Q(violation_images__violation_type__in=LECTURER_HIDDEN_VIOLATION_TYPES),
+            distinct=True,
+        )
+    )
+
+
+def _has_lecturer_visible_violation(session):
+    visible_count = getattr(session, "visible_violation_count", None)
+    if visible_count is not None:
+        return visible_count > 0
+    return session.violation_images.exclude(violation_type__in=LECTURER_HIDDEN_VIOLATION_TYPES).exists()
+
+
+def _is_ten_point_scale(raw_total_score: float | None) -> bool:
+    return raw_total_score is not None and abs(float(raw_total_score) - TEN_POINT_SCALE) < 0.001
+
+
+def _get_session_assignment_context(session: ExamSession):
+    cached = getattr(session, "_assignment_context_cache", None)
+    if cached is not None:
+        return cached
+
+    exam_group = getattr(session, "exam_group", None)
+    user = getattr(session, "user", None)
+    context = _get_room_assignment_for_user(exam_group, user) if exam_group and user else (None, None)
+    setattr(session, "_assignment_context_cache", context)
+    return context
+
+
+def _get_session_assigned_exam_code_id(session: ExamSession) -> int | None:
+    cached = getattr(session, "_assigned_exam_code_id_cache", None)
+    if cached is not None:
+        return cached
+
+    _, assignment = _get_session_assignment_context(session)
+    exam_code_id = assignment.get("exam_code_id") if assignment else None
+    try:
+        normalized = int(exam_code_id) if exam_code_id is not None else None
+    except (TypeError, ValueError):
+        normalized = None
+
+    setattr(session, "_assigned_exam_code_id_cache", normalized)
+    return normalized
+
+
+def _get_session_exam_blueprint(session: ExamSession) -> list[ExamCodeQuestion]:
+    cached = getattr(session, "_exam_blueprint_cache", None)
+    if cached is not None:
+        return cached
+
+    exam_code_id = _get_session_assigned_exam_code_id(session)
+    if exam_code_id is None:
+        blueprint: list[ExamCodeQuestion] = []
+    else:
+        blueprint = list(
+            ExamCodeQuestion.objects.filter(exam_code_id=exam_code_id)
+            .select_related("question_id")
+            .order_by("display_order", "exam_code_question_id")
+        )
+
+    setattr(session, "_exam_blueprint_cache", blueprint)
+    return blueprint
+
+
+def _get_session_total_question_count(session: ExamSession) -> int:
+    blueprint = _get_session_exam_blueprint(session)
+    if blueprint:
+        return len(blueprint)
+
+    question_count = session.questions.count()
+    return question_count or 3
+
+
+def _get_session_raw_total_score(session: ExamSession) -> float | None:
+    if hasattr(session, "_raw_total_score_cache"):
+        return getattr(session, "_raw_total_score_cache")
+
+    exam_code_id = _get_session_assigned_exam_code_id(session)
+    if exam_code_id is None:
+        raw_total_score = None
+    else:
+        raw_total_score = round(sum(float(item.score or 0) for item in _get_session_exam_blueprint(session)), 2)
+
+    setattr(session, "_raw_total_score_cache", raw_total_score)
+    return raw_total_score
+
+
+def _attach_session_score_meta(session: ExamSession):
+    session.raw_total_score = _get_session_raw_total_score(session)
+    score_value = float(session.final_score or 0)
+    session.score_scale_suffix = "/10"
+    session.show_non_ten_scale_warning = False
+    session.score_scale_warning = ""
+    session.rendered_final_score = round(score_value, 2)
+    return session
+
+
+def _get_answered_question_count(row) -> int:
+    cached = getattr(row, "answered_question_count", None)
+    if cached is not None:
+        return int(cached)
+
+    if not getattr(row, "id", None):
+        return 0
+
+    answered_count = ExamResult.objects.filter(exam_session_id=row).count()
+    row.answered_question_count = answered_count
+    return answered_count
+
+
+def _build_session_question_details(session: ExamSession) -> list[SimpleNamespace]:
+    results = list(
+        ExamResult.objects.filter(exam_session_id=session)
+        .select_related("question_id")
+        .order_by("answered_at", "exam_result_id")
+    )
+    result_map = {result.question_id_id: result for result in results}
+
+    question_details: list[SimpleNamespace] = []
+    seen_question_ids = set()
+
+    blueprint = _get_session_exam_blueprint(session)
+    if blueprint:
+        for index, item in enumerate(blueprint, start=1):
+            question = item.question_id
+            result = result_map.get(question.pk)
+            question_details.append(
+                SimpleNamespace(
+                    order=index,
+                    question=question,
+                    result=result,
+                    is_answered=bool(result),
+                    status_label="Đã trả lời" if result else "Chưa trả lời",
+                    raw_question_score=float(item.score or 0),
+                )
+            )
+            seen_question_ids.add(question.pk)
+    else:
+        for index, question in enumerate(session.questions.all().order_by("question_id"), start=1):
+            result = result_map.get(question.pk)
+            question_details.append(
+                SimpleNamespace(
+                    order=index,
+                    question=question,
+                    result=result,
+                    is_answered=bool(result),
+                    status_label="Đã trả lời" if result else "Chưa trả lời",
+                    raw_question_score=None,
+                )
+            )
+            seen_question_ids.add(question.pk)
+
+    for result in results:
+        if result.question_id_id in seen_question_ids:
+            continue
+        question_details.append(
+            SimpleNamespace(
+                order=len(question_details) + 1,
+                question=result.question_id,
+                result=result,
+                is_answered=True,
+                status_label="Đã trả lời",
+                raw_question_score=None,
+            )
+        )
+
+    return question_details
+
+
+def _format_duration_display(total_seconds: int | None) -> str:
+    if total_seconds is None:
+        return "-"
+
+    total_seconds = max(0, int(total_seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    parts = []
+    if hours:
+        parts.append(f"{hours} giờ")
+    if minutes:
+        parts.append(f"{minutes} phút")
+    if seconds or not parts:
+        parts.append(f"{seconds} giây")
+    return " ".join(parts)
+
+
+def _get_session_duration_seconds(session: ExamSession) -> int | None:
+    started_at = getattr(session, "started_at", None)
+    if not started_at:
+        return None
+
+    end_at = getattr(session, "completed_at", None)
+    if end_at is None:
+        latest_answered_at = getattr(session, "latest_answered_at", None)
+        if latest_answered_at is None:
+            latest_answered_at = \
+            ExamResult.objects.filter(exam_session_id=session).aggregate(latest=Max("answered_at"))["latest"]
+        end_at = latest_answered_at
+
+    if end_at is None:
+        return None
+
+    return max(0, int((end_at - started_at).total_seconds()))
+
+
+def _attach_session_duration_meta(session: ExamSession):
+    session.actual_duration_seconds = _get_session_duration_seconds(session)
+    session.actual_duration_display = _format_duration_display(session.actual_duration_seconds)
+    return session
+
+
+def _attach_session_assignment_meta(session: ExamSession):
+    room_cfg, _ = _get_session_assignment_context(session)
+    session.room_display = (room_cfg or {}).get("room_name") or "-"
+
+    exam_code_id = _get_session_assigned_exam_code_id(session)
+    exam_code = ExamCode.objects.filter(pk=exam_code_id).only("code_name",
+                                                              "code_number").first() if exam_code_id else None
+    if exam_code:
+        session.exam_code_display = exam_code.code_name or str(exam_code.code_number or exam_code.pk)
+    else:
+        session.exam_code_display = "-"
+
+    return session
+
+
+def _is_session_finalized(session: ExamSession) -> bool:
+    return bool(
+        session.session_status == "COMPLETED"
+        or session.completed_at is not None
+    )
+
+
+def _sync_session_completion_flags(session: ExamSession) -> None:
+    update_fields = []
+
+    if getattr(session, "session_status", None) != "COMPLETED":
+        session.session_status = "COMPLETED"
+        update_fields.append("session_status")
+
+    if getattr(session, "completed_at", None) is None:
+        session.completed_at = timezone.now()
+        update_fields.append("completed_at")
+
+    if update_fields:
+        session.save(update_fields=update_fields)
+
+
+# =========================================================
+# AUTH / ROOT
+# =========================================================
+@login_required
+def post_login_redirect(request):
+    if not hasattr(request.user, "userprofile"):
+        UserProfile.objects.create(user_id=request.user)
+
+    if request.user.userprofile.is_lecturer:
+        return redirect("qna:lecturer_dashboard")
+    return redirect("qna:dashboard")
+
+
+@login_required
+def root_redirect(request):
+    return post_login_redirect(request)
+
+
+# =========================================================
+# DASHBOARD GIẢNG VIÊN
+# =========================================================
+@login_required
+def lecturer_dashboard(request):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+
+    subjects = request.user.userprofile.subjects_taught.annotate(
+        created_exam_count=Count("exam_session_groups", distinct=True),
+        participating_student_count=Count(
+            "student_roster_uploads__students__student_code",
+            distinct=True,
+        ),
+    ).order_by("name")
+
+    selected_subject_id = request.GET.get("subject_id")
+    total_subjects = subjects.count()
+    total_sessions = ExamSession.objects.filter(subject_id__in=subjects).count()
+
+    if selected_subject_id:
+        try:
+            selected_subject = subjects.get(pk=selected_subject_id)
+            sessions = (
+                ExamSession.objects.filter(subject_id=selected_subject)
+                .select_related("subject_id", "user_id", "user_id__userprofile")
+                .order_by("-created_at")[:20]
+            )
+        except (Subject.DoesNotExist, ValueError):
+            selected_subject = None
+            sessions = []
+    else:
+        selected_subject = None
+        sessions = (
+            ExamSession.objects.filter(subject_id__in=subjects)
+            .select_related("subject_id", "user_id", "user_id__userprofile")
+            .order_by("-created_at")[:20]
+        )
+
+    context = {
+        "subjects": subjects,
+        "selected_subject": selected_subject,
+        "total_subjects": total_subjects,
+        "total_sessions": total_sessions,
+        "recent_sessions": sessions,
+    }
+    return render(request, "qna/lecturer/lecturer_dashboard.html", context)
+
+
+@login_required
+def lecturer_subject_list(request):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+    return redirect("qna:lecturer_dashboard")
+
+
+@login_required
+def lecturer_subject_workspace(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+
+    subject = get_object_or_404(
+        request.user.userprofile.subjects_taught,
+        subject_code=subject_code,
+    )
+
+    sessions_in_subject = ExamSession.objects.filter(subject_id=subject)
+    total_exams = sessions_in_subject.count()
+    completed_exams = sessions_in_subject.filter(session_status="COMPLETED").count()
+    total_students = sessions_in_subject.values("user_id").distinct().count()
+    recent_exams = list(
+        _with_lecturer_visible_violation_count(
+            sessions_in_subject.select_related("user_id", "user_id__userprofile")
+        ).order_by("-created_at")[:10]
+    )
+    for session in recent_exams:
+        session.has_violation_warning = _has_lecturer_visible_violation(session)
+    upcoming_groups = (
+        ExamSessionGroup.objects.filter(subject_id=subject, exam_date__gte=timezone.now())
+        .order_by("exam_date")[:5]
+    )
+    approved_codes = ExamCode.objects.filter(subject_id=subject, is_approved=True).count()
+
+    context = {
+        "subject": subject,
+        "total_exams": total_exams,
+        "completed_exams": completed_exams,
+        "total_students": total_students,
+        "recent_exams": recent_exams,
+        "upcoming_groups": upcoming_groups,
+        "approved_codes": approved_codes,
+    }
+    return render(request, "qna/lecturer/lecturer_subject_workspace.html", context)
+
+
+@login_required
+def lecturer_subject_dashboard(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+
+    subject = get_object_or_404(
+        request.user.userprofile.subjects_taught,
+        subject_code=subject_code,
+    )
+    sessions_in_subject = ExamSession.objects.filter(subject_id=subject)
+
+    recent_exams = list(
+        _with_lecturer_visible_violation_count(
+            sessions_in_subject.select_related("user_id", "user_id__userprofile")
+        ).order_by("-created_at")[:10]
+    )
+    for session in recent_exams:
+        session.has_violation_warning = _has_lecturer_visible_violation(session)
+        _attach_review_status_meta(session)
+        session.status_label = session.review_status_label
+        session.status_class = session.review_status_class
+    context = {
+        "subject": subject,
+        "total_exams": sessions_in_subject.count(),
+        "total_students": sessions_in_subject.values("user_id").distinct().count(),
+        "completed_exams": sessions_in_subject.filter(session_status="COMPLETED").count(),
+        "recent_exams": recent_exams,
+    }
+    return render(request, "qna/lecturer/lecturer_subject_dashboard.html", context)
+
+
+@login_required
+def lecturer_profile_view(request: HttpRequest) -> HttpResponse:
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:profile")
+
+    profile = request.user.userprofile
+    avatar_url = _get_avatar_data_url(profile)
+
+    context = {
+        "user": request.user,
+        "profile": profile,
+        "avatar_url": avatar_url,
+        "subjects_taught": profile.subjects_taught.all().order_by("subject_code"),
+    }
+    return render(request, "qna/lecturer/lecturer_profile.html", context)
+
+
+# =========================================================
+# CÂU HỎI - CRUD CŨ
+# =========================================================
+@login_required
+@require_POST
+def lecturer_create_question(request):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
+
+    subject_id = request.POST.get("subject_id")
+    question_text = (request.POST.get("question_text") or "").strip()
+    difficulty = request.POST.get("difficulty")
+
+    if not all([subject_id, question_text, difficulty]):
+        return JsonResponse({"success": False, "error": "Thiếu thông tin bắt buộc"}, status=400)
+
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response(response_style="legacy")
+
+    if _question_exists_in_subject(subject, question_text):
+        return JsonResponse(
+            {"success": False, "error": "Câu hỏi bị trùng trong môn học này."},
+            status=400,
+        )
+
+    question = Question.objects.create(
+        subject_id=subject,
+        question_text=question_text,
+        difficulty=difficulty,
+        question_id_in_barem=f"Q_{subject.subject_code}_{uuid4().hex[:8]}",
+    )
+
+    messages.success(request, "Đã tạo câu hỏi thành công.")
+    return JsonResponse({"success": True, "question_id": question.id})
+
+
+@login_required
+@require_POST
+def lecturer_update_question(request, question_id):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
+
+    question = get_object_or_404(Question, pk=question_id)
+    if question.is_exam_clone:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Không thể sửa câu hỏi đang được sử dụng trong mã đề."},
+            status=400,
+        )
+    if question.subject not in request.user.userprofile.subjects_taught.all():
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập môn học này"}, status=403)
+    if _subject_has_ongoing_exam_group(question.subject):
+        return _locked_subject_mutation_response(response_style="legacy")
+
+    question_text = (request.POST.get("question_text") or "").strip()
+    difficulty = request.POST.get("difficulty")
+
+    if question_text and _question_exists_in_subject(question.subject, question_text, exclude_question_id=question.id):
+        return JsonResponse(
+            {"success": False, "error": "Câu hỏi bị trùng trong môn học này."},
+            status=400,
+        )
+
+    if question_text:
+        question.question_text = question_text
+    if difficulty:
+        question.difficulty = difficulty
+    question.save()
+
+    messages.success(request, "Đã cập nhật câu hỏi thành công.")
+    return JsonResponse({"success": True})
+
+
+@login_required
+@require_POST
+def lecturer_delete_question(request, question_id):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
+
+    question = get_object_or_404(Question, pk=question_id)
+    if question.is_exam_clone:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Không thể xóa câu hỏi đang được sử dụng trong mã đề."},
+            status=400,
+        )
+    if question.subject not in request.user.userprofile.subjects_taught.all():
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập môn học này"}, status=403)
+    if _subject_has_ongoing_exam_group(question.subject):
+        return _locked_subject_mutation_response(response_style="legacy")
+
+    question.delete()
+    messages.success(request, "Đã xoá câu hỏi thành công.")
+    return JsonResponse({"success": True})
+
+
+@login_required
+@require_POST
+def lecturer_import_questions(request):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
+
+    subject_id = request.POST.get("subject_id")
+    file_obj = request.FILES.get("file")
+    if not subject_id or not file_obj:
+        return JsonResponse({"success": False, "error": "Thiếu thông tin"}, status=400)
+
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response(response_style="legacy")
+
+    try:
+        decoded_file = file_obj.read().decode("utf-8-sig")
+        io_string = io.StringIO(decoded_file)
+        reader = csv.DictReader(io_string)
+
+        imported_count = 0
+        duplicated_count = 0
+        invalid_count = 0
+
+        for row in reader:
+            question_text = _extract_import_question_text(row)
+            difficulty = _normalize_import_difficulty(row.get("difficulty"))
+            if not question_text or difficulty is None:
+                invalid_count += 1
+                continue
+
+            if _question_exists_in_subject(subject, question_text):
+                duplicated_count += 1
+                continue
+
+            Question.objects.create(
+                subject_id=subject,
+                question_text=question_text,
+                difficulty=difficulty,
+                question_id_in_barem=f"IMP_{subject.subject_code}_{uuid4().hex[:8]}",
+            )
+            imported_count += 1
+
+        messages.success(
+            request,
+            f"Đã import {imported_count} câu hỏi thành công. Bỏ qua {duplicated_count} câu bị trùng và {invalid_count} dòng không hợp lệ.",
+        )
+        return JsonResponse(
+            {
+                "success": True,
+                "imported_count": imported_count,
+                "duplicated_count": duplicated_count,
+                "invalid_count": invalid_count,
+            }
+        )
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+# =========================================================
+# QUESTION BANK MANAGEMENT
+# =========================================================
+QUESTION_JOB_PREFIX = "qna_question_job_"
+QUESTION_JOB_TIMEOUT = 60 * 30
+QUESTION_JOB_LOCAL_FALLBACK = {}
+QUESTION_JOB_LOCAL_FALLBACK_LOCK = Lock()
+
+
+def _get_lecturer_question_banks(request):
+    return QuestionBank.objects.filter(subject_id__in=_get_lecturer_subjects(request)).select_related("subject_id")
+
+
+def _get_lecturer_question_banks_with_counts(request, subject=None):
+    queryset = _get_lecturer_question_banks(request)
+    if subject is not None:
+        queryset = queryset.filter(subject_id=subject)
+    return queryset.annotate(
+        question_count_value=Count(
+            "questions",
+            filter=Q(questions__is_exam_clone=False),
+            distinct=True,
+        )
+    )
+
+
+def _serialize_question_bank_item(bank, request=None, subject=None):
+    subject_obj = subject or getattr(bank, "subject_id", None)
+    detail_url = None
+    if request is not None and subject_obj is not None:
+        detail_url = f"{request.path}?subject_id={subject_obj.pk}&bank_id={bank.pk}&mode=detail&view=bank"
+
+    return {
+        "bank_id": str(bank.pk),
+        "name": bank.name,
+        "bank_name": bank.name,
+        "bank_type": "ORAL",
+        "created_at": bank.created_at.strftime("%d/%m/%Y") if bank.created_at else "",
+        "question_count": int(getattr(bank, "question_count_value", 0) or 0),
+        "detail_url": detail_url,
+    }
+
+
+def _serialize_material(material: LectureMaterial):
+    return {
+        "document_id": material.id,
+        "file_name": material.title,
+        "original_file_name": material.filename,
+        "upload_time": material.uploaded_at.strftime("%d/%m/%Y"),
+        "content_type": material.file_type or "",
+        "extension": material.extension,
+        "file_size": 0,
+    }
+
+
+def _serialize_question(question: Question):
+    barem_id = question.question_id_in_barem or ""
+    if "AI_" in barem_id:
+        source_text = "AI Tạo tự động"
+    elif "IMP_" in barem_id:
+        source_text = "Import từ file CSV/Excel"
+    else:
+        source_text = "Giảng viên thêm thủ công"
+
+    time_str = ""
+    if question.created_at:
+        local_time = timezone.localtime(question.created_at)
+        time_str = local_time.strftime("%H:%M - %d/%m/%Y")
+
+    is_draft = barem_id.startswith("DRAFT_")
+
+    return {
+        "question_id": question.id,
+        "content": question.question_text,
+        "difficulty": question.difficulty,
+        "difficulty_label": question.get_difficulty_display(),
+        "source": source_text,
+        "source_type": "AI" if "AI_" in barem_id else "MANUAL",
+        "created_at": time_str,
+        "updated_at": "",
+        "is_draft": is_draft,
+    }
+
+
+def _extract_import_question_text(row):
+    for key in ("question", "question_text", "content", "noi_dung", "cau_hoi"):
+        value = (row.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _normalize_import_difficulty(raw_value):
+    value = unicodedata.normalize("NFKD", str(raw_value or "")).encode("ascii", "ignore").decode("ascii")
+    normalized = value.strip().upper().replace(" ", "_")
+    mapping = {
+        "": DifficultyLevel.MEDIUM,
+        "EASY": DifficultyLevel.EASY,
+        "DE": DifficultyLevel.EASY,
+        "MEDIUM": DifficultyLevel.MEDIUM,
+        "TRUNG_BINH": DifficultyLevel.MEDIUM,
+        "HARD": DifficultyLevel.HARD,
+        "KHO": DifficultyLevel.HARD,
+    }
+    return mapping.get(normalized)
+
+
+def _build_level_config(total_count, preset):
+    total_count = int(total_count)
+    if preset == "EASY":
+        return {"easy": total_count, "medium": 0, "hard": 0}
+    if preset == "MEDIUM":
+        return {"easy": 0, "medium": total_count, "hard": 0}
+    if preset == "HARD":
+        return {"easy": 0, "medium": 0, "hard": total_count}
+
+    easy = total_count // 3
+    medium = total_count // 3
+    hard = total_count - easy - medium
+    return {"easy": easy, "medium": medium, "hard": hard}
+
+
+def _question_job_cache_key(job_id):
+    return f"{QUESTION_JOB_PREFIX}{job_id}"
+
+
+def _purge_expired_local_question_jobs(now=None):
+    now = now or timezone.now()
+    with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+        expired_keys = [
+            key
+            for key, entry in QUESTION_JOB_LOCAL_FALLBACK.items()
+            if entry["expires_at"] <= now
+        ]
+        for key in expired_keys:
+            QUESTION_JOB_LOCAL_FALLBACK.pop(key, None)
+
+
+def _save_question_job(job_id, payload):
+    cache_key = _question_job_cache_key(job_id)
+
+    try:
+        cache.set(cache_key, payload, timeout=QUESTION_JOB_TIMEOUT)
+        with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+            QUESTION_JOB_LOCAL_FALLBACK.pop(cache_key, None)
+    except Exception as exc:
+        logger.warning(
+            "Question job cache unavailable for %s, using local fallback: %s",
+            job_id,
+            exc,
+        )
+        _purge_expired_local_question_jobs()
+        with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+            QUESTION_JOB_LOCAL_FALLBACK[cache_key] = {
+                "payload": payload,
+                "expires_at": timezone.now() + timedelta(seconds=QUESTION_JOB_TIMEOUT),
+            }
+
+
+def _get_question_job(job_id):
+    cache_key = _question_job_cache_key(job_id)
+
+    try:
+        cached_job = cache.get(cache_key)
+        if cached_job is not None:
+            with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+                QUESTION_JOB_LOCAL_FALLBACK.pop(cache_key, None)
+            return cached_job
+    except Exception as exc:
+        logger.warning(
+            "Question job cache read failed for %s, checking local fallback: %s",
+            job_id,
+            exc,
+        )
+
+    _purge_expired_local_question_jobs()
+    with QUESTION_JOB_LOCAL_FALLBACK_LOCK:
+        fallback_job = QUESTION_JOB_LOCAL_FALLBACK.get(cache_key)
+        if fallback_job:
+            return fallback_job["payload"]
+    return None
+
+
+# =========================================================
+# ĐỌC FILE TÀI LIỆU
+# =========================================================
+def _read_txt_file(file_path: str) -> str:
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        with open(file_path, "r", encoding="latin-1") as f:
+            return f.read()
+    except Exception as exc:
+        logger.exception("Không đọc được TXT: %s", exc)
+        return ""
+
+
+def _read_docx_file(file_path: str) -> str:
+    try:
+        doc = Document(file_path)
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        return "\n".join(paragraphs)
+    except Exception as exc:
+        logger.exception("Không đọc được DOCX: %s", exc)
+        return ""
+
+
+def _read_pdf_file(file_path: str) -> str:
+    try:
+        # Sử dụng PyMuPDF (fitz) để đọc text từ PDF (kể cả dạng Slide)
+        pdf_document = fitz.open(file_path)
+        texts = []
+        for page_num in range(pdf_document.page_count):
+            try:
+                page = pdf_document.load_page(page_num)
+                # get_text("text") giúp lấy text bảo toàn bộ cục tốt hơn
+                page_text = page.get_text("text") or ""
+                if page_text.strip():
+                    texts.append(page_text.strip())
+            except Exception:
+                continue
+        return "\n".join(texts)
+    except Exception as exc:
+        logger.exception("Không đọc được PDF: %s", exc)
+        return ""
+
+
+def _extract_text_from_material(material: LectureMaterial) -> str:
+    file_path = getattr(material, "file_path", "") or ""
+    if not file_path or not os.path.exists(file_path):
+        return ""
+
+    ext = Path(file_path).suffix.lower()
+
+    if ext == ".txt":
+        return _read_txt_file(file_path)
+    if ext == ".docx":
+        return _read_docx_file(file_path)
+    if ext == ".pdf":
+        return _read_pdf_file(file_path)
+
+    return ""
+
+
+def _truncate_text_for_llm(text: str, max_chars: int = 18000) -> str:
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars]
+
+
+def _build_material_context(materials) -> str:
+    blocks = []
+    for idx, material in enumerate(materials, start=1):
+        text = _extract_text_from_material(material)
+        text = _truncate_text_for_llm(text, max_chars=12000)
+
+        if text.strip():
+            blocks.append(
+                f"TÀI LIỆU {idx}: {material.title}\n"
+                f"NỘI DUNG:\n{text}"
+            )
+    return "\n\n" + ("\n\n" + "=" * 80 + "\n\n").join(blocks)
+
+
+def _normalize_requested_question_counts(total_count: int, level_config: dict) -> dict[str, int]:
+    level_config = level_config or {}
+    total_count = int(total_count or 0)
+
+    easy_count = max(int(level_config.get("easy", 0) or 0), 0)
+    medium_count = max(int(level_config.get("medium", 0) or 0), 0)
+    hard_count = max(int(level_config.get("hard", 0) or 0), 0)
+
+    if easy_count + medium_count + hard_count != total_count:
+        raise ValueError("Phân bổ độ khó không khớp với tổng số lượng câu hỏi yêu cầu.")
+
+    return {
+        "EASY": easy_count,
+        "MEDIUM": medium_count,
+        "HARD": hard_count,
+    }
+
+
+def _question_generation_level_config(target_counts: dict[str, int]) -> dict[str, int]:
+    return {
+        "easy": int(target_counts.get("EASY", 0) or 0),
+        "medium": int(target_counts.get("MEDIUM", 0) or 0),
+        "hard": int(target_counts.get("HARD", 0) or 0),
+    }
+
+
+def _remaining_question_counts(target_counts: dict[str, int], questions) -> dict[str, int]:
+    remaining_counts = dict(target_counts)
+    for item in questions:
+        difficulty = item.get("difficulty")
+        if difficulty in remaining_counts and remaining_counts[difficulty] > 0:
+            remaining_counts[difficulty] -= 1
+    return remaining_counts
+
+
+def _normalize_ai_generated_questions(raw_questions, excluded_question_keys=None):
+    excluded_question_keys = set(excluded_question_keys or [])
+    seen_question_keys = set(excluded_question_keys)
+    normalized_questions = []
+
+    for item in raw_questions or []:
+        if not isinstance(item, dict):
+            continue
+
+        content = (item.get("content") or "").strip()
+        if not content:
+            continue
+
+        content_key = normalize_question_text(content)
+        if not content_key or content_key in seen_question_keys:
+            continue
+
+        difficulty = (item.get("difficulty") or "MEDIUM").strip().upper()
+        if difficulty not in {"EASY", "MEDIUM", "HARD"}:
+            difficulty = "MEDIUM"
+
+        seen_question_keys.add(content_key)
+        normalized_questions.append(
+            {
+                "content": content,
+                "difficulty": difficulty,
+                "source": (item.get("source") or "").strip(),
+            }
+        )
+
+    return normalized_questions
+
+
+def _generate_questions_from_ai(
+        subject: Subject,
+        materials,
+        total_count: int,
+        level_config: dict,
+        excluded_question_texts=None,
+):
+    api_key = getattr(settings, "OPENAI_API_KEY", None)
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            raise Exception("Thiếu OPENAI_API_KEY trong settings.py hoặc biến môi trường")
+
+    context_text = _build_material_context(materials)
+    if not context_text.strip():
+        raise Exception("Không trích xuất được nội dung từ tài liệu tải lên.")
+
+    target_counts = _normalize_requested_question_counts(total_count, level_config)
+
+    client = OpenAI(api_key=api_key)
+
+    excluded_question_texts = [
+        (text or "").strip()
+        for text in (excluded_question_texts or [])
+        if (text or "").strip()
+    ]
+    excluded_question_keys = {
+        normalize_question_text(text)
+        for text in excluded_question_texts
+        if normalize_question_text(text)
+    }
+
+    system_prompt = """
+Bạn là trợ lý tạo câu hỏi văn đáp cho giảng viên đại học.
+
+NHIỆM VỤ:
+- Chỉ được tạo câu hỏi dựa trên nội dung tài liệu được cung cấp.
+- Không bịa thêm kiến thức ngoài tài liệu.
+- Câu hỏi phải rõ ràng, đúng ngữ cảnh môn học.
+- Câu hỏi dạng văn đáp, phù hợp để giảng viên hỏi sinh viên trực tiếp.
+- Không được tạo câu hỏi trùng ý nhau quá nhiều.
+- Phân loại đúng mức độ EASY / MEDIUM / HARD.
+
+MỨC ĐỘ:
+- EASY: hỏi khái niệm, định nghĩa, trình bày cơ bản
+- MEDIUM: hỏi phân tích, so sánh, giải thích, liên hệ
+- HARD: hỏi vận dụng, đánh giá, tình huống, lập luận sâu
+
+ĐẦU RA:
+Trả về JSON hợp lệ theo đúng format:
+{
+  "questions": [
+    {
+      "content": "....",
+      "difficulty": "EASY",
+      "source": "Tên tài liệu liên quan"
+    }
+  ]
+}
+Không thêm markdown, không thêm giải thích ngoài JSON.
+Phải tuân thủ chính xác số lượng từng mức độ được yêu cầu.
+Không được trả về câu hỏi trùng lặp hoặc gần như trùng lặp.
+"""
+
+    collected_questions = []
+    collected_question_keys = set()
+
+    for _ in range(3):
+        remaining_counts = _remaining_question_counts(target_counts, collected_questions)
+        remaining_total = sum(remaining_counts.values())
+        if remaining_total <= 0:
+            break
+
+        excluded_items = list(
+            dict.fromkeys(excluded_question_texts + [item["content"] for item in collected_questions])
+        )[-20:]
+        excluded_block = ""
+        if excluded_items:
+            excluded_block = "\n\nCÁC CU KHÔNG ĐƯỢC LẶP LẠI:\n" + "\n".join(
+                f"- {item}" for item in excluded_items
+            )
+
+        user_prompt = f"""
+Môn học: {subject.name}
+Mã môn: {subject.subject_code}
+
+Hãy tạo chính xác {remaining_total} câu hỏi vấn đáp mới dựa trên nội dung tài liệu bên dưới.
+
+YÊU CẦU SỐ LƯỢNG BẮT BUỘC:
+- EASY: {remaining_counts['EASY']}
+- MEDIUM: {remaining_counts['MEDIUM']}
+- HARD: {remaining_counts['HARD']}
+
+YÊU CẦU CHẤT LƯỢNG:
+- Câu hỏi phải bám sát tài liệu
+- Câu hỏi ngắn gọn, rõ ràng, có chiều sâu
+- Không lặp lại nội dung giữa các câu
+- Tổng số phần tử trong mảng questions phải đúng bằng {remaining_total}
+- Không được trả về câu hỏi thừa so với từng mức độ yêu cầu{excluded_block}
+
+TÀI LIỆU:
+{context_text}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+
+        raw = response.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        questions = data.get("questions", [])
+        if not isinstance(questions, list):
+            questions = []
+
+        normalized_questions = _normalize_ai_generated_questions(
+            questions,
+            excluded_question_keys=excluded_question_keys | collected_question_keys,
+        )
+
+        for item in normalized_questions:
+            difficulty = item["difficulty"]
+            if remaining_counts.get(difficulty, 0) <= 0:
+                continue
+            collected_questions.append(item)
+            collected_question_keys.add(normalize_question_text(item["content"]))
+            remaining_counts[difficulty] -= 1
+
+    remaining_counts = _remaining_question_counts(target_counts, collected_questions)
+    if sum(remaining_counts.values()) > 0:
+        shortage_parts = [
+            f"{difficulty}: {count}"
+            for difficulty, count in remaining_counts.items()
+            if count > 0
+        ]
+        shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
+        raise Exception(f"AI không tạo đủ câu hỏi theo số lượng yêu cầu ({shortage_text}).")
+
+    return collected_questions
+
+
+# =========================================================
+# QUESTION BANK SCREEN
+# =========================================================
+@login_required
+def lecturer_questions_screen(request):
+    _ensure_lecturer(request)
+
+    subjects = _get_lecturer_subjects(request)
+    subject_id = request.GET.get("subject_id")
+    bank_id = request.GET.get("bank_id")
+    page_mode = request.GET.get("mode", "list")
+    view_type = request.GET.get("view", "bank")
+    workspace_id = _get_workspace_id(request)
+
+    selected_subject = _get_selected_subject_for_lecturer(request, subject_id)
+    question_banks = []
+    documents = []
+    selected_bank_name = "Ngân hàng câu hỏi"
+
+    if selected_subject:
+        banks = _get_lecturer_question_banks_with_counts(request, selected_subject).order_by("-created_at")
+        question_banks = [
+            _serialize_question_bank_item(b, request=request, subject=selected_subject)
+            for b in banks
+        ]
+
+        if page_mode == "detail":
+            if view_type == "generate" and workspace_id:
+                documents = LectureMaterial.objects.filter(
+                    subject_id=selected_subject,
+                    workspace_id=workspace_id,
+                ).order_by("-uploaded_at")
+            elif view_type == "bank" and bank_id:
+                bank_obj = _get_lecturer_question_banks(request).filter(
+                    subject_id=selected_subject,
+                    pk=bank_id,
+                ).first()
+                if bank_obj:
+                    selected_bank_name = bank_obj.name
+                    documents = LectureMaterial.objects.filter(
+                        subject_id=selected_subject,
+                        question_bank_id=bank_obj,
+                    ).order_by("-uploaded_at")
+
+    context = {
+        "subjects": subjects,
+        "selected_subject": selected_subject,
+        "selected_bank_id": bank_id,
+        "selected_bank_name": selected_bank_name,
+        "page_mode": page_mode,
+        "view_type": view_type,
+        "workspace_id": workspace_id,
+        "question_banks": question_banks,
+        "documents": [
+            {
+                "id": d.id,
+                "file_name": d.title,
+                "upload_time": d.uploaded_at.strftime("%d/%m/%Y"),
+            }
+            for d in documents
+        ] if page_mode == "detail" else [],
+        "upload_entry_url": (
+            f"{request.path}?subject_id={selected_subject.id}&mode=detail&view=generate"
+            if selected_subject else "#"
+        ),
+    }
+    return render(request, "qna/lecturer/lecturer_question_management.html", context)
+
+
+@login_required
+def question_bank_list_screen(request):
+    return lecturer_questions_screen(request)
+
+
+@login_required
+def question_bank_detail_screen(request):
+    if "mode" not in request.GET:
+        q = request.GET.copy()
+        q["mode"] = "detail"
+        return redirect(f"{request.path}?{q.urlencode()}")
+    return lecturer_questions_screen(request)
+
+
+@login_required
+@require_GET
+def api_get_lecturer_subjects(request):
+    _ensure_lecturer(request)
+    subjects = _get_lecturer_subjects(request)
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "subjects": [{"subject_id": str(item.id), "subject_name": item.name} for item in subjects],
+        }
+    )
+
+
+@login_required
+@require_GET
+def api_get_question_banks(request):
+    _ensure_lecturer(request)
+    subject_id = request.GET.get("subject_id")
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    banks = _get_lecturer_question_banks_with_counts(request, subject).order_by("-created_at")
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "question_banks": [_serialize_question_bank_item(b) for b in banks],
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_create_question_bank(request):
+    _ensure_lecturer(request)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    subject_id = payload.get("subject_id")
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+    bank_name = (payload.get("name") or f"Ngân hàng - {subject.subject_code}").strip()
+
+    if QuestionBank.objects.filter(subject_id=subject, name__iexact=bank_name).exists():
+        return JsonResponse({
+            "status": "FAIL",
+            "message": "Tên ngân hàng này đã tồn tại. Vui lòng chọn tên khác!"
+        }, status=400)
+
+    bank = QuestionBank.objects.create(subject_id=subject, name=bank_name)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "bank_id": str(bank.id),
+            "bank_name": bank.name,
+            "message": "Tạo ngân hàng câu hỏi thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_save_question_bank_questions(request, bank_id):
+    _ensure_lecturer(request)
+    bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
+    subject = bank.subject
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        question_ids = payload.get("question_ids", [])
+    except Exception:
+        return JsonResponse({"status": "FAIL", "message": "Dữ liệu không hợp lệ."}, status=400)
+
+    workspace_id = _get_workspace_id(request, payload)
+    if not workspace_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu workspace_id."}, status=400)
+
+    draft_prefix = _draft_prefix(workspace_id)
+
+    draft_qs = Question.objects.filter(
+        subject_id=subject,
+        is_exam_clone=False,
+        question_id_in_barem__startswith=draft_prefix,
+    )
+
+    selected_drafts = list(draft_qs.filter(pk__in=question_ids).order_by("pk"))
+    discarded_qs = draft_qs.exclude(pk__in=question_ids)
+
+    with transaction.atomic():
+        for q in selected_drafts:
+            q.question_id_in_barem = q.question_id_in_barem.replace(draft_prefix, "SAVED_")
+            q.question_bank_id = bank
+            q.save(update_fields=["question_id_in_barem", "question_bank_id"])
+
+        discarded_count = discarded_qs.count()
+        discarded_qs.delete()
+
+        LectureMaterial.objects.filter(subject_id=subject, workspace_id=workspace_id).update(
+            workspace_id="",
+            question_bank_id=bank,
+        )
+
+    bank_with_count = _get_lecturer_question_banks_with_counts(request).get(pk=bank.pk)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "subject_id": subject.id,
+            "message": "Lưu ngân hàng câu hỏi thành công.",
+            "saved_count": len(selected_drafts),
+            "discarded_count": discarded_count,
+            "question_count": int(getattr(bank_with_count, "question_count_value", 0) or 0),
+            "bank": _serialize_question_bank_item(bank_with_count),
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_delete_question_bank(request, bank_id):
+    _ensure_lecturer(request)
+    bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
+    if _subject_has_ongoing_exam_group(bank.subject):
+        return _locked_subject_mutation_response()
+
+    try:
+        if bank.exam_sets.exists():
+            return JsonResponse(
+                {
+                    "status": "FAIL",
+                    "message": "Ngân hàng câu hỏi đang được sử dụng trong bộ đề thi, không thể xóa.",
+                },
+                status=400,
+            )
+
+        Question.objects.filter(question_bank_id=bank, is_exam_clone=True).update(question_bank_id=None)
+        Question.objects.filter(question_bank_id=bank, is_exam_clone=False).delete()
+
+        materials = LectureMaterial.objects.filter(question_bank_id=bank)
+        for material in materials:
+            try:
+                if material.file_path and os.path.exists(material.file_path):
+                    os.remove(material.file_path)
+            except Exception:
+                pass
+        materials.delete()
+        bank.delete()
+        return JsonResponse({"status": "SUCCESS", "message": "Đã xóa ngân hàng câu hỏi thành công."})
+    except Exception as exc:
+        return JsonResponse({"status": "FAIL", "message": f"Lỗi: {str(exc)}"}, status=500)
+
+
+@login_required
+@require_POST
+def api_material_presign(request):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập."}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    file_name = (payload.get("file_name") or "").strip()
+    file_size = int(payload.get("file_size") or 0)
+
+    if not file_name:
+        return JsonResponse({"status": "FAIL", "message": "Tên file không hợp lệ."}, status=400)
+    if file_size > 50 * 1024 * 1024:
+        return JsonResponse({"status": "FAIL", "message": "File vượt quá 50MB."}, status=400)
+
+    file_key = f"lecture_materials/tmp/{uuid4().hex}_{file_name}"
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "presigned_url": f"/media/{file_key}",
+            "file_key": file_key,
+            "message": "Tạo phiên upload thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_material_upload_complete(request):
+    _ensure_lecturer(request)
+    import hashlib
+
+    subject_id = request.POST.get("subject_id")
+    bank_id = (request.POST.get("bank_id") or "").strip()
+    title = request.POST.get("title") or request.POST.get("file_name")
+    file_obj = request.FILES.get("file")
+
+    if not subject_id or not title or not file_obj:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu dữ liệu upload."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    bank_obj = None
+    if bank_id:
+        bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=bank_id).first()
+        if bank_obj is None:
+            return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    file_bytes = file_obj.read()
+    if not file_bytes:
+        return JsonResponse({"status": "FAIL", "message": "File rỗng hoặc không hợp lệ."}, status=400)
+
+    file_hash = hashlib.md5(file_bytes).hexdigest()
+    original_name = file_obj.name.strip()
+    workspace_id = request.POST.get("workspace_id", "")
+
+    existing_materials = LectureMaterial.objects.filter(subject_id=subject)
+    if workspace_id:
+        existing_materials = existing_materials.filter(workspace_id=workspace_id)
+    elif bank_obj:
+        existing_materials = existing_materials.filter(question_bank_id=bank_obj)
+    else:
+        existing_materials = existing_materials.filter(workspace_id="", question_bank_id__isnull=True)
+
+    for material in existing_materials:
+        existing_path = getattr(material, "file_path", None)
+        existing_name = os.path.basename(existing_path) if existing_path else ""
+        same_name = existing_name.lower() == original_name.lower()
+
+        same_hash = False
+        if existing_path and os.path.exists(existing_path):
+            try:
+                with open(existing_path, "rb") as f:
+                    same_hash = (hashlib.md5(f.read()).hexdigest() == file_hash)
+            except Exception:
+                pass
+
+        if same_name or same_hash:
+            return JsonResponse(
+                {
+                    "status": "FAIL",
+                    "message": f"Tài liệu '{original_name}' đã tồn tại hoặc trùng lặp trong ngân hàng này.",
+                },
+                status=400,
+            )
+
+    upload_dir = os.path.join(settings.MEDIA_ROOT, "lecture_materials", subject.subject_code)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    safe_name = original_name
+    base_name, extension = os.path.splitext(safe_name)
+    file_path = os.path.join(upload_dir, safe_name)
+    counter = 1
+    while os.path.exists(file_path):
+        safe_name = f"{base_name}_{counter}{extension}"
+        file_path = os.path.join(upload_dir, safe_name)
+        counter += 1
+
+    with open(file_path, "wb+") as destination:
+        destination.write(file_bytes)
+
+    material = LectureMaterial.objects.create(
+        subject_id=subject,
+        question_bank_id=bank_obj,
+        title=os.path.splitext(title)[0],
+        file_path=file_path,
+        file_type=file_obj.content_type or "application/octet-stream",
+        workspace_id=workspace_id,
+    )
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "document_id": str(material.id),
+            "file_name": material.title,
+            "message": "Upload thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def lecturer_delete_material(request, material_id):
+    material = get_object_or_404(LectureMaterial, pk=material_id)
+
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập."}, status=403)
+
+    if material.subject not in request.user.userprofile.subjects_taught.all():
+        return JsonResponse({"status": "FAIL", "message": "Bạn không có quyền xóa tài liệu này."}, status=403)
+    if _subject_has_ongoing_exam_group(material.subject):
+        return _locked_subject_mutation_response()
+
+    try:
+        if material.file_path and os.path.exists(material.file_path):
+            os.remove(material.file_path)
+    except Exception as exc:
+        logger.warning("Không thể xóa file vật lý: %s", exc)
+
+    material.delete()
+    return JsonResponse({"status": "SUCCESS", "message": "Đã xóa tài liệu thành công."})
+
+
+@login_required
+@require_GET
+def api_get_materials(request):
+    _ensure_lecturer(request)
+
+    subject_id = request.GET.get("subject_id")
+    bank_id = (request.GET.get("bank_id") or "").strip()
+    search = (request.GET.get("search") or "").strip()
+    workspace_id = (request.GET.get("workspace_id") or "").strip()
+    view_type = (request.GET.get("view_type") or "generate").strip()
+
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+
+    if view_type == "bank" and bank_id:
+        bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=bank_id).first()
+        if bank_obj is None:
+            return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
+        qs = LectureMaterial.objects.filter(subject_id=subject, question_bank_id=bank_obj).order_by("-uploaded_at")
+    elif workspace_id:
+        qs = LectureMaterial.objects.filter(subject_id=subject, workspace_id=workspace_id).order_by("-uploaded_at")
+    else:
+        qs = LectureMaterial.objects.none()
+
+    if search:
+        qs = qs.filter(title__icontains=search)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "documents": [_serialize_material(item) for item in qs],
+            "pagination": {"page": 1, "num_pages": 1, "has_next": False, "has_previous": False},
+        }
+    )
+
+
+@login_required
+@require_GET
+def api_get_questions(request):
+    _ensure_lecturer(request)
+
+    subject_id = request.GET.get("bank_id")
+    real_bank_id = (request.GET.get("real_bank_id") or "").strip()
+    difficulty = request.GET.get("difficulty")
+    view_type = request.GET.get("view_type", "bank")
+    workspace_id = (request.GET.get("workspace_id") or "").strip()
+
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    all_qs = Question.objects.filter(subject_id=subject, is_exam_clone=False)
+
+    if view_type == "generate" and workspace_id:
+        filtered_qs = all_qs.filter(question_id_in_barem__startswith=_draft_prefix(workspace_id))
+    elif view_type == "bank" and real_bank_id:
+        bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=real_bank_id).first()
+        if bank_obj is None:
+            return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
+        if workspace_id:
+            filtered_qs = all_qs.filter(
+                Q(question_bank_id=bank_obj) | Q(question_id_in_barem__startswith=_draft_prefix(workspace_id))
+            )
+        else:
+            filtered_qs = all_qs.filter(question_bank_id=bank_obj)
+    else:
+        filtered_qs = Question.objects.none()
+
+    summary_qs = filtered_qs
+    if difficulty and difficulty != "ALL":
+        filtered_qs = filtered_qs.filter(difficulty=difficulty)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "questions": [_serialize_question(item) for item in filtered_qs.order_by("-pk")],
+            "summary": {
+                "all": summary_qs.count(),
+                "easy": summary_qs.filter(difficulty=DifficultyLevel.EASY).count(),
+                "medium": summary_qs.filter(difficulty=DifficultyLevel.MEDIUM).count(),
+                "hard": summary_qs.filter(difficulty=DifficultyLevel.HARD).count(),
+            },
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_create_manual_question(request):
+    _ensure_lecturer(request)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    subject_id = payload.get("subject_id") or payload.get("bank_id")
+    real_bank_id = payload.get("real_bank_id")
+    workspace_id = _get_workspace_id(request, payload)
+    view_type = (payload.get("view_type") or "bank").strip()
+
+    form = LecturerManualQuestionForm(
+        {
+            "subject_id": subject_id,
+            "question_text": payload.get("content") or payload.get("question_text"),
+            "difficulty": payload.get("difficulty"),
+        }
+    )
+
+    if not form.is_valid():
+        return JsonResponse({"status": "FAIL", "message": form.errors.as_json()}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=form.cleaned_data["subject_id"])
+    question_text = form.cleaned_data["question_text"]
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    if _question_exists_in_subject(subject, question_text):
+        return JsonResponse(
+            {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+            status=400,
+        )
+
+    bank_obj = None
+    if view_type == "generate":
+        if not workspace_id:
+            return JsonResponse({"status": "FAIL", "message": "Thiếu workspace_id."}, status=400)
+        question_code = f"{_draft_prefix(workspace_id)}{uuid4().hex[:8]}"
+    else:
+        if real_bank_id:
+            bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=real_bank_id).first()
+            if bank_obj is None:
+                return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
+        question_code = f"MAN_{subject.subject_code}_{uuid4().hex[:8]}"
+
+    try:
+        question = Question.objects.create(
+            subject_id=subject,
+            question_bank_id=bank_obj,
+            question_text=question_text,
+            difficulty=form.cleaned_data["difficulty"],
+            question_id_in_barem=question_code,
+        )
+    except IntegrityError:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+            status=400,
+        )
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "question": _serialize_question(question),
+            "message": "Thêm câu hỏi thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_update_question_bank_question(request, question_id):
+    _ensure_lecturer(request)
+
+    question = get_object_or_404(Question, pk=question_id)
+    if question.subject not in request.user.userprofile.subjects_taught.all():
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập môn học này."}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    if question.is_exam_clone:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Không thể sửa câu hỏi đang được sử dụng trong mã đề."},
+            status=400,
+        )
+    if _subject_has_ongoing_exam_group(question.subject):
+        return _locked_subject_mutation_response()
+
+    question_text = (payload.get("content") or payload.get("question_text") or "").strip()
+    difficulty = payload.get("difficulty")
+
+    if question_text and _question_exists_in_subject(question.subject, question_text, exclude_question_id=question.id):
+        return JsonResponse(
+            {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+            status=400,
+        )
+
+    if question_text:
+        question.question_text = question_text
+    if difficulty in ["EASY", "MEDIUM", "HARD"]:
+        question.difficulty = difficulty
+
+    try:
+        question.save()
+    except IntegrityError:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+            status=400,
+        )
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "question": _serialize_question(question),
+            "message": "Cập nhật câu hỏi thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_delete_question_bank_question(request, question_id):
+    _ensure_lecturer(request)
+
+    question = get_object_or_404(Question, pk=question_id)
+    if question.is_exam_clone:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Không thể xóa câu hỏi đang được sử dụng trong mã đề."},
+            status=400,
+        )
+    if question.subject not in request.user.userprofile.subjects_taught.all():
+        return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập môn học này."}, status=403)
+    if _subject_has_ongoing_exam_group(question.subject):
+        return _locked_subject_mutation_response()
+
+    question.delete()
+    return JsonResponse({"status": "SUCCESS", "message": "Xóa câu hỏi thành công."})
+
+
+@login_required
+@require_POST
+def api_bulk_update_question_level(request):
+    _ensure_lecturer(request)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    bank_id = payload.get("bank_id")
+    difficulty = payload.get("difficulty")
+    question_ids = payload.get("question_ids", [])
+
+    if isinstance(question_ids, str):
+        question_ids = json.loads(question_ids)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=bank_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    updated = Question.objects.filter(
+        subject_id=subject,
+        pk__in=question_ids,
+        is_exam_clone=False,
+    ).update(difficulty=difficulty)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "affected": updated,
+            "message": "Thay đổi mức độ thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_bulk_delete_questions(request):
+    _ensure_lecturer(request)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    bank_id = payload.get("bank_id")
+    question_ids = payload.get("question_ids", [])
+
+    if isinstance(question_ids, str):
+        question_ids = json.loads(question_ids)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=bank_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    qs = Question.objects.filter(subject_id=subject, pk__in=question_ids, is_exam_clone=False)
+    deleted_count = qs.count()
+    qs.delete()
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "affected": deleted_count,
+            "message": "Xóa câu hỏi thành công.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def api_generate_questions(request):
+    _ensure_lecturer(request)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = request.POST
+
+    subject_id = payload.get("subject_id")
+    document_ids = payload.get("document_ids", [])
+    total_count = int(payload.get("total_count", 0))
+    level_config = payload.get("level_config", {})
+    workspace_id = _get_workspace_id(request, payload)
+
+    if isinstance(document_ids, str):
+        document_ids = json.loads(document_ids)
+    if isinstance(level_config, str):
+        level_config = json.loads(level_config)
+
+    if not subject_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
+
+    subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response()
+
+    if not workspace_id:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Thiếu workspace_id cho phiên tạo câu hỏi."},
+            status=400,
+        )
+
+    if not document_ids:
+        return JsonResponse({"status": "FAIL", "message": "Bạn phải chọn ít nhất 1 tài liệu."}, status=400)
+
+    if total_count <= 0 or total_count > 100:
+        return JsonResponse({"status": "FAIL", "message": "Số lượng câu hỏi không hợp lệ."}, status=400)
+
+    try:
+        requested_counts = _normalize_requested_question_counts(total_count, level_config)
+    except ValueError as exc:
+        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
+
+    materials = list(
+        LectureMaterial.objects.filter(
+            subject_id=subject,
+            pk__in=document_ids,
+        ).order_by("-uploaded_at")
+    )
+
+    if not materials:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Danh sách tài liệu không hợp lệ cho phiên hiện tại."},
+            status=400,
+        )
+
+    job_id = uuid4().hex
+
+    try:
+        skipped_duplicates = 0
+        prepared_questions = []
+        retry_excluded_texts = []
+        known_question_keys = {
+            item
+            for item in Question.objects.filter(subject_id=subject, is_exam_clone=False).values_list(
+                "question_text_normalized",
+                flat=True,
+            )
+            if item
+        }
+        draft_prefix = _draft_prefix(workspace_id)
+
+        for _ in range(3):
+            remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+            remaining_total = sum(remaining_counts.values())
+            if remaining_total <= 0:
+                break
+
+            ai_questions = _generate_questions_from_ai(
+                subject=subject,
+                materials=materials,
+                total_count=remaining_total,
+                level_config=_question_generation_level_config(remaining_counts),
+                excluded_question_texts=retry_excluded_texts,
+            )
+
+            for item in ai_questions:
+                content_key = normalize_question_text(item["content"])
+                if not content_key:
+                    continue
+                if content_key in known_question_keys:
+                    skipped_duplicates += 1
+                    retry_excluded_texts.append(item["content"])
+                    continue
+
+                difficulty = item.get("difficulty")
+                if remaining_counts.get(difficulty, 0) <= 0:
+                    retry_excluded_texts.append(item["content"])
+                    continue
+
+                prepared_questions.append(item)
+                known_question_keys.add(content_key)
+                remaining_counts[difficulty] -= 1
+
+        remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+        if sum(remaining_counts.values()) > 0:
+            shortage_parts = [
+                f"{difficulty}: {count}"
+                for difficulty, count in remaining_counts.items()
+                if count > 0
+            ]
+            shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
+            raise Exception(f"AI không tạo đủ câu hỏi hợp lệ theo yêu cầu ({shortage_text}).")
+
+        created_questions = []
+        with transaction.atomic():
+            for item in prepared_questions:
+                q = Question.objects.create(
+                    subject_id=subject,
+                    question_text=item["content"],
+                    difficulty=item["difficulty"],
+                    question_id_in_barem=f"{draft_prefix}{uuid4().hex[:8]}",
+                )
+
+                q_data = _serialize_question(q)
+                q_data["source"] = item.get("source") or "AI từ tài liệu"
+                created_questions.append(q_data)
+
+        summary = {
+            "all": len(created_questions),
+            "easy": len([q for q in created_questions if q["difficulty"] == "EASY"]),
+            "medium": len([q for q in created_questions if q["difficulty"] == "MEDIUM"]),
+            "hard": len([q for q in created_questions if q["difficulty"] == "HARD"]),
+        }
+
+        _save_question_job(
+            job_id,
+            {
+                "status": "COMPLETE",
+                "progress": 100,
+                "questions": created_questions,
+                "summary": summary,
+                "error_message": "",
+            },
+        )
+
+        return JsonResponse(
+            {
+                "status": "SUCCESS",
+                "job_id": job_id,
+                "message": (
+                    f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công. "
+                    f"Hệ thống đã tự sinh bù {skipped_duplicates} câu bị trùng."
+                    if skipped_duplicates
+                    else f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công."
+                ),
+                "questions": created_questions,
+                "summary": summary,
+                "created_count": len(created_questions),
+                "requested_count": total_count,
+                "skipped_duplicates": skipped_duplicates,
+            }
+        )
+
+    except AuthenticationError:
+        message = "OpenAI API key không hợp lệ hoặc đã hết hiệu lực. Vui lòng kiểm tra lại cấu hình OPENAI_API_KEY."
+        logger.warning("Generate questions failed due to OpenAI authentication", exc_info=True)
+        _save_question_job(
+            job_id,
+            {
+                "status": "FAIL",
+                "progress": 100,
+                "questions": [],
+                "summary": {},
+                "error_message": message,
+            },
+        )
+        return JsonResponse({"status": "FAIL", "message": message}, status=400)
+    except Exception:
+        message = "Tạo câu hỏi thất bại. Vui lòng thử lại sau."
+        logger.exception("Generate questions direct failed")
+        _save_question_job(
+            job_id,
+            {
+                "status": "FAIL",
+                "progress": 100,
+                "questions": [],
+                "summary": {},
+                "error_message": message,
+            },
+        )
+        return JsonResponse({"status": "FAIL", "message": message}, status=500)
+
+
+@login_required
+@require_GET
+def api_generate_questions_status(request):
+    _ensure_lecturer(request)
+
+    job_id = request.GET.get("job_id")
+    if not job_id:
+        return JsonResponse({"status": "FAIL", "message": "Thiếu job_id."}, status=400)
+
+    job = _get_question_job(job_id)
+    if not job:
+        return JsonResponse({"status": "FAIL", "message": "Không tìm thấy job."}, status=404)
+
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "process_status": job.get("status"),
+            "progress": job.get("progress", 0),
+            "questions": job.get("questions", []),
+            "summary": job.get("summary", {}),
+            "error_message": job.get("error_message", ""),
+        }
+    )
+
+
+# =========================================================
+# MATERIAL / QUESTION SCREEN CÅ¨
+# =========================================================
+@login_required
+def lecturer_question_management(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        messages.error(request, "Bạn không có quyền truy cập.")
+        return redirect("qna:dashboard")
+
+    subject = get_object_or_404(
+        request.user.userprofile.subjects_taught.all(),
+        subject_code=subject_code,
+    )
+
+    subjects = request.user.userprofile.subjects_taught.all().order_by("name")
+    page_mode = request.GET.get("mode", "detail")
+
+    question_banks = [
+        {
+            "bank_id": subject.id,
+            "name": f"Ngân hàng câu hỏi - {subject.subject_code}",
+            "detail_url": f"{request.path}?mode=detail",
+            "question_count": Question.objects.filter(subject_id=subject, is_exam_clone=False).count(),
+        }
+    ]
+
+    documents = LectureMaterial.objects.filter(subject_id=subject).order_by("-uploaded_at")
+
+    questions = [
+        {
+            "id": q.id,
+            "content": q.question_text,
+            "level": q.difficulty,
+            "source_name": "",
+            "created_at": "",
+            "selected": False,
+        }
+        for q in
+        Question.objects.filter(subject_id=subject, is_exam_clone=False).order_by("question_id_in_barem", "-pk")
+    ]
+
+    has_active_exam = subject_has_active_exam_group(subject)
+
+    context = {
+        "subject": subject,
+        "subjects": subjects,
+        "selected_subject": subject,
+        "page_mode": page_mode,
+        "question_banks": question_banks,
+        "documents": [
+            {
+                "id": d.id,
+                "file_name": d.title,
+                "upload_time": d.uploaded_at.strftime("%d/%m/%Y"),
+            }
+            for d in documents
+        ],
+        "questions": questions,
+        "upload_entry_url": request.path,
+        "has_active_exam": has_active_exam,
+    }
+    return render(request, "qna/lecturer/lecturer_question_management.html", context)
+
+
+@login_required
+@require_POST
+def lecturer_upload_material_screen(request):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"success": False, "error": "Không có quyền truy cập"}, status=403)
+
+    subject_id = request.POST.get("subject_id")
+    title = request.POST.get("title") or request.POST.get("material_name")
+    file_obj = request.FILES.get("file") or request.FILES.get("material_file")
+
+    if not subject_id or not title or not file_obj:
+        return JsonResponse({"success": False, "error": "Thiếu thông bắt buộc"}, status=400)
+
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response(response_style="legacy")
+
+    upload_dir = os.path.join(settings.MEDIA_ROOT, "lecture_materials", subject.subject_code)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    file_path = os.path.join(upload_dir, file_obj.name)
+    with open(file_path, "wb+") as destination:
+        for chunk in file_obj.chunks():
+            destination.write(chunk)
+
+    material = LectureMaterial.objects.create(
+        subject_id=subject,
+        title=title,
+        file_path=file_path,
+        file_type=file_obj.content_type,
+    )
+
+    return JsonResponse({"success": True, "material_id": material.id})
+
+
+@login_required
+@require_POST
+def lecturer_upload_material(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        return JsonResponse({"success": False, "error": "Không có quyền"}, status=403)
+
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, subject_code=subject_code)
+    if _subject_has_ongoing_exam_group(subject):
+        return _locked_subject_mutation_response(response_style="legacy")
+    title = request.POST.get("title")
+    file_obj = request.FILES.get("file")
+    if not title or not file_obj:
+        return JsonResponse({"success": False, "error": "Thiếu thông tin"}, status=400)
+
+    upload_dir = os.path.join(settings.MEDIA_ROOT, "lecture_materials", subject_code)
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, file_obj.name)
+    with open(file_path, "wb+") as destination:
+        for chunk in file_obj.chunks():
+            destination.write(chunk)
+
+    material = LectureMaterial.objects.create(
+        subject_id=subject,
+        title=title,
+        file_path=file_path,
+        file_type=file_obj.content_type,
+    )
+    messages.success(request, "Đã upload tài liệu thành công.")
+    return JsonResponse({"success": True, "material_id": material.id})
+
+
+@login_required
+def lecturer_generate_exam_codes(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, subject_code=subject_code)
+    return render(
+        request,
+        "qna/lecturer/lecturer_generate_exam_codes.html",
+        {
+            "subject": subject,
+            "materials": LectureMaterial.objects.filter(subject_id=subject).order_by("-uploaded_at"),
+            "pending_exam_codes": ExamCode.objects.filter(subject_id=subject, is_approved=False).order_by(
+                "-created_at"),
+        },
+    )
+
+
+@login_required
+@require_POST
+def lecturer_generate_codes_with_ai(request):
+    return JsonResponse(
+        {
+            "success": False,
+            "error": (
+                "Chức năng sinh mã đề AI kiểu cũ đã bị vô hiệu vì không còn khớp với cấu trúc "
+                "mã đề hiện tại. Hãy dùng màn tạo bộ đề/mã đề mới."
+            ),
+        },
+        status=400,
+    )
+
+
+@login_required
+@require_POST
+def lecturer_update_exam_code_question(request, exam_code_id):
+    return JsonResponse(
+        {
+            "success": False,
+            "error": (
+                "API chỉnh câu hỏi mã đề kiểu cũ đã bị vô hiệu vì model hiện tại không còn "
+                "question_easy/question_medium/question_hard."
+            ),
+        },
+        status=400,
+    )
+
+
+@login_required
+@require_POST
+def lecturer_edit_exam_code_question(request, exam_code_id):
+    return JsonResponse(
+        {
+            "success": False,
+            "error": (
+                "API chỉnh câu hỏi mã đề kiểu cũ đã bị vô hiệu vì model hiện tại không còn "
+                "question_easy/question_medium/question_hard."
+            ),
+        },
+        status=400,
+    )
+
+
+# =========================================================
+# REVIEW / EXPORT
+# =========================================================
+
+def _compute_scores(session: ExamSession) -> tuple[float, float]:
+    """
+    Tính điểm tổng kết dựa trên toàn bộ số câu của blueprint.
+    Câu chưa trả lời được tính là 0 điểm.
+    Trả về: (main_avg, final_total)
+    """
+    total_main_questions = max(_get_session_total_question_count(session), 0)
+    total_answer_score = (
+            ExamResult.objects.filter(exam_session_id=session)
+            .aggregate(total=Sum("score"))
+            .get("total")
+            or 0.0
+    )
+
+    if total_main_questions <= 0:
+        return 0.0, 0.0
+
+    main_avg = float(total_answer_score) / float(total_main_questions)
+    final_total = round(main_avg, 2)
+    return main_avg, final_total
+
+
+def _attach_review_status_meta(session: ExamSession) -> None:
+    """
+    Chỉ gán các field tạm thời KHÔNG đụng vào property.
+    """
+    resolved_status = getattr(session, "display_status", None)
+    if not resolved_status:
+        if getattr(session, "session_status", "") == "COMPLETED" or getattr(session, "is_completed", False):
+            resolved_status = "COMPLETED"
+        else:
+            exam_group = getattr(session, "exam_session_group_id", None) or getattr(session, "exam_group", None)
+            if exam_group and getattr(exam_group, "computed_status", None) == "COMPLETED":
+                answered_count = _get_answered_question_count(session) if getattr(session, "id", None) else 0
+                resolved_status = "ENDED" if answered_count > 0 else "ABSENT"
+            else:
+                resolved_status = "IN_PROGRESS"
+
+    if resolved_status == "COMPLETED":
+        session.review_status_label = "Đã hoàn thành"
+        session.review_status_class = "status-completed"
+        session.can_view_detail = True
+        session.can_display_score = True
+    elif resolved_status == "ENDED":
+        session.review_status_label = "Đã kết thúc"
+        session.review_status_class = "status-ended"
+        session.can_view_detail = True
+        session.can_display_score = True
+    elif resolved_status == "ABSENT":
+        session.review_status_label = "Vắng thi"
+        session.review_status_class = "status-absent"
+        session.can_view_detail = False
+        session.can_display_score = False
+    else:
+        session.review_status_label = "Đang thực hiện"
+        session.review_status_class = "status-in-progress"
+        session.can_view_detail = False
+        session.can_display_score = False
+
+    session.status_label = session.review_status_label
+    session.status_class = session.review_status_class
+
+
+def _apply_review_status(row):
+    row.has_violation_warning = bool(getattr(row, "visible_violation_count", 0))
+    _attach_review_status_meta(row)
+
+
+def _can_view_review_detail(row):
+    _attach_review_status_meta(row)
+    return bool(getattr(row, "can_view_detail", False))
+
+
+def _build_missing_review_rows(exam_groups, existing_session_keys):
+    from .session_management import _build_exam_group_student_rows
+
+    rows = []
+    for exam_group in exam_groups:
+        if exam_group.computed_status not in {"COMPLETED", "CANCELLED"}:
+            continue
+
+        for student_row in _build_exam_group_student_rows(exam_group):
+            student_identifier = student_row.get("student_code") or "-"
+            student_key = normalize_student_code(student_identifier)
+            if student_key and (exam_group.pk, student_key) in existing_session_keys:
+                continue
+
+            row = SimpleNamespace(
+                id=None,
+                exam_group=exam_group,
+                is_completed=False,
+                cheating_flag=False,
+                student_identifier=student_identifier,
+                student_name=student_row.get("full_name") or student_identifier,
+                student_class_name=student_row.get("class_name") or "-",
+                exam_date_display=exam_group.exam_date,
+                final_score=None,
+                created_at=exam_group.end_at,
+                visible_violation_count=0,
+            )
+            _apply_review_status(row)
+            row.can_view_detail = _can_view_review_detail(row)
+            rows.append(row)
+
+    return rows
+
+
+@login_required
+def lecturer_student_review_screen(request):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+
+    subjects = request.user.userprofile.subjects_taught.all()
+    selected_subject_id = request.GET.get("subject_id")
+    exam_group_id = request.GET.get("exam_group_id")
+    student_filter = (request.GET.get("student") or "").strip()
+
+    if not selected_subject_id:
+        selected_subject = subjects.first()
+    else:
+        try:
+            selected_subject = subjects.get(pk=selected_subject_id)
+        except (Subject.DoesNotExist, ValueError):
+            selected_subject = subjects.first()
+
+    exam_groups = ExamSessionGroup.objects.filter(subject_id=selected_subject).order_by("-exam_date")
+    sessions = _with_lecturer_visible_violation_count(
+        ExamSession.objects.filter(
+            subject_id=selected_subject,
+            exam_session_group_id__isnull=False,
+        ).select_related(
+            "user",
+            "user__userprofile",
+            "exam_session_group_id",
+        )
+    )
+
+    if exam_group_id:
+        sessions = sessions.filter(exam_session_group_id=exam_group_id)
+
+    selected_exam_groups = list(exam_groups.filter(pk=exam_group_id)) if exam_group_id else list(exam_groups)
+    review_rows = []
+    existing_session_keys = set()
+    sessions = sessions.order_by("-created_at")
+
+    for session in sessions:
+        main_avg, final_total = _compute_scores(session)
+        session.main_avg = main_avg
+        if session.final_score != final_total:
+            session.final_score = final_total
+        _attach_session_score_meta(session)
+        profile = getattr(session.user, "userprofile", None)
+        session.student_identifier = getattr(profile, "student_id", None) or session.user.username
+        session.student_name = getattr(profile, "full_name", None) or session.user.username
+        session.student_class_name = getattr(profile, "class_name", None) or "-"
+        session.exam_date_display = None
+        if session.exam_group and session.exam_group.exam_date:
+            session.exam_date_display = session.exam_group.exam_date
+        elif session.completed_at:
+            session.exam_date_display = session.completed_at.date()
+        else:
+            session.exam_date_display = session.created_at.date()
+        session.has_violation_warning = bool(getattr(session, "visible_violation_count", 0))
+        _attach_review_status_meta(session)
+        review_rows.append(session)
+
+        if session.exam_group:
+            session_key = normalize_student_code(session.student_identifier)
+            if session_key:
+                existing_session_keys.add((session.exam_group.pk, session_key))
+
+    review_rows.extend(_build_missing_review_rows(selected_exam_groups, existing_session_keys))
+
+    if student_filter:
+        keyword = student_filter.lower()
+        review_rows = [
+            row
+            for row in review_rows
+            if keyword in (row.student_identifier or "").lower()
+               or keyword in (row.student_name or "").lower()
+               or keyword in (row.student_class_name or "").lower()
+               or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
+        ]
+
+    default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
+    review_rows.sort(key=lambda item: getattr(item, "created_at", None) or default_sort_time, reverse=True)
+
+    completed_count = 0
+    absent_count = 0
+    total_score = 0.0
+    flagged_count = 0
+
+    for session in review_rows:
+        if session.has_violation_warning:
+            flagged_count += 1
+        if session.review_status_label == "Đã hoàn thành":
+            completed_count += 1
+            total_score += float(session.final_score or 0.0)
+        elif session.review_status_label == "Vắng thi":
+            absent_count += 1
+
+    average_score = round(total_score / completed_count, 1) if completed_count else 0
+
+    return render(
+        request,
+        "qna/lecturer/lecturer_student_review.html",
+        {
+            "subjects": subjects,
+            "selected_subject": selected_subject,
+            "subject": selected_subject,
+            "exam_groups": exam_groups,
+            "selected_exam_group_id": int(exam_group_id) if exam_group_id else None,
+            "sessions": review_rows,
+            "student_filter": student_filter,
+            "average_score": average_score,
+            "completed_count": completed_count,
+            "absent_count": absent_count,
+            "flagged_count": flagged_count,
+        },
+    )
+
+
+@login_required
+def lecturer_student_review(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, subject_code=subject_code)
+    return render(
+        request,
+        "qna/lecturer/lecturer_student_review.html",
+        {
+            "subject": subject,
+            "sessions": (
+                ExamSession.objects.filter(subject_id=subject)
+                .select_related("user_id", "user_id__userprofile")
+                .prefetch_related("results__question_id")
+                .order_by("-created_at")
+            ),
+        },
+    )
+
+
+@login_required
+def lecturer_session_detail(request, session_id):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+
+    session = get_object_or_404(
+        ExamSession.objects.select_related("subject_id", "user_id", "user_id__userprofile", "exam_session_group_id"),
+        pk=session_id,
+    )
+    if session.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền")
+
+    exam_group = getattr(session, "exam_session_group_id", None) or getattr(session, "exam_group", None)
+    is_finalized = _is_session_finalized(session)
+
+    if not is_finalized and exam_group and exam_group.computed_status == "ONGOING":
+        messages.warning(request, "Phiên thi đang diễn ra, chưa thể xem chi tiết.")
+        return redirect("qna:lecturer_student_review_screen")
+
+    main_avg, final_total = _compute_scores(session)
+    if session.final_score != final_total:
+        session.final_score = final_total
+
+    _attach_session_score_meta(session)
+    _attach_session_duration_meta(session)
+
+    session.detail_status_label = "Đang thực hiện"
+    session.detail_status_class = "status-in-progress"
+    if is_finalized:
+        session.detail_status_label = "Đã hoàn thành"
+        session.detail_status_class = "status-completed"
+    elif exam_group and exam_group.computed_status == "COMPLETED":
+        session.detail_status_label = "Vắng thi"
+        session.detail_status_class = "status-absent"
+    elif exam_group and exam_group.computed_status == "CANCELLED":
+        session.detail_status_label = "Đã hủy"
+        session.detail_status_class = "status-absent"
+
+    question_details = _build_session_question_details(session)
+    violation_images = list(
+        session.violation_images.exclude(
+            violation_type__in=LECTURER_HIDDEN_VIOLATION_TYPES
+        ).order_by("-timestamp", "-pk")
+    )
+
+    return render(
+        request,
+        "qna/lecturer/lecturer_session_detail.html",
+        {
+            "session": session,
+            "question_details": question_details,
+            "main_avg": main_avg,
+            "violation_images": violation_images,
+        },
+    )
+
+
+@login_required
+def lecturer_export_reports_screen(request):
+    return redirect("qna:lecturer_student_review_screen")
+
+
+@login_required
+def lecturer_export_exam_results_screen(request):
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
+
+    subject_id = request.GET.get("subject_id")
+    exam_group_id = request.GET.get("exam_group_id")
+    subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
+
+    if exam_group_id:
+        exam_group = get_object_or_404(ExamSessionGroup, pk=exam_group_id, subject_id=subject)
+        sessions = ExamSession.objects.filter(subject_id=subject, exam_session_group_id=exam_group).select_related(
+            "user_id",
+            "user_id__userprofile",
+        )
+    else:
+        sessions = ExamSession.objects.filter(subject_id=subject).select_related("user_id", "user_id__userprofile")
+
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Kết quả thi"
+
+    # YÊU CẦU 1: Loại bỏ cột điểm phụ
+    headers = ["STT", "Mã SV", "Họ tên", "Lớp", "Ngày thi", "Điểm tổng", "Cảnh báo gian lận"]
+    ws.append(headers)
+
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    for idx, session in enumerate(sessions, 1):
+        main_avg, final_total = _compute_scores(session)
+        profile = session.user.userprofile
+        ws.append(
+            [
+                idx,
+                session.user.username,
+                profile.full_name,
+                profile.class_name,
+                session.created_at.strftime("%d/%m/%Y %H:%M"),
+                f"{final_total:.2f}",
+                "CÓ" if _has_lecturer_visible_violation(session) else "KHÔNG",
+            ]
+        )
+
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except Exception:
+                pass
+        ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    filename = f"Ket_qua_thi_{subject.subject_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
+@login_required
+def lecturer_export_exam_results(request, subject_code):
+    if not request.user.userprofile.is_lecturer:
+        messages.error(request, "Bạn không có quyền truy cập.")
+        return redirect("qna:dashboard")
+
+    subject = get_object_or_404(
+        request.user.userprofile.subjects_taught.all(),
+        subject_code=subject_code,
+    )
+
+    sessions = (
+        ExamSession.objects.filter(subject_id=subject, session_status="COMPLETED")
+        .select_related("user_id", "exam_session_group_id")
+        .order_by("-created_at")
+    )
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="ket_qua_{subject.subject_code}.xlsx"'
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Kết quả thi"
+
+    headers = [
+        "STT",
+        "Họ tên",
+        "Username",
+        "Mã sinh viên",
+        "Lớp",
+        "Môn học",
+        "Mã môn",
+        "Ca thi",
+        "Ngày thi",
+        "Điểm cuối",
+        "Trạng thái hoàn thành",
+        "Xác thực khuôn mặt",
+        "Cảnh báo gian lận"
+    ]
+    ws.append(headers)
+
+    for idx, session in enumerate(sessions, start=1):
+        profile = getattr(session.user, "userprofile", None)
+        ws.append(
+            [
+                idx,
+                profile.full_name if profile and profile.full_name else session.user.get_full_name() or session.user.username,
+                session.user.username,
+                profile.student_id if profile else "",
+                profile.class_name if profile else "",
+                subject.name,
+                subject.subject_code,
+                session.exam_group.group_name if session.exam_group else "",
+                session.created_at.strftime("%d/%m/%Y %H:%M") if session.created_at else "",
+                session.final_score if session.final_score is not None else "",
+                "Đã hoàn thành" if session.is_completed else "Chưa hoàn thành",
+                session.get_verification_status_display() if hasattr(session,
+                                                                     "get_verification_status_display") else session.verification_status,
+                "CÓ" if _has_lecturer_visible_violation(session) else "KHÔNG"
+            ]
+        )
+
+    for column_cells in ws.columns:
+        max_length = 0
+        column_letter = column_cells[0].column_letter
+        for cell in column_cells:
+            try:
+                cell_length = len(str(cell.value)) if cell.value is not None else 0
+                if cell_length > max_length:
+                    max_length = cell_length
+            except Exception:
+                pass
+        ws.column_dimensions[column_letter].width = min(max_length + 2, 40)
+
+    wb.save(response)
+    return response
+
+
+@login_required
+def lecturer_export_questions_word(request):
+    return JsonResponse(
+        {
+            "status": "FAIL",
+            "message": "Chức năng xuất Word đã bị tắt theo yêu cầu mới.",
+        },
+        status=400,
+    )
+
+
+# =========================================================
+# STUDENT SIDE
+# =========================================================
+class RegistrationForm(forms.Form):
+    full_name = forms.CharField(label=mark_safe('Họ và tên <span class="text-red-500">*</span>'), max_length=150)
+    username = forms.CharField(label=mark_safe('Tên đăng nhập <span class="text-red-500">*</span>'), max_length=150)
+    class_name = forms.CharField(label=mark_safe('Lớp <span class="text-red-500">*</span>'), max_length=100)
+    email = forms.EmailField(label="Email", required=False)
+    faculty = forms.CharField(label="Khoa", required=False, max_length=150)
+    password = forms.CharField(
+        label=mark_safe('Mật khẩu <span class="text-red-500">*</span>'),
+        widget=forms.PasswordInput(),
+    )
+    password2 = forms.CharField(
+        label=mark_safe('Nhập lại mật khẩu <span class="text-red-500">*</span>'),
+        widget=forms.PasswordInput(),
+    )
+
+    def clean_username(self):
+        username = self.cleaned_data.get("username", "").strip()
+        if not username:
+            raise ValidationError("Tên đăng nhập là bắt buộc.")
+        if User.objects.filter(username=username).exists():
+            raise ValidationError("Tên đăng nhập này đã tồn tại.")
+        return username
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password = cleaned_data.get("password")
+        password2 = cleaned_data.get("password2")
+        if password and password2 and password != password2:
+            self.add_error("password2", "Mật khẩu nhập lại không khớp.")
+        return cleaned_data
+
+
+@login_required
+def dashboard_view(request: HttpRequest) -> HttpResponse:
+    profile, _ = UserProfile.objects.get_or_create(user_id=request.user)
+    if profile.is_lecturer:
+        return redirect("qna:lecturer_dashboard")
+
+    subjects = Subject.objects.all().order_by("name")
+    subject_cards = []
+    for subject in subjects:
+        current_room = _get_student_current_room_for_subject(request.user, subject)
+        display_room = current_room or _get_student_display_room_for_subject(request.user, subject)
+        active_group = display_room.exam_session_group_id if display_room else None
+        group_status = active_group.computed_status if active_group else None
+        existing_session = _get_student_exam_session(request.user, subject, active_group) if active_group else None
+        reentry_state = _student_exam_reentry_state(existing_session)
+        can_enter_exam = bool(current_room) and reentry_state is None
+
+        if reentry_state == "COMPLETED":
+            status_label = "Da hoan thanh ca thi"
+            entry_button_label = "Không thể vào lại"
+        elif reentry_state == "STARTED":
+            status_label = "Đã bắt đầu ca thi"
+            entry_button_label = "Không thể vào lại"
+        else:
+            status_label = (
+                "Đang mở ca thi"
+                if group_status == "ONGOING"
+                else "Chưa đến giờ thi"
+                if group_status == "SCHEDULED"
+                else "Chua mo ca thi"
+                if group_status == "DRAFT"
+                else "Ca thi da huy"
+                if group_status == "CANCELLED"
+                else "Ngoài thời gian thi"
+                if active_group
+                else "Chua co ca thi"
+            )
+            entry_button_label = "Vào thi" if can_enter_exam else "Chưa thể vào thi"
+
+        subject_cards.append(
+            {
+                "subject": subject,
+                "active_room": display_room,
+                "current_room": current_room,
+                "active_group": active_group,
+                "can_enter_exam": can_enter_exam,
+                "status_label": status_label,
+                "entry_lock_state": reentry_state or "",
+                "entry_button_label": entry_button_label,
+            }
+        )
+    recent_sessions = ExamSession.objects.filter(user_id=request.user).select_related("subject_id").order_by(
+        "-created_at")[:5]
+    return render(
+        request,
+        "qna/student/dashboard.html",
+        {
+            "subjects": subjects,
+            "subject_cards": subject_cards,
+            "recent_sessions": recent_sessions,
+            "full_name": profile.full_name or request.user.first_name,
+            "server_now_ts": int(timezone.now().timestamp()),
+        },
+    )
+
+
+@login_required
+def history_view(request: HttpRequest) -> HttpResponse:
+    sessions = ExamSession.objects.filter(user_id=request.user).select_related("subject_id",
+                                                                               "exam_session_group_id").order_by(
+        "-created_at")
+    for session in sessions:
+        main_avg, final_total = _compute_scores(session)
+        session.main_avg = main_avg
+        if session.final_score != final_total:
+            session.final_score = final_total
+        _attach_session_score_meta(session)
+    return render(request, "qna/student/history.html", {"sessions": sessions})
+
+
+@login_required
+def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
+    session = get_object_or_404(ExamSession.objects.select_related("subject_id", "user_id"), pk=session_id)
+    _ensure_owner(session, request.user)
+
+    question_details = _build_session_question_details(session)
+    _, final_total = _compute_scores(session)
+    if session.final_score != final_total:
+        session.final_score = final_total
+    _attach_session_score_meta(session)
+    _attach_session_duration_meta(session)
+
+    return render(
+        request,
+        "qna/student/history_detail.html",
+        {
+            "session": session,
+            "question_details": question_details,
+            "appeal_deadline": _get_session_appeal_deadline(session),
+            "appeal_open": _is_session_appeal_open(session),
+        },
+    )
+
+
+@login_required
+def pre_exam_verification_view(request: HttpRequest, subject_code: str) -> HttpResponse:
+    subject = get_object_or_404(Subject, subject_code=subject_code)
+    active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
+    blocked = _deny_if_exam_closed(request, exam_group, subject_code)
+    if blocked:
+        return blocked
+    if not active_room:
+        messages.error(request, "Ban chua duoc phan vao phong thi cua mon nay.")
+        return redirect("qna:dashboard")
+
+    existing_session = _get_student_exam_session(request.user, subject, exam_group)
+    locked_redirect = _redirect_locked_student_exam(request, existing_session)
+    if locked_redirect:
+        return locked_redirect
+    if not _student_has_room_password_access(request, exam_group, active_room):
+        messages.error(request, "Ban can xac thuc mat khau phong thi truoc.")
+        return redirect("qna:exam_password", subject_code=subject_code)
+
+    return render(
+        request,
+        "qna/student/pre_exam_verification.html",
+        {
+            "subject": subject,
+            "subject_code": subject_code,
+        },
+    )
+
+
+@login_required
+def exam_password_view(request, subject_code):
+    subject = get_object_or_404(Subject, subject_code=subject_code)
+    active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
+    blocked = _deny_if_exam_closed(request, exam_group, subject_code)
+    if blocked:
+        return blocked
+    if not active_room:
+        messages.error(request, "Ban chua duoc phan vao phong thi cua mon nay.")
+        return redirect("qna:dashboard")
+
+    existing_session = _get_student_exam_session(request.user, subject, exam_group)
+    locked_redirect = _redirect_locked_student_exam(request, existing_session)
+    if locked_redirect:
+        return locked_redirect
+
+    if not (active_room.room_password or "").strip():
+        _store_student_room_password_access(request, exam_group, active_room)
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+    return render(
+        request,
+        "qna/student/exam_password.html",
+        {"subject": subject, "subject_code": subject_code, "active_room": active_room, "exam_group": exam_group},
+    )
+
+
+@login_required
+def verify_exam_password(request, subject_code):
+    if request.method != "POST":
+        return redirect("qna:exam_password", subject_code=subject_code)
+
+    subject = get_object_or_404(Subject, subject_code=subject_code)
+    active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
+    blocked = _deny_if_exam_closed(request, exam_group, subject_code)
+    if blocked:
+        return blocked
+    if not active_room:
+        messages.error(request, "Ban chua duoc phan vao phong thi cua mon nay.")
+        return redirect("qna:dashboard")
+
+    existing_session = _get_student_exam_session(request.user, subject, exam_group)
+    locked_redirect = _redirect_locked_student_exam(request, existing_session)
+    if locked_redirect:
+        return locked_redirect
+
+    attempts_key = _room_password_attempts_key(request.user.pk, subject_code)
+    attempts = cache.get(attempts_key, 0)
+    if attempts >= PASSWORD_ATTEMPT_LIMIT:
+        messages.error(request, "Ban da nhap sai qua nhieu lan. Vui long thu lai sau 5 phut.")
+        return redirect("qna:exam_password", subject_code=subject_code)
+
+    password = (request.POST.get("password") or "").strip()
+    room_password = (active_room.room_password or "").strip()
+    if not room_password:
+        _store_student_room_password_access(request, exam_group, active_room)
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+    if password == room_password:
+        cache.delete(attempts_key)
+        _store_student_room_password_access(request, exam_group, active_room)
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+
+    cache.set(attempts_key, attempts + 1, PASSWORD_ATTEMPT_WINDOW)
+    messages.error(request, "Mat khau khong dung. Vui long thu lai.")
+    return redirect("qna:exam_password", subject_code=subject_code)
+
+
+@login_required
+def exam_page_view(request: HttpRequest, subject_code: str) -> HttpResponse:
+    subject = get_object_or_404(Subject, subject_code=subject_code)
+
+    active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
+
+    blocked = _deny_if_exam_closed(request, exam_group, subject_code)
+    if blocked:
+        return blocked
+    if not active_room:
+        messages.error(request, f"Ban chua duoc xep vao phong thi nao cua mon {subject.name}.")
+        return redirect("qna:dashboard")
+
+    exam_code_id = None
+    room_cfg, assignment = _get_room_assignment_for_user(exam_group, request.user)
+    if assignment:
+        exam_code_id = assignment.get("exam_code_id")
+
+    main_questions = []
+    if exam_code_id:
+        from .models import ExamCodeQuestion
+        ecqs = ExamCodeQuestion.objects.filter(exam_code_id=exam_code_id).select_related('question_id').order_by(
+            'display_order')
+        main_questions = [ecq.question_id for ecq in ecqs]
+
+    existing_session = _get_student_exam_session(request.user, subject, exam_group)
+    locked_redirect = _redirect_locked_student_exam(request, existing_session)
+    if locked_redirect:
+        return locked_redirect
+    if not _student_has_room_password_access(request, exam_group, active_room):
+        messages.error(request, "Ban can xac thuc mat khau phong thi truoc.")
+        return redirect("qna:exam_password", subject_code=subject_code)
+
+    entry_payload = _get_student_exam_entry_payload(request, exam_group)
+    if not entry_payload:
+        messages.error(request, "Ban can hoan thanh xac thuc truoc khi vao thi.")
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+    if str(entry_payload.get("room_id")) != str(active_room.pk):
+        _clear_student_exam_entry_payload(request, exam_group)
+        messages.error(request, "Thong tin xac thuc khong con hop le. Vui long xac thuc lai.")
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+
+    try:
+        face_image_blob = base64.b64decode(entry_payload["face_image_b64"])
+    except (KeyError, TypeError, ValueError, base64.binascii.Error):
+        _clear_student_exam_entry_payload(request, exam_group)
+        messages.error(request, "Anh xac thuc khong hop le. Vui long xac thuc lai.")
+        return redirect("qna:pre_exam_verification", subject_code=subject_code)
+
+    face_image_mime = entry_payload.get("face_image_mime") or "image/jpeg"
+    if existing_session:
+        session = existing_session
+        session.face_image_blob = face_image_blob
+        session.face_image_mime = face_image_mime
+        session.verification_status = "ALLOW"
+        update_fields = ["face_image_blob", "face_image_mime", "verification_status"]
+        if session.started_at is None:
+            session.started_at = timezone.now()
+            update_fields.append("started_at")
+        if session.session_status != "STARTED":
+            session.session_status = "STARTED"
+            update_fields.append("session_status")
+        session.save(update_fields=update_fields)
+    else:
+        session = ExamSession.objects.create(
+            user_id=request.user,
+            subject_id=subject,
+            exam_session_group_id=exam_group,
+            started_at=timezone.now(),
+            session_status="STARTED",
+            face_image_blob=face_image_blob,
+            face_image_mime=face_image_mime,
+            verification_status="ALLOW",
+        )
+
+    if not session.questions.exists():
+        session.questions.set(main_questions)
+    else:
+        main_questions = list(session.questions.all())
+
+    _clear_student_exam_entry_payload(request, exam_group)
+    request.session.pop(_student_exam_password_session_key(exam_group.pk), None)
+    _attach_session_score_meta(session)
+
+    return render(
+        request,
+        "qna/student/exam.html",
+        {
+            "subject": subject,
+            "selected_questions": main_questions,
+            "session": session,
+            "duration_minutes": exam_group.duration_minutes if exam_group else 60,
+            "server_now_ms": int(timezone.now().timestamp() * 1000),
+            "exam_end_ms": int(exam_group.end_at.timestamp() * 1000) if exam_group else 0,
+            "raw_total_score": session.raw_total_score or 0,
+            "score_scale_suffix": session.score_scale_suffix,
+            "show_non_ten_scale_warning": session.show_non_ten_scale_warning,
+            "score_scale_warning": session.score_scale_warning,
+            "appeal_deadline_ms": 0,
+        },
+    )
+
+
+@login_required
+def profile_view(request: HttpRequest) -> HttpResponse:
+    try:
+        profile = request.user.userprofile
+    except UserProfile.DoesNotExist:
+        profile = None
+    avatar_url = _get_avatar_data_url(profile) if profile else None
+    return render(request, "qna/student/profile.html",
+                  {"user": request.user, "profile": profile, "avatar_url": avatar_url})
+
+
+@login_required
+@require_POST
+def update_profile_image(request: HttpRequest) -> JsonResponse:
+    file_obj = request.FILES.get("profile_image") or request.FILES.get("avatar")
+    if not file_obj:
+        return JsonResponse({"success": False, "error": "Không tìm thấy file ảnh."}, status=400)
+    if file_obj.size > 5 * 1024 * 1024:
+        return JsonResponse({"success": False, "error": "Kích thước ảnh không được vượt quá 5MB."}, status=400)
+
+    content = file_obj.read()
+    mime = file_obj.content_type
+    profile, _ = UserProfile.objects.get_or_create(user_id=request.user)
+    profile.profile_image_blob = content
+    profile.profile_image_mime = mime
+    profile.save()
+    image_data_url = f"data:{mime};base64,{b64encode(content).decode('ascii')}"
+    return JsonResponse(
+        {
+            "success": True,
+            "image_data_url": image_data_url,
+            "avatar_url": image_data_url,
+        }
+    )
+
+
+@login_required
+@require_POST
+def save_exam_result(request: HttpRequest) -> JsonResponse:
+    session_id = request.POST.get("session_id")
+    question_id = request.POST.get("question_id")
+    audio_file = request.FILES.get("audio_file")
+
+    if not session_id or not question_id:
+        return JsonResponse({"status": "error", "message": "Thiếu dữ liệu bắt buộc."}, status=400)
+    if not audio_file:
+        return JsonResponse({"status": "error", "message": "Không tìm thấy file ghi âm."}, status=400)
+
+    session = get_object_or_404(ExamSession, pk=session_id)
+    _ensure_owner(session, request.user)
+
+    if _is_session_finalized(session):
+        return JsonResponse({"status": "error", "message": "Phien thi da ket thuc."}, status=400)
+
+    if not _is_exam_group_open(session.exam_group):
+        return JsonResponse({"status": "error", "message": "Ngoai thoi gian thi."}, status=403)
+    if not session.questions.filter(pk=question_id).exists():
+        return JsonResponse({"status": "error", "message": "Cau hoi khong thuoc phien thi nay."}, status=400)
+
+    result = ExamResult.objects.filter(exam_session_id=session, question_id_id=question_id).first()
+    if not result:
+        return JsonResponse({"status": "error", "message": "Chua co ket qua de dinh kem file ghi am."}, status=400)
+
+    extension = Path(getattr(audio_file, "name", "")).suffix or ".webm"
+    result.audio_file.save(f"audio_{session_id}_{question_id}{extension}", audio_file, save=True)
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "result_id": result.pk,
+            "audio_url": result.audio_file.url if result.audio_file else "",
+        }
+    )
+
+
+@login_required
+@require_POST
+def save_violation_image(request: HttpRequest) -> JsonResponse:
+    """
+    YÊU CẦU 3: API Nhận ảnh chụp gian lận từ Client và lưu vào DB.
+    """
+    data = _json_body(request)
+    session_id = data.get('session_id')
+    image_base64 = data.get('image_base64')
+    violation_type = data.get('violation_type', 'TWO_FACES')
+
+    if not all([session_id, image_base64]):
+        return JsonResponse({"status": "error", "message": "Thiếu dữ liệu ảnh."}, status=400)
+
+    try:
+        session = get_object_or_404(ExamSession, pk=session_id)
+        _ensure_owner(session, request.user)
+
+        format_part, imgstr = image_base64.split(";base64,")
+        mime = format_part.split(":")[1]
+
+        ViolationImage.objects.create(
+            exam_session_id=session,
+            image_blob=base64.b64decode(imgstr),
+            image_mime=mime,
+            violation_type=violation_type
+        )
+
+        # Bật cờ cảnh báo gian lận cho phiên thi với các cảnh báo cần hiển thị cho giảng viên
+        if violation_type not in LECTURER_HIDDEN_VIOLATION_TYPES:
+            session.cheating_flag = True
+            session.save(update_fields=['cheating_flag'])
+
+        return JsonResponse({"status": "success", "message": "Đã ghi nhận gian lận."})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+@login_required
+@require_POST
+def finalize_session_view(request: HttpRequest, session_id: int) -> JsonResponse:
+    session = get_object_or_404(
+        ExamSession.objects.select_related("exam_session_group_id", "subject_id", "user_id"),
+        pk=session_id,
+    )
+    _ensure_owner(session, request.user)
+
+    # Idempotent finalize
+    already_finalized = _is_session_finalized(session)
+    if not already_finalized:
+        _sync_session_completion_flags(session)
+
+        _, final_total = _compute_scores(session)
+        session.final_score = final_total
+        session.save(update_fields=["final_score"])
+
+    _attach_session_score_meta(session)
+    if "_attach_session_duration_meta" in (globals() or {}):
+        _attach_session_duration_meta(session)
+    deadline = _get_session_appeal_deadline(session)
+    return JsonResponse(
+        {
+            "status": "success",
+            "final_score": round(float(session.final_score or 0), 2),
+            "score_scale_suffix": session.score_scale_suffix,
+            "show_non_ten_scale_warning": session.show_non_ten_scale_warning,
+            "score_scale_warning": session.score_scale_warning,
+            "appeal_deadline_ms": int(deadline.timestamp() * 1000) if deadline else 0,
+            "actual_duration_display": getattr(session, "actual_duration_display", ""),
+            "already_finalized": already_finalized,
+        }
+    )
+
+
+@login_required
+@require_POST
+@login_required
+@require_POST
+def verify_student_face(request: HttpRequest) -> JsonResponse:
+    face_image_data = request.POST.get("face_image")
+    subject_code = request.POST.get("subject_code")
+    if not face_image_data:
+        return JsonResponse({"status": "error", "message": "Thieu anh khuon mat."}, status=400)
+    if not subject_code:
+        return JsonResponse({"status": "error", "message": "Thieu ma mon hoc."}, status=400)
+
+    try:
+        subject = get_object_or_404(Subject, subject_code=subject_code)
+        active_room, display_room, exam_group = _get_student_exam_access_context(request.user, subject)
+        if not active_room or not _is_exam_group_open(exam_group):
+            return JsonResponse(
+                {
+                    "status": "error",
+                    "message": _student_exam_access_denied_message(
+                        display_room,
+                        no_room_message="Ban chua duoc phan vao phong thi cua mon nay.",
+                    ),
+                },
+                status=400,
+            )
+        session = _get_student_exam_session(request.user, subject, exam_group)
+        locked_response = _locked_student_exam_json(session)
+        if locked_response:
+            return locked_response
+        if not _student_has_room_password_access(request, exam_group, active_room):
+            return JsonResponse(
+                {
+                    "status": "error",
+                    "message": "Ban can xac thuc mat khau phong thi truoc.",
+                },
+                status=403,
+            )
+
+        format_part, imgstr = face_image_data.split(";base64,", 1)
+        image_mime = format_part.split(":", 1)[-1] or "image/jpeg"
+        base64.b64decode(imgstr)
+        entry_payload = _store_student_exam_entry_payload(
+            request,
+            exam_group,
+            active_room,
+            face_image_b64=imgstr,
+            face_image_mime=image_mime,
+        )
+        return JsonResponse(
+            {
+                "status": "success",
+                "entry_token": entry_payload["entry_token"],
+                "message": "Da luu anh xac thuc thanh cong.",
+            }
+        )
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": f"Loi khi xu ly anh: {str(e)}"}, status=500)
+
+
+@login_required
+def get_verification_images(request: HttpRequest, session_id: int) -> HttpResponse:
+    session = get_object_or_404(ExamSession, pk=session_id)
+    if not (request.user.userprofile.is_lecturer or session.user_id == request.user):
+        raise PermissionDenied("Bạn không có quyền xem ảnh xác thực này.")
+
+    face_data_url = (
+        f"data:{session.face_image_mime};base64,{b64encode(session.face_image_blob).decode('ascii')}"
+        if session.face_image_blob and session.face_image_mime else None
+    )
+    id_card_data_url = (
+        f"data:{session.id_card_image_mime};base64,{b64encode(session.id_card_image_blob).decode('ascii')}"
+        if session.id_card_image_blob and session.id_card_image_mime else None
+    )
+
+    return JsonResponse(
+        {
+            "status": "success",
+            "face_image": face_data_url,
+            "id_card_image": id_card_data_url,
+            "verification_score": session.verification_score,
+            "verification_status": session.verification_status,
+            "needs_manual_review": session.needs_manual_review,
+        }
+    )
+
+
+# =========================================================
+# STUDENT LIST MANAGEMENT
+# =========================================================
+STUDENT_LIST_ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".csv"}
+STUDENT_LIST_MAX_FILE_SIZE = 10 * 1024 * 1024
+STUDENT_LIST_REQUIRED_COLUMNS = {
+    "student_code": {"mssv", "ma_so_sinh_vien", "student_id", "student_code", "username", "msv"},
+    "full_name": {"ho_va_ten", "ho_ten", "full_name", "name", "ten_sinh_vien"},
+}
+STUDENT_LIST_OPTIONAL_COLUMNS = {
+    "gender": {"gioi_tinh", "gender", "sex"},
+    "date_of_birth": {"ngay_sinh", "date_of_birth", "dob", "birth_date"},
+    "class_name": {"lop", "class", "class_name", "ten_lop"},
+    "email": {"email", "mail"},
+}
+
+
+def _student_default_academic_year():
+    now = timezone.localtime()
+    start_year = now.year if now.month >= 8 else now.year - 1
+    return f"{start_year}-{start_year + 1}"
+
+
+def _student_normalize_header(value):
+    value = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^a-zA-Z0-9]+", "_", value.lower()).strip("_")
+    return value
+
+
+def _student_clean_cell(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _student_parse_birth(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    for fmt in ["%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y"]:
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _student_normalize_gender(value):
+    text = _student_clean_cell(value).lower()
+    if text in {"nam", "male", "m"}:
+        return "Nam"
+    if text in {"nu", "nữ", "female", "f"}:
+        return "Nữ"
+    return _student_clean_cell(value)
+
+
+def _student_user_is_eligible(user):
+    if user is None:
+        return False
+    if user.is_staff or user.is_superuser:
+        return False
+    try:
+        return not user.userprofile.is_lecturer
+    except UserProfile.DoesNotExist:
+        return True
+
+
+def _student_find_user(student_code):
+    student_code = normalize_student_code(student_code)
+    if not student_code:
+        return None
+
+    user = User.objects.select_related("userprofile").filter(username__iexact=student_code).first()
+    if _student_user_is_eligible(user):
+        return user
+
+    profile = (
+        UserProfile.objects.select_related("user_id")
+        .filter(student_id__iexact=student_code, is_lecturer=False)
+        .first()
+    )
+    if profile:
+        return profile.user_id
+
+    roster_row = (
+        StudentRosterStudent.objects.select_related("linked_user_id")
+        .filter(student_code__iexact=student_code, linked_user_id__isnull=False)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if roster_row and _student_user_is_eligible(roster_row.linked_user_id):
+        return roster_row.linked_user_id
+
+    return None
+
+
+def _student_validate_file(uploaded_file):
+    extension = os.path.splitext(uploaded_file.name or "")[1].lower()
+    if extension not in STUDENT_LIST_ALLOWED_EXTENSIONS:
+        raise ValidationError("Hệ thống chỉ chấp nhận file Excel (.xlsx, .xls) hoặc CSV.")
+    if uploaded_file.size > STUDENT_LIST_MAX_FILE_SIZE:
+        raise ValidationError("Dung lượng file vượt quá 10MB. Vui lòng kiểm tra lại.")
+
+
+def _student_resolve_columns(headers):
+    mapping = {}
+    normalized = [_student_normalize_header(item) for item in headers]
+
+    for target, aliases in STUDENT_LIST_REQUIRED_COLUMNS.items():
+        for index, header in enumerate(normalized):
+            if header in aliases:
+                mapping[target] = index
+                break
+        if target not in mapping:
+            raise ValidationError(f"Thiếu cột bắt buộc cho danh sách sinh viên: {target}.")
+
+    for target, aliases in STUDENT_LIST_OPTIONAL_COLUMNS.items():
+        for index, header in enumerate(normalized):
+            if header in aliases:
+                mapping[target] = index
+                break
+
+    return mapping
+
+
+def _student_parse_csv_rows(file_bytes):
+    text = file_bytes.decode("utf-8-sig", errors="ignore")
+    reader = csv.reader(io.StringIO(text))
+    return [row for row in reader if any(str(cell).strip() for cell in row)]
+
+
+def _student_parse_xlsx_rows(file_bytes):
+    workbook = load_workbook(io.BytesIO(file_bytes), data_only=True)
+    worksheet = workbook.active
+    rows = []
+    for row in worksheet.iter_rows(values_only=True):
+        values = ["" if value is None else value for value in row]
+        if any(str(cell).strip() for cell in values):
+            rows.append(values)
+    return rows
+
+
+def _student_parse_xls_rows(file_bytes):
+    try:
+        import pandas as pd
+    except Exception as exc:
+        raise ValidationError("Muốn đọc file .xls, vui lòng cài thêm xlrd==2.0.1 và pandas.") from exc
+
+    try:
+        dataframe = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
+    except Exception as exc:
+        raise ValidationError(f"Không thể đọc file .xls: {exc}") from exc
+
+    rows = [list(dataframe.columns)]
+    rows.extend(dataframe.fillna("").values.tolist())
+    return rows
+
+
+def _student_parse_records(file_name, file_bytes):
+    extension = os.path.splitext(file_name or "")[1].lower()
+    if extension == ".csv":
+        rows = _student_parse_csv_rows(file_bytes)
+    elif extension == ".xlsx":
+        rows = _student_parse_xlsx_rows(file_bytes)
+    elif extension == ".xls":
+        rows = _student_parse_xls_rows(file_bytes)
+    else:
+        raise ValidationError("Định dạng file không hợp lệ.")
+
+    if len(rows) < 2:
+        raise ValidationError("File được chọn không có dữ liệu.")
+
+    headers = rows[0]
+    column_map = _student_resolve_columns(headers)
+
+    records = []
+    seen_codes = set()
+    skipped_rows = []
+
+    for row_number, row in enumerate(rows[1:], start=2):
+        student_code = normalize_student_code(
+            row[column_map["student_code"]] if column_map["student_code"] < len(row) else ""
+        )
+        full_name = _student_clean_cell(
+            row[column_map["full_name"]] if column_map["full_name"] < len(row) else ""
+        )
+
+        if not student_code or not full_name:
+            skipped_rows.append({"row_number": row_number, "message": f"Dòng {row_number}: thiếu MSSV hoặc họ tên."})
+            continue
+
+        if student_code in seen_codes:
+            skipped_rows.append(
+                {"row_number": row_number, "message": f"Dòng {row_number}: trùng MSSV {student_code} trong cùng file."}
+            )
+            continue
+        seen_codes.add(student_code)
+
+        gender = _student_normalize_gender(
+            row[column_map["gender"]]
+            if column_map.get("gender") is not None and column_map["gender"] < len(row)
+            else ""
+        )
+        date_of_birth = _student_parse_birth(
+            row[column_map["date_of_birth"]]
+            if column_map.get("date_of_birth") is not None and column_map["date_of_birth"] < len(row)
+            else ""
+        )
+        class_name = _student_clean_cell(
+            row[column_map["class_name"]]
+            if column_map.get("class_name") is not None and column_map["class_name"] < len(row)
+            else ""
+        )
+        email = _student_clean_cell(
+            row[column_map["email"]]
+            if column_map.get("email") is not None and column_map["email"] < len(row)
+            else ""
+        )
+
+        records.append(
+            {
+                "student_code": student_code,
+                "full_name": full_name,
+                "gender": gender,
+                "date_of_birth": date_of_birth,
+                "class_name": class_name,
+                "email": email,
+            }
+        )
+
+    if not records:
+        raise ValidationError("Không tìm thấy sinh viên hợp lệ trong file tải lên.")
+
+    return records, skipped_rows
+
+
+def _student_create_roster(subject, created_by, academic_year, semester, uploaded_file, mode="new"):
+    if mode == "replace":
+        # Xóa các roster cũ cùng subject/academic_year/semester
+        existing_rosters = StudentRosterUpload.objects.filter(
+            subject_id=subject,
+            academic_year=academic_year,
+            semester=semester
+        )
+        for roster in existing_rosters:
+            if roster.uploaded_file:
+                roster.uploaded_file.delete(save=False)
+            roster.delete()
+
+    _student_validate_file(uploaded_file)
+    file_bytes = uploaded_file.read()
+    if not file_bytes:
+        raise ValidationError("File được chọn không có dữ liệu.")
+
+    records, skipped_rows = _student_parse_records(uploaded_file.name, file_bytes)
+
+    # Kiểm tra trùng lặp MSSV với các roster khác cùng môn/cùng kỳ
+    existing_codes = set(StudentRosterStudent.objects.filter(
+        student_roster_upload_id__subject_id=subject,
+        student_roster_upload_id__academic_year=academic_year,
+        student_roster_upload_id__semester=semester
+    ).values_list('student_code', flat=True))
+
+    duplicate_codes = set()
+    for record in records:
+        if record['student_code'] in existing_codes:
+            duplicate_codes.add(record['student_code'])
+
+    if duplicate_codes:
+        skipped_rows.append({
+            "row": None,
+            "message": f"Các MSSV sau đã tồn tại trong danh sách khác của môn {subject.subject_name} "
+                       f"năm học {academic_year} học kỳ {semester}: {', '.join(sorted(duplicate_codes))}. "
+                       "Có thể là import trùng hoặc học lại."
+        })
+
+    # Kiểm tra nếu đã có roster cho cùng subject/academic_year/semester
+    existing_roster_count = StudentRosterUpload.objects.filter(
+        subject_id=subject,
+        academic_year=academic_year,
+        semester=semester
+    ).count()
+    if existing_roster_count > 0:
+        skipped_rows.append({
+            "row": None,
+            "message": f"Đã có {existing_roster_count} danh sách sinh viên cho môn {subject.subject_name} "
+                       f"năm học {academic_year} học kỳ {semester}. "
+                       "Có thể là import trùng hoặc học lại. Hệ thống vẫn tạo danh sách mới."
+        })
+
+    roster = StudentRosterUpload(
+        subject_id=subject,
+        academic_year=academic_year,
+        semester=semester,
+        title=os.path.splitext(uploaded_file.name)[0],
+        original_file_name=uploaded_file.name,
+        total_students=len(records),
+        created_by_user_id=created_by,
+        status=StudentListUploadStatus.PENDING,
+    )
+    roster.uploaded_file.save(
+        f"{uuid4().hex}_{uploaded_file.name}",
+        ContentFile(file_bytes),
+        save=False,
+    )
+    roster.save()
+
+    students = []
+    for index, item in enumerate(records, start=1):
+        linked_user = _student_find_user(item["student_code"])
+        students.append(
+            StudentRosterStudent(
+                student_roster_upload_id=roster,
+                row_number=index,
+                student_code=item["student_code"],
+                full_name=item["full_name"],
+                gender=item["gender"],
+                date_of_birth=item["date_of_birth"],
+                class_name=item["class_name"],
+                email=item["email"],
+                linked_user_id=linked_user,
+                account_created=bool(linked_user),
+                account_status=(
+                    StudentRosterAccountStatus.EXISTING
+                    if linked_user
+                    else StudentRosterAccountStatus.PENDING
+                ),
+            )
+        )
+
+    StudentRosterStudent.objects.bulk_create(students)
+    roster.refresh_status()
+    roster.import_warnings = skipped_rows
+    return roster
+
+
+def _student_sync_profile(user, student_row):
+    profile, _ = UserProfile.objects.get_or_create(user_id=user)
+    profile.is_lecturer = False
+    profile.full_name = student_row.full_name
+    profile.class_name = student_row.class_name
+    profile.student_id = normalize_student_code(student_row.student_code)
+    profile.save()
+    return profile
+
+
+def _student_provision_account(student_row, default_password):
+    user = student_row.linked_user_id if _student_user_is_eligible(student_row.linked_user_id) else None
+    if user is None:
+        user = _student_find_user(student_row.student_code)
+
+    normalized_code = normalize_student_code(student_row.student_code) or student_row.student_code
+    created = False
+
+    if user is None:
+        user = User.objects.create_user(
+            username=normalized_code,
+            password=default_password,
+            email=student_row.email or "",
+        )
+        created = True
+    else:
+        user_changed = False
+        if student_row.email and user.email != student_row.email:
+            user.email = student_row.email
+            user_changed = True
+        if not user.is_active:
+            user.is_active = True
+            user_changed = True
+        if user_changed:
+            user.save()
+
+    _student_sync_profile(user, student_row)
+    return user, created, False
+
+
+def _student_roster_queryset(subject):
+    return StudentRosterUpload.objects.filter(subject_id=subject).annotate(
+        student_count=Count("students", distinct=True),
+        created_accounts_total=Count(
+            "students",
+            filter=Q(students__account_created=True),
+            distinct=True,
+        ),
+        existing_accounts_total=Count(
+            "students",
+            filter=Q(students__account_status=StudentRosterAccountStatus.EXISTING),
+            distinct=True,
+        ),
+        new_accounts_total=Count(
+            "students",
+            filter=Q(students__account_status=StudentRosterAccountStatus.CREATED),
+            distinct=True,
+        ),
+    )
+
+
+def _student_roster_summary(rosters):
+    raw_summary = rosters.aggregate(
+        total_files=Count("pk"),
+        completed_files=Count(
+            "pk",
+            filter=Q(status=StudentListUploadStatus.CREATED),
+            distinct=True,
+        ),
+        total_students=Sum("student_count"),
+        total_created_accounts=Sum("created_accounts_total"),
+    )
+    total_files = raw_summary.get("total_files") or 0
+    completed_files = raw_summary.get("completed_files") or 0
+    total_students = raw_summary.get("total_students") or 0
+    total_created_accounts = raw_summary.get("total_created_accounts") or 0
+
+    return {
+        "total_files": total_files,
+        "completed_files": completed_files,
+        "pending_files": max(0, total_files - completed_files),
+        "total_students": total_students,
+        "total_created_accounts": total_created_accounts,
+        "pending_accounts": max(0, total_students - total_created_accounts),
+        "all_files_completed": bool(total_files and completed_files == total_files),
+    }
+
+
+@login_required
+def lecturer_student_list_management(request, subject_code):
+    _ensure_lecturer(request)
+    subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
+
+    rosters = _student_roster_queryset(subject)
+    keyword = (request.GET.get("q") or "").strip()
+    academic_year = (request.GET.get("academic_year") or "").strip()
+    semester = (request.GET.get("semester") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+
+    if keyword:
+        rosters = rosters.filter(
+            Q(title__icontains=keyword)
+            | Q(original_file_name__icontains=keyword)
+            | Q(students__student_code__icontains=keyword)
+        ).distinct()
+    if academic_year:
+        rosters = rosters.filter(academic_year=academic_year)
+    if semester:
+        rosters = rosters.filter(semester=semester)
+    if status:
+        rosters = rosters.filter(status=status)
+
+    paginator = Paginator(rosters.order_by("-created_at"), 10)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    roster_summary = _student_roster_summary(rosters)
+
+    context = {
+        "subject": subject,
+        "page_obj": page_obj,
+        "roster_summary": roster_summary,
+        "completed_rosters_preview": rosters.filter(
+            status=StudentListUploadStatus.CREATED,
+            account_created_at__isnull=False,
+        ).order_by("-account_created_at")[:3],
+        "filters": {
+            "q": keyword,
+            "academic_year": academic_year,
+            "semester": semester,
+            "status": status,
+        },
+        "academic_year_options": StudentRosterUpload.objects.filter(subject_id=subject)
+        .values_list("academic_year", flat=True)
+        .distinct()
+        .order_by("-academic_year"),
+        "semester_options": SemesterChoices.choices,
+        "status_options": StudentListUploadStatus.choices,
+    }
+    return render(request, "qna/lecturer/lecturer_student_list_management.html", context)
+
+
+@login_required
+def lecturer_student_list_template(request, subject_code):
+    _ensure_lecturer(request)
+    subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
+
+    workbook = OpenpyxlWorkbook()
+    worksheet = workbook.active
+    worksheet.title = "Danh sách sinh viên"
+    worksheet.append(["Mã số sinh viên", "Họ và tên", "Giới tính", "Ngày sinh", "Lớp", "Email"])
+    worksheet.append(["SV2024001", "Nguyễn Văn An", "Nam", "12/05/2003", "CNT01", "sv2024001@example.com"])
+    worksheet.append(["SV2024002", "Trần Thị Bích", "Nữ", "24/08/2003", "CNT01", "sv2024002@example.com"])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="Template_Danh_Sach_SV_{subject.subject_code}.xlsx"'
+    workbook.save(response)
+    return response
+
+
+@login_required
+def lecturer_student_list_detail(request, roster_id):
+    _ensure_lecturer(request)
+    roster = get_object_or_404(
+        StudentRosterUpload.objects.select_related("subject_id", "created_by_user_id"),
+        pk=roster_id,
+    )
+    if roster.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền truy cập danh sách này.")
+
+    keyword = (request.GET.get("q") or "").strip()
+    students_qs = roster.students.select_related("linked_user_id").order_by("row_number")
+
+    if keyword:
+        students_qs = students_qs.filter(
+            Q(student_code__icontains=keyword)
+            | Q(full_name__icontains=keyword)
+            | Q(class_name__icontains=keyword)
+        )
+
+    paginator = Paginator(students_qs, 8)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    roster.refresh_status()
+    account_breakdown = roster.students.aggregate(
+        existing_accounts=Count("pk", filter=Q(account_status=StudentRosterAccountStatus.EXISTING)),
+        new_accounts=Count("pk", filter=Q(account_status=StudentRosterAccountStatus.CREATED)),
+        pending_accounts=Count("pk", filter=Q(account_status=StudentRosterAccountStatus.PENDING)),
+    )
+    create_account_modal = request.session.pop("student_account_modal", None) or {}
+
+    context = {
+        "roster": roster,
+        "subject": roster.subject,
+        "page_obj": page_obj,
+        "search_query": keyword,
+        "pending_accounts_count": roster.pending_accounts_count,
+        "created_accounts_count": roster.created_accounts_count,
+        "existing_accounts_count": account_breakdown.get("existing_accounts") or 0,
+        "new_accounts_count": account_breakdown.get("new_accounts") or 0,
+        "uncreated_accounts_count": account_breakdown.get("pending_accounts") or 0,
+        "create_account_modal": {
+            "open": bool(create_account_modal.get("open")),
+            "error": create_account_modal.get("error", ""),
+            "existing_students": create_account_modal.get("existing_students", []),
+            "need_skip_confirm": bool(create_account_modal.get("need_skip_confirm")),
+        },
+        "password_rules": [],
+    }
+    return render(request, "qna/lecturer/lecturer_student_list_detail.html", context)
+
+
+def _student_account_modal_error(request, roster, message, existing_students=None, need_skip_confirm=False):
+    request.session["student_account_modal"] = {
+        "open": True,
+        "error": message,
+        "existing_students": existing_students or [],
+        "need_skip_confirm": need_skip_confirm,
+    }
+    return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+
+def _validate_student_batch_password(password):
+    if not str(password or "").strip():
+        raise ValidationError("Vui lòng nhập mật khẩu.")
+
+
+@login_required
+@require_POST
+def lecturer_student_list_delete(request, roster_id):
+    _ensure_lecturer(request)
+    roster = get_object_or_404(StudentRosterUpload.objects.select_related("subject_id"), pk=roster_id)
+    if roster.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền xóa danh sách này.")
+
+    subject_code = roster.subject.subject_code
+    if roster.uploaded_file:
+        roster.uploaded_file.delete(save=False)
+    roster.delete()
+    messages.success(request, "Xóa danh sách lớp thành công")
+    return redirect("qna:lecturer_student_list_management", subject_code=subject_code)
+
+
+@login_required
+def lecturer_student_list_upload(request, subject_code):
+    _ensure_lecturer(request)
+    subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
+
+    if request.method == "POST":
+        academic_year = (request.POST.get("academic_year") or "").strip() or _student_default_academic_year()
+        semester = (request.POST.get("semester") or SemesterChoices.HK1).strip()
+        if semester not in {choice[0] for choice in SemesterChoices.choices}:
+            semester = SemesterChoices.HK1
+        mode = request.POST.get("mode", "new")
+
+        files = request.FILES.getlist("files")
+        wants_json = _is_ajax_request(request)
+
+        if not files:
+            message = "Vui lòng chọn ít nhất 1 file danh sách sinh viên."
+            if wants_json:
+                return JsonResponse({"success": False, "message": message}, status=400)
+            messages.error(request, message)
+            return redirect("qna:lecturer_student_list_upload", subject_code=subject.subject_code)
+
+        success_items = []
+        errors = []
+
+        for uploaded_file in files:
+            try:
+                with transaction.atomic():
+                    roster = _student_create_roster(
+                        subject=subject,
+                        created_by=request.user,
+                        academic_year=academic_year,
+                        semester=semester,
+                        uploaded_file=uploaded_file,
+                        mode=mode,
+                    )
+                success_items.append(
+                    {
+                        "roster_id": roster.id,
+                        "file_name": roster.original_file_name,
+                        "total_students": roster.total_students,
+                        "status": roster.status,
+                        "status_label": roster.get_status_display(),
+                        "detail_url": f"/lecturer/student-lists/{roster.id}/",
+                        "created_at": timezone.localtime(roster.created_at).strftime("%H:%M %d/%m/%Y"),
+                        "warnings": getattr(roster, "import_warnings", []),
+                    }
+                )
+            except Exception as exc:
+                error_message = " ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
+                errors.append({"file_name": uploaded_file.name, "message": error_message})
+
+        if wants_json:
+            return JsonResponse(
+                {
+                    "success": bool(success_items) and not errors,
+                    "uploaded_count": len(success_items),
+                    "results": success_items,
+                    "errors": errors,
+                    "message": (
+                        f"Tải lên thành công {len(success_items)} file danh sách sinh viên."
+                        if success_items
+                        else "Tải file thất bại."
+                    ),
+                },
+                status=200 if success_items else 400,
+            )
+
+        if success_items:
+            messages.success(request, f"Tải lên thành công {len(success_items)} file danh sách sinh viên.")
+            for item in success_items:
+                warnings = item.get("warnings") or []
+                if warnings:
+                    preview = "; ".join(warning["message"] for warning in warnings[:5])
+                    extra_count = max(0, len(warnings) - 5)
+                    extra_suffix = f" (+{extra_count} dòng khác)" if extra_count else ""
+                    messages.warning(
+                        request,
+                        f"{item['file_name']}: bỏ qua {len(warnings)} dòng không hợp lệ hoặc trùng lặp. {preview}{extra_suffix}",
+                    )
+
+        for error in errors:
+            messages.error(request, f"{error['file_name']}: {error['message']}")
+
+        if success_items:
+            return redirect("qna:lecturer_student_list_management", subject_code=subject.subject_code)
+
+    context = {
+        "subject": subject,
+        "default_academic_year": _student_default_academic_year(),
+        "semester_options": SemesterChoices.choices,
+        "max_upload_mb": STUDENT_LIST_MAX_FILE_SIZE // (1024 * 1024),
+    }
+    return render(request, "qna/lecturer/lecturer_student_list_upload.html", context)
+
+
+@login_required
+@require_POST
+def lecturer_student_list_create_accounts(request, roster_id):
+    _ensure_lecturer(request)
+    roster = get_object_or_404(StudentRosterUpload.objects.select_related("subject_id"), pk=roster_id)
+    if roster.subject not in request.user.userprofile.subjects_taught.all():
+        raise PermissionDenied("Bạn không có quyền thao tác danh sách này.")
+
+    default_password = (request.POST.get("default_password") or "").strip()
+    confirm_password = (request.POST.get("confirm_password") or "").strip()
+    skip_existing = str(request.POST.get("skip_existing") or "").strip() in {"1", "true", "yes", "on"}
+
+    if not default_password:
+        return _student_account_modal_error(request, roster, "Vui lòng nhập mật khẩu.")
+
+    if default_password != confirm_password:
+        return _student_account_modal_error(request, roster, "Mật khẩu xác nhận không khớp.")
+
+    try:
+        _validate_student_batch_password(default_password)
+    except ValidationError as exc:
+        return _student_account_modal_error(request, roster, " ".join(exc.messages))
+
+    roster.refresh_status()
+    if roster.pending_accounts_count == 0:
+        messages.warning(request, "Danh sách này đã được tạo tài khoản")
+        return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+    existing_rows = []
+    pending_rows = []
+
+    for student_row in roster.students.select_related("linked_user_id").order_by("row_number"):
+        existing_user = _student_find_user(student_row.student_code)
+        if existing_user:
+            existing_rows.append(
+                {
+                    "student_code": student_row.student_code,
+                    "full_name": student_row.full_name,
+                    "class_name": student_row.class_name,
+                }
+            )
+        else:
+            pending_rows.append(student_row)
+
+    if existing_rows and not skip_existing:
+        return _student_account_modal_error(
+            request,
+            roster,
+            "Một số sinh viên đã có tài khoản. Vui lòng bấm 'Bỏ qua' để tiếp tục tạo cho các sinh viên còn lại.",
+            existing_students=existing_rows,
+            need_skip_confirm=True,
+        )
+
+    created_count = 0
+    skipped_existing_count = len(existing_rows)
+
+    try:
+        with transaction.atomic():
+            for student_row in roster.students.select_related("linked_user_id").order_by("row_number"):
+                existing_user = _student_find_user(student_row.student_code)
+                if existing_user:
+                    student_row.linked_user_id = existing_user
+                    student_row.account_created = True
+                    student_row.account_status = StudentRosterAccountStatus.EXISTING
+                    student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+
+            for student_row in pending_rows:
+                user, created, _ = _student_provision_account(student_row, default_password)
+                student_row.linked_user_id = user
+                student_row.account_created = True
+                student_row.account_status = (
+                    StudentRosterAccountStatus.CREATED if created else StudentRosterAccountStatus.EXISTING
+                )
+                student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+                if created:
+                    created_count += 1
+
+            roster.refresh_status()
+
+    except Exception:
+        logger.exception("Batch create student accounts failed for roster_id=%s", roster.id)
+        messages.error(
+            request,
+            "Lỗi đường truyền khi tạo tài khoản. Hệ thống đã hoàn tác toàn bộ, vui lòng tạo lại.",
+        )
+        return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+    if skipped_existing_count:
+        request.session["student_account_modal"] = {
+            "open": True,
+            "error": "",
+            "existing_students": existing_rows,
+            "need_skip_confirm": False,
+        }
+
+    messages.success(
+        request,
+        f"Tạo tài khoản hoàn tất: {created_count} tài khoản mới, {skipped_existing_count} sinh viên đã có sẵn tài khoản.",
+    )
+    return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
+
+
+# =========================================================
+# EXAM MANAGEMENT / SESSION MANAGEMENT
+# =========================================================
+from .exam_management import (
+    lecturer_approve_exam_code,
+    lecturer_bulk_approve_exam_codes,
+    lecturer_create_exam_set,
+    lecturer_create_manual_exam_code,
+    lecturer_delete_exam_code,
+    lecturer_delete_exam_set,
+    lecturer_exam_codes_screen,
+    lecturer_exam_set_detail_screen,
+    lecturer_generate_codes_screen,
+    lecturer_publish_exam_set,
+    lecturer_regenerate_exam_code,
+    lecturer_save_exam_set_draft,
+    lecturer_update_exam_code_content,
 )
 
-
-TEST_CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "student-roster-tests",
-    }
-}
-
-TEST_CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    }
-}
-
-
-class LecturerStudentRosterUploadTests(TestCase):
-    def setUp(self):
-        self.media_root = tempfile.mkdtemp(dir=os.path.dirname(__file__))
-        self.override = override_settings(
-            MEDIA_ROOT=self.media_root,
-            CACHES=TEST_CACHES,
-            CHANNEL_LAYERS=TEST_CHANNEL_LAYERS,
-        )
-        self.override.enable()
-
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer01",
-            password="Password123!",
-        )
-        self.profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien",
-        )
-        self.subject = Subject.objects.create(
-            name="Kho va khai pha du lieu",
-            subject_code="DS401",
-        )
-        self.profile.subjects_taught.add(self.subject)
-        self.client.force_login(self.lecturer)
-
-    def _upload_roster(self, rows, file_name="Danh_sach_L01.csv"):
-        upload = SimpleUploadedFile(
-            file_name,
-            (
-                "student_code,full_name,gender,date_of_birth,class_name,email\n"
-                + "\n".join(rows)
-                + "\n"
-            ).encode("utf-8-sig"),
-            content_type="text/csv",
-        )
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
-            {
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "files": upload,
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            HTTP_ACCEPT="application/json",
-        )
-        self.assertEqual(response.status_code, 200)
-        return StudentRosterUpload.objects.get(subject_id=self.subject)
-
-    def tearDown(self):
-        self.override.disable()
-        shutil.rmtree(self.media_root, ignore_errors=True)
-
-    def test_ajax_upload_creates_roster_and_students(self):
-        upload = SimpleUploadedFile(
-            "Danh_sach_L01.csv",
-            (
-                "student_code,full_name,gender,date_of_birth,class_name,email\n"
-                "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com\n"
-                "SV002,Tran Thi B,Nu,24/08/2003,CNT01,sv002@example.com\n"
-            ).encode("utf-8-sig"),
-            content_type="text/csv",
-        )
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
-            {
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "files": upload,
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            HTTP_ACCEPT="application/json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["uploaded_count"], 1)
-        self.assertEqual(len(payload["results"]), 1)
-
-        roster = StudentRosterUpload.objects.get(subject_id=self.subject)
-        self.assertEqual(roster.academic_year, "2024-2025")
-        self.assertEqual(roster.semester, "HK1")
-        self.assertEqual(roster.total_students, 2)
-        self.assertEqual(StudentRosterStudent.objects.filter(student_roster_upload_id=roster).count(), 2)
-        self.assertEqual(payload["results"][0]["total_students"], 2)
-
-    def test_ajax_upload_rejects_invalid_extension(self):
-        upload = SimpleUploadedFile(
-            "danh_sach_sinh_vien.pdf",
-            b"fake-pdf-content",
-            content_type="application/pdf",
-        )
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
-            {
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "files": upload,
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            HTTP_ACCEPT="application/json",
-        )
-
-        self.assertEqual(response.status_code, 400)
-        payload = response.json()
-
-        self.assertFalse(payload["success"])
-        self.assertEqual(payload["uploaded_count"], 0)
-        self.assertEqual(StudentRosterUpload.objects.count(), 0)
-        self.assertEqual(len(payload["errors"]), 1)
-        self.assertIn("excel", payload["errors"][0]["message"].lower())
-
-    def test_batch_create_accounts_creates_loginable_student_accounts(self):
-        roster = self._upload_roster([
-            "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com",
-        ])
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_create_accounts", args=[roster.id]),
-            {
-                "default_password": "SafePass123!",
-                "confirm_password": "SafePass123!",
-            },
-        )
-
-        self.assertEqual(response.status_code, 302)
-
-        roster.refresh_from_db()
-        student_row = roster.students.get(student_code="SV001")
-        student_user = self.user_model.objects.get(username="SV001")
-
-        self.assertEqual(roster.status, "CREATED")
-        self.assertIsNotNone(roster.account_created_at)
-        self.assertTrue(student_row.account_created)
-        self.assertEqual(student_row.linked_user, student_user)
-
-        self.client.logout()
-        self.assertTrue(self.client.login(username="SV001", password="SafePass123!"))
-
-    def test_uploaded_roster_marks_existing_accounts_separately_from_pending_students(self):
-        existing_user = self.user_model.objects.create_user(
-            username="legacy.sv004",
-            password="LegacyPass123!",
-        )
-        UserProfile.objects.create(
-            user=existing_user,
-            is_lecturer=False,
-            full_name="Sinh Vien Da Co Tai Khoan",
-            student_id="SV004",
-        )
-
-        roster = self._upload_roster([
-            "SV004,Sinh Vien Da Co Tai Khoan,Nam,12/05/2003,CNT01,sv004@example.com",
-            "SV005,Sinh Vien Chua Co,Nu,24/08/2003,CNT01,sv005@example.com",
-        ])
-
-        existing_row = roster.students.get(student_code="SV004")
-        pending_row = roster.students.get(student_code="SV005")
-
-        self.assertTrue(existing_row.account_created)
-        self.assertEqual(existing_row.account_status, StudentRosterAccountStatus.EXISTING)
-        self.assertFalse(pending_row.account_created)
-        self.assertEqual(pending_row.account_status, StudentRosterAccountStatus.PENDING)
-
-        management_response = self.client.get(
-            reverse("qna:lecturer_student_list_management", args=[self.subject.subject_code]),
-            {
-                "q": "Danh_sach_L01",
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "status": "PENDING",
-            },
-        )
-        self.assertEqual(management_response.status_code, 200)
-
-        detail_response = self.client.get(
-            reverse("qna:lecturer_student_list_detail", args=[roster.id]),
-            {"q": "SV004"},
-        )
-        self.assertEqual(detail_response.status_code, 200)
-
-    def test_existing_student_account_is_reused_without_resetting_password(self):
-        existing_user = self.user_model.objects.create_user(
-            username="legacy.student",
-            password="LegacyPass123!",
-        )
-        UserProfile.objects.create(
-            user=existing_user,
-            is_lecturer=False,
-            full_name="Sinh Vien Cu",
-            student_id="SV002",
-        )
-
-        roster = self._upload_roster([
-            "SV002,Sinh Vien Cu,Nam,12/05/2003,CNT01,sv002@example.com",
-            "SV003,Sinh Vien Moi,Nu,24/08/2003,CNT01,sv003@example.com",
-        ])
-
-        confirm_response = self.client.post(
-            reverse("qna:lecturer_student_list_create_accounts", args=[roster.id]),
-            {
-                "default_password": "BatchPass123!",
-                "confirm_password": "BatchPass123!",
-            },
-        )
-
-        self.assertEqual(confirm_response.status_code, 302)
-        self.assertRedirects(
-            confirm_response,
-            reverse("qna:lecturer_student_list_detail", args=[roster.id]),
-            fetch_redirect_response=False,
-        )
-        self.assertIn("student_account_modal", self.client.session)
-        self.assertTrue(self.client.session["student_account_modal"]["need_skip_confirm"])
-        self.assertEqual(len(self.client.session["student_account_modal"]["existing_students"]), 1)
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_create_accounts", args=[roster.id]),
-            {
-                "default_password": "BatchPass123!",
-                "confirm_password": "BatchPass123!",
-                "skip_existing": "1",
-            },
-        )
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(self.user_model.objects.filter(username="legacy.student").count(), 1)
-        self.assertEqual(self.user_model.objects.filter(username="SV002").count(), 0)
-        self.assertEqual(self.user_model.objects.filter(username="SV003").count(), 1)
-
-        roster.refresh_from_db()
-        reused_row = roster.students.get(student_code="SV002")
-        created_row = roster.students.get(student_code="SV003")
-        existing_user.refresh_from_db()
-
-        self.assertEqual(roster.status, "CREATED")
-        self.assertEqual(reused_row.linked_user, existing_user)
-        self.assertTrue(reused_row.account_created)
-        self.assertTrue(created_row.account_created)
-        self.assertEqual(reused_row.account_status, StudentRosterAccountStatus.EXISTING)
-        self.assertEqual(created_row.account_status, StudentRosterAccountStatus.CREATED)
-        self.assertTrue(existing_user.check_password("LegacyPass123!"))
-
-        self.client.logout()
-        self.assertTrue(self.client.login(username="legacy.student", password="LegacyPass123!"))
-        self.client.logout()
-        self.assertFalse(self.client.login(username="legacy.student", password="BatchPass123!"))
-        self.client.logout()
-        self.assertTrue(self.client.login(username="SV003", password="BatchPass123!"))
-
-    def test_management_screen_has_clear_filter_action(self):
-        self._upload_roster([
-            "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com",
-        ])
-
-        response = self.client.get(
-            reverse("qna:lecturer_student_list_management", args=[self.subject.subject_code]),
-            {
-                "q": "SV001",
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "status": "PENDING",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Xóa bộ lọc")
-        self.assertContains(
-            response,
-            reverse("qna:lecturer_student_list_management", args=[self.subject.subject_code]),
-        )
-
-    def disabled_ajax_upload_reports_skipped_rows_legacy_fixture(self):
-        upload = SimpleUploadedFile(
-            "Danh_sach_L02.csv",
-            (
-                "MÃƒÂ£ sÃ¡Â»â€˜ sinh viÃƒÂªn,HÃ¡Â»Â vÃƒÂ  tÃƒÂªn,GiÃ¡Â»â€ºi tÃƒÂ­nh,NgÃƒÂ y sinh,LÃ¡Â»â€ºp,Email\n"
-                "SV010,Nguyen Van Ten,Nam,12/05/2003,CNT01,sv010@example.com\n"
-                "SV011,,NÃ¡Â»Â¯,24/08/2003,CNT01,sv011@example.com\n"
-                "SV010,Nguyen Van Trung,Nam,24/08/2003,CNT01,sv010-dup@example.com\n"
-            ).encode("utf-8-sig"),
-            content_type="text/csv",
-        )
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
-            {
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "files": upload,
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            HTTP_ACCEPT="application/json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["uploaded_count"], 1)
-        self.assertEqual(payload["results"][0]["total_students"], 1)
-        self.assertEqual(len(payload["results"][0]["warnings"]), 2)
-        self.assertIn("Dong 3", payload["results"][0]["warnings"][0]["message"])
-        self.assertIn("Dong 4", payload["results"][0]["warnings"][1]["message"])
-
-    def test_ajax_upload_reports_skipped_rows(self):
-        upload = SimpleUploadedFile(
-            "Danh_sach_L02.csv",
-            (
-                "student_code,full_name,gender,date_of_birth,class_name,email\n"
-                "SV010,Nguyen Van Ten,Nam,12/05/2003,CNT01,sv010@example.com\n"
-                "SV011,,Nu,24/08/2003,CNT01,sv011@example.com\n"
-                "SV010,Nguyen Van Trung,Nam,24/08/2003,CNT01,sv010-dup@example.com\n"
-            ).encode("utf-8-sig"),
-            content_type="text/csv",
-        )
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
-            {
-                "academic_year": "2024-2025",
-                "semester": "HK1",
-                "files": upload,
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            HTTP_ACCEPT="application/json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["uploaded_count"], 1)
-        self.assertEqual(payload["results"][0]["total_students"], 1)
-        self.assertEqual(len(payload["results"][0]["warnings"]), 2)
-        self.assertEqual(payload["results"][0]["warnings"][0]["row_number"], 3)
-        self.assertEqual(payload["results"][0]["warnings"][1]["row_number"], 4)
-
-    def test_invalid_batch_password_keeps_create_modal_open_with_inline_error(self):
-        roster = self._upload_roster([
-            "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com",
-        ])
-
-        response = self.client.post(
-            reverse("qna:lecturer_student_list_create_accounts", args=[roster.id]),
-            {
-                "default_password": "BatchPass123!",
-                "confirm_password": "Mismatch123!",
-            },
-        )
-
-        self.assertEqual(response.status_code, 302)
-        self.assertRedirects(
-            response,
-            reverse("qna:lecturer_student_list_detail", args=[roster.id]),
-            fetch_redirect_response=False,
-        )
-
-        session = self.client.session
-        self.assertIn("student_account_modal", session)
-        self.assertTrue(session["student_account_modal"]["open"])
-        self.assertTrue(session["student_account_modal"]["error"])
-        error_message = session["student_account_modal"]["error"]
-
-        detail_response = self.client.get(
-            reverse("qna:lecturer_student_list_detail", args=[roster.id])
-        )
-        self.assertContains(detail_response, 'id="passwordValidationMessage"')
-        self.assertContains(detail_response, "show")
-        self.assertContains(detail_response, error_message)
-
-        roster.refresh_from_db()
-        self.assertEqual(roster.status, "PENDING")
-        self.assertFalse(roster.students.get(student_code="SV001").account_created)
-
-
-class LecturerRedirectTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer_redirect",
-            password="Password123!",
-        )
-        UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Redirect",
-        )
-
-        self.student = self.user_model.objects.create_user(
-            username="student_redirect",
-            password="Password123!",
-        )
-        UserProfile.objects.create(
-            user=self.student,
-            is_lecturer=False,
-            full_name="Sinh Vien Redirect",
-        )
-
-    def test_root_redirects_lecturer_to_lecturer_dashboard(self):
-        self.client.force_login(self.lecturer)
-        response = self.client.get(reverse("qna:root"))
-        self.assertRedirects(response, reverse("qna:lecturer_dashboard"))
-
-    def test_student_dashboard_redirects_lecturer_to_lecturer_dashboard(self):
-        self.client.force_login(self.lecturer)
-        response = self.client.get(reverse("qna:dashboard"))
-        self.assertRedirects(response, reverse("qna:lecturer_dashboard"))
-
-    def test_lecturer_subject_list_redirects_to_lecturer_dashboard(self):
-        self.client.force_login(self.lecturer)
-        response = self.client.get(reverse("qna:lecturer_subject_list"))
-        self.assertRedirects(response, reverse("qna:lecturer_dashboard"))
-
-    def test_root_redirects_student_to_student_dashboard(self):
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("qna:root"))
-        self.assertRedirects(response, reverse("qna:dashboard"))
-
-
-class LecturerDashboardTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer_dashboard_counts",
-            password="Password123!",
-        )
-        self.profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Dashboard",
-        )
-        self.subject_a = Subject.objects.create(name="Kho va Khai pha du lieu", subject_code="DS001")
-        self.subject_b = Subject.objects.create(name="Phan tich du lieu bang python", subject_code="DS002")
-        self.profile.subjects_taught.add(self.subject_a, self.subject_b)
-        self.client.force_login(self.lecturer)
-
-        for index in range(2):
-            ExamSessionGroup.objects.create(
-                subject=self.subject_a,
-                group_name=f"Ca thi {index + 1}",
-                academic_year="2025-2026",
-                semester="HK1",
-                exam_date=timezone.now() + timedelta(days=index + 1),
-                duration_minutes=60,
-                status="SCHEDULED",
-                created_by=self.lecturer,
-            )
-
-        roster_1 = StudentRosterUpload.objects.create(
-            subject=self.subject_a,
-            academic_year="2025-2026",
-            semester="HK1",
-            title="Lop A",
-            original_file_name="lop_a.xlsx",
-            total_students=2,
-            created_by=self.lecturer,
-        )
-        roster_2 = StudentRosterUpload.objects.create(
-            subject=self.subject_a,
-            academic_year="2025-2026",
-            semester="HK2",
-            title="Lop B",
-            original_file_name="lop_b.xlsx",
-            total_students=2,
-            created_by=self.lecturer,
-        )
-        StudentRosterStudent.objects.create(
-            roster=roster_1,
-            row_number=1,
-            student_code="SV001",
-            full_name="Sinh Vien 1",
-        )
-        StudentRosterStudent.objects.create(
-            roster=roster_1,
-            row_number=2,
-            student_code="SV002",
-            full_name="Sinh Vien 2",
-        )
-        StudentRosterStudent.objects.create(
-            roster=roster_2,
-            row_number=1,
-            student_code="SV002",
-            full_name="Sinh Vien 2",
-        )
-        StudentRosterStudent.objects.create(
-            roster=roster_2,
-            row_number=2,
-            student_code="SV003",
-            full_name="Sinh Vien 3",
-        )
-
-    def test_lecturer_dashboard_subject_cards_use_database_counts(self):
-        response = self.client.get(reverse("qna:lecturer_dashboard"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.subject_a.name)
-        self.assertContains(response, self.subject_b.name)
-
-        subjects = {subject.subject_code: subject for subject in response.context["subjects"]}
-        self.assertEqual(subjects["DS001"].created_exam_count, 2)
-        self.assertEqual(subjects["DS001"].participating_student_count, 3)
-        self.assertEqual(subjects["DS002"].created_exam_count, 0)
-        self.assertEqual(subjects["DS002"].participating_student_count, 0)
-
-        content = response.content.decode("utf-8")
-        self.assertIn("<strong>2</strong>", content)
-        self.assertIn("<strong>3</strong>", content)
-        self.assertGreaterEqual(content.count("<strong>0</strong>"), 2)
-        self.assertNotIn("<strong>10</strong>", content)
-        self.assertNotIn("<strong>50</strong>", content)
-
-
-class LecturerQuestionManagementTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer_questions",
-            password="Password123!",
-        )
-        self.profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Question",
-        )
-        self.subject = Subject.objects.create(
-            name="Tri tue nhan tao",
-            subject_code="AI401",
-        )
-        self.profile.subjects_taught.add(self.subject)
-        self.client.force_login(self.lecturer)
-
-        self.bank = QuestionBank.objects.create(
-            subject=self.subject,
-            name="Ngan hang goc",
-        )
-
-    def _post_json(self, route_name, payload, args=None):
-        return self.client.post(
-            reverse(route_name, args=args or []),
-            data=json.dumps(payload),
-            content_type="application/json",
-        )
-
-    def _create_active_exam_group(self):
-        return ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi dang dien ra",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() - timedelta(minutes=5),
-            duration_minutes=30,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-            configuration_data={"rooms": [], "rosters": []},
-        )
-
-    def test_create_manual_question_and_list_by_bank(self):
-        create_response = self._post_json(
-            "qna:api_create_manual_question",
-            {
-                "subject_id": str(self.subject.id),
-                "real_bank_id": str(self.bank.id),
-                "view_type": "bank",
-                "difficulty": DifficultyLevel.MEDIUM,
-                "content": "Mo ta overfitting trong machine learning.",
-            },
-        )
-
-        self.assertEqual(create_response.status_code, 200)
-        create_payload = create_response.json()
-        self.assertEqual(create_payload["status"], "SUCCESS")
-
-        question = Question.objects.get(pk=create_payload["question"]["question_id"])
-        self.assertEqual(question.bank, self.bank)
-        self.assertEqual(question.subject, self.subject)
-        self.assertEqual(question.difficulty, DifficultyLevel.MEDIUM)
-
-        list_response = self.client.get(
-            reverse("qna:api_get_questions"),
-            {
-                "bank_id": str(self.subject.id),
-                "real_bank_id": str(self.bank.id),
-                "view_type": "bank",
-                "difficulty": "ALL",
-            },
-        )
-
-        self.assertEqual(list_response.status_code, 200)
-        list_payload = list_response.json()
-        self.assertEqual(list_payload["status"], "SUCCESS")
-        self.assertEqual(list_payload["summary"]["all"], 1)
-        self.assertEqual(list_payload["summary"]["medium"], 1)
-        self.assertEqual(len(list_payload["questions"]), 1)
-        self.assertEqual(
-            list_payload["questions"][0]["content"],
-            "Mo ta overfitting trong machine learning.",
-        )
-
-    def test_question_bank_apis_ignore_exam_clone_questions(self):
-        Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Cau goc",
-            question_id_in_barem="Q_AI401_010",
-            difficulty=DifficultyLevel.EASY,
-            is_exam_clone=False,
-        )
-        Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Cau clone khong duoc hien",
-            question_id_in_barem="EC_legacy_clone",
-            difficulty=DifficultyLevel.HARD,
-            is_exam_clone=True,
-        )
-
-        bank_response = self.client.get(
-            reverse("qna:api_get_question_banks"),
-            {"subject_id": str(self.subject.id)},
-        )
-        self.assertEqual(bank_response.status_code, 200)
-        self.assertEqual(bank_response.json()["question_banks"][0]["question_count"], 1)
-
-        list_response = self.client.get(
-            reverse("qna:api_get_questions"),
-            {
-                "bank_id": str(self.subject.id),
-                "real_bank_id": str(self.bank.id),
-                "view_type": "bank",
-                "difficulty": "ALL",
-            },
-        )
-        self.assertEqual(list_response.status_code, 200)
-        payload = list_response.json()
-        self.assertEqual(payload["summary"]["all"], 1)
-        self.assertEqual(len(payload["questions"]), 1)
-        self.assertEqual(payload["questions"][0]["content"], "Cau goc")
-
-    def test_create_manual_question_rejects_bank_outside_lecturer_scope(self):
-        other_subject = Subject.objects.create(
-            name="Mon khac",
-            subject_code="OT401",
-        )
-        other_bank = QuestionBank.objects.create(
-            subject=other_subject,
-            name="Bank ngoai pham vi",
-        )
-
-        response = self._post_json(
-            "qna:api_create_manual_question",
-            {
-                "subject_id": str(self.subject.id),
-                "real_bank_id": str(other_bank.id),
-                "view_type": "bank",
-                "difficulty": DifficultyLevel.MEDIUM,
-                "content": "Cau hoi khong hop le.",
-            },
-        )
-
-        self.assertEqual(response.status_code, 404)
-
-    def test_bulk_update_and_bulk_delete_questions(self):
-        first = Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Cau 1",
-            question_id_in_barem="Q_AI401_001",
-            difficulty=DifficultyLevel.EASY,
-        )
-        second = Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Cau 2",
-            question_id_in_barem="Q_AI401_002",
-            difficulty=DifficultyLevel.MEDIUM,
-        )
-
-        update_response = self._post_json(
-            "qna:api_bulk_update_question_level",
-            {
-                "bank_id": str(self.subject.id),
-                "question_ids": [first.id, second.id],
-                "difficulty": DifficultyLevel.HARD,
-            },
-        )
-
-        self.assertEqual(update_response.status_code, 200)
-        self.assertEqual(update_response.json()["affected"], 2)
-
-        first.refresh_from_db()
-        second.refresh_from_db()
-        self.assertEqual(first.difficulty, DifficultyLevel.HARD)
-        self.assertEqual(second.difficulty, DifficultyLevel.HARD)
-
-        delete_response = self._post_json(
-            "qna:api_bulk_delete_questions",
-            {
-                "bank_id": str(self.subject.id),
-                "question_ids": [first.id],
-            },
-        )
-
-        self.assertEqual(delete_response.status_code, 200)
-        self.assertEqual(delete_response.json()["affected"], 1)
-        self.assertFalse(Question.objects.filter(pk=first.id).exists())
-        self.assertTrue(Question.objects.filter(pk=second.id).exists())
-
-    def test_update_question_bank_question_is_blocked_while_exam_is_ongoing(self):
-        question = Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Cau hoi dang duoc khoa",
-            question_id_in_barem="Q_AI401_LOCKED",
-            difficulty=DifficultyLevel.EASY,
-        )
-        self._create_active_exam_group()
-
-        response = self._post_json(
-            "qna:api_update_question_v2",
-            {
-                "content": "Noi dung moi khi dang thi",
-                "difficulty": DifficultyLevel.HARD,
-            },
-            args=[question.id],
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(response.json()["message"])
-
-    def test_save_generated_questions_into_new_question_bank(self):
-        workspace_id = "ws_regression"
-        draft_one = Question.objects.create(
-            subject=self.subject,
-            question_text="Ban nhap 1",
-            question_id_in_barem=f"DRAFT_{workspace_id}_001",
-            difficulty=DifficultyLevel.EASY,
-        )
-        draft_two = Question.objects.create(
-            subject=self.subject,
-            question_text="Ban nhap 2",
-            question_id_in_barem=f"DRAFT_{workspace_id}_002",
-            difficulty=DifficultyLevel.MEDIUM,
-        )
-        draft_three = Question.objects.create(
-            subject=self.subject,
-            question_text="Ban nhap 3",
-            question_id_in_barem=f"DRAFT_{workspace_id}_003",
-            difficulty=DifficultyLevel.HARD,
-        )
-
-        create_bank_response = self._post_json(
-            "qna:api_create_question_bank",
-            {
-                "subject_id": str(self.subject.id),
-                "name": "Ngan hang moi",
-            },
-        )
-        new_bank_id = create_bank_response.json()["bank_id"]
-
-        save_response = self._post_json(
-            "qna:api_save_question_bank_questions",
-            {
-                "question_ids": [draft_one.id, draft_two.id],
-                "workspace_id": workspace_id,
-            },
-            args=[new_bank_id],
-        )
-
-        self.assertEqual(save_response.status_code, 200)
-        draft_one.refresh_from_db()
-        draft_two.refresh_from_db()
-
-        self.assertEqual(draft_one.bank.id, int(new_bank_id))
-        self.assertEqual(draft_two.bank.id, int(new_bank_id))
-        self.assertTrue(draft_one.question_id_in_barem.startswith("SAVED_"))
-        self.assertTrue(draft_two.question_id_in_barem.startswith("SAVED_"))
-        self.assertFalse(Question.objects.filter(pk=draft_three.id).exists())
-
-    def test_save_generated_questions_returns_updated_bank_count(self):
-        Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Cau san co",
-            question_id_in_barem="MAN_EXISTING_001",
-            difficulty=DifficultyLevel.EASY,
-        )
-        workspace_id = "ws_existing_bank"
-        draft_one = Question.objects.create(
-            subject=self.subject,
-            question_text="Ban nhap them 1",
-            question_id_in_barem=f"DRAFT_{workspace_id}_001",
-            difficulty=DifficultyLevel.EASY,
-        )
-        draft_two = Question.objects.create(
-            subject=self.subject,
-            question_text="Ban nhap them 2",
-            question_id_in_barem=f"DRAFT_{workspace_id}_002",
-            difficulty=DifficultyLevel.MEDIUM,
-        )
-
-        save_response = self._post_json(
-            "qna:api_save_question_bank_questions",
-            {
-                "question_ids": [draft_one.id, draft_two.id],
-                "workspace_id": workspace_id,
-            },
-            args=[self.bank.id],
-        )
-
-        self.assertEqual(save_response.status_code, 200)
-        payload = save_response.json()
-        self.assertEqual(payload["saved_count"], 2)
-        self.assertEqual(payload["question_count"], 3)
-
-        bank_response = self.client.get(
-            reverse("qna:api_get_question_banks"),
-            {"subject_id": str(self.subject.id)},
-        )
-        self.assertEqual(bank_response.status_code, 200)
-        self.assertEqual(bank_response.json()["question_banks"][0]["question_count"], 3)
-
-    def test_import_questions_accepts_flexible_columns_and_reports_invalid_rows(self):
-        upload = SimpleUploadedFile(
-            "questions.csv",
-            (
-                "content,difficulty\n"
-                "Mo ta bai toan,De\n"
-                "Phan tich du lieu,Trung binh\n"
-                "Dong loi,Khong hop le\n"
-                ",Hard\n"
-            ).encode("utf-8-sig"),
-            content_type="text/csv",
-        )
-
-        response = self.client.post(
-            reverse("qna:lecturer_import_questions"),
-            {
-                "subject_id": str(self.subject.id),
-                "file": upload,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["imported_count"], 2)
-        self.assertEqual(payload["invalid_count"], 2)
-        self.assertTrue(Question.objects.filter(subject_id=self.subject, question_text="Mo ta bai toan").exists())
-        self.assertTrue(Question.objects.filter(subject_id=self.subject, question_text="Phan tich du lieu").exists())
-
-class LecturerExamManagementTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer_exams",
-            password="Password123!",
-        )
-        self.profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Exam",
-        )
-        self.subject = Subject.objects.create(
-            name="Khai pha du lieu",
-            subject_code="DS402",
-        )
-        self.profile.subjects_taught.add(self.subject)
-        self.client.force_login(self.lecturer)
-
-        self.bank = QuestionBank.objects.create(
-            subject=self.subject,
-            name="Ngan hang sinh de",
-        )
-
-        for index in range(2):
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Easy {index}",
-                question_id_in_barem=f"E_{index}",
-                difficulty=DifficultyLevel.EASY,
-            )
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Medium {index}",
-                question_id_in_barem=f"M_{index}",
-                difficulty=DifficultyLevel.MEDIUM,
-            )
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Hard {index}",
-                question_id_in_barem=f"H_{index}",
-                difficulty=DifficultyLevel.HARD,
-            )
-
-    def _post_json(self, route_name, payload, args=None):
-        return self.client.post(
-            reverse(route_name, args=args or []),
-            data=json.dumps(payload),
-            content_type="application/json",
-        )
-
-    def _create_exam_set(self, number_of_versions=2):
-        response = self._post_json(
-            "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": number_of_versions,
-                "easy_count": 1,
-                "medium_count": 1,
-                "hard_count": 1,
-                "easy_score": 2,
-                "medium_score": 3,
-                "hard_score": 5,
-                "shuffle_question_order": False,
-                "allow_duplicate_questions": False,
-                "source_bank_ids": [self.bank.id],
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        return ExamSet.objects.get(pk=response.json()["exam_set_id"])
-
-    def _link_exam_code(self, exam_code, group_name="Ca thi da dung"):
-        exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name=group_name,
-            exam_date=timezone.now(),
-            duration_minutes=60,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-        )
-        exam_group.exam_codes.add(exam_code)
-
-        session_room = ExamSessionRoom.objects.create(
-            exam_session_group_id=exam_group,
-            room_name="Phong da gan ma de",
-            expected_students=1,
-            exam_set_id=exam_code.exam_set_id,
-            display_order=1,
-        )
-        session_room.exam_codes.add(exam_code)
-        return exam_group
-
-    def _create_active_exam_group(self, *exam_codes):
-        exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi dang dien ra",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() - timedelta(minutes=5),
-            duration_minutes=30,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-        )
-        if exam_codes:
-            exam_group.exam_codes.add(*exam_codes)
-        return exam_group
-
-    def test_create_exam_set_generates_exam_codes_and_clone_questions(self):
-        exam_set = self._create_exam_set(number_of_versions=2)
-
-        self.assertEqual(exam_set.status, ExamSetStatus.DRAFT)
-        self.assertEqual(exam_set.exam_codes.count(), 2)
-        self.assertEqual(exam_set.question_banks.count(), 1)
-
-        for code in exam_set.exam_codes.all():
-            items = list(code.exam_code_questions.select_related("question_id").all())
-            self.assertEqual(len(items), 3)
-            self.assertTrue(all(item.question.is_exam_clone for item in items))
-            self.assertTrue(all(item.question.bank is None for item in items))
-
-    def test_create_exam_set_ignores_shuffle_question_order_payload(self):
-        response = self._post_json(
-            "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": 1,
-                "easy_count": 1,
-                "medium_count": 1,
-                "hard_count": 1,
-                "easy_score": 2,
-                "medium_score": 3,
-                "hard_score": 5,
-                "shuffle_question_order": False,
-                "allow_duplicate_questions": False,
-                "source_bank_ids": [self.bank.id],
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        exam_set = ExamSet.objects.get(pk=response.json()["exam_set_id"])
-        exam_code = exam_set.exam_codes.get()
-        ordered_difficulties = list(
-            exam_code.exam_code_questions.order_by("display_order").values_list("difficulty", flat=True)
-        )
-
-        self.assertTrue(exam_set.shuffle_question_order)
-        self.assertEqual(
-            ordered_difficulties,
-            [DifficultyLevel.EASY, DifficultyLevel.MEDIUM, DifficultyLevel.HARD],
-        )
-
-    def test_generate_exam_screen_allows_manual_count_input(self):
-        response = self.client.get(
-            reverse("qna:lecturer_generate_codes_screen"),
-            {"subject_id": self.subject.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        self.assertContains(response, 'class="matrix-toolbar"')
-        self.assertContains(response, 'class="field matrix-count-field"')
-        self.assertContains(response, 'class="field matrix-score-field"')
-        self.assertContains(response, 'id="easyCount" type="number" min="0" step="1"')
-        self.assertContains(response, 'id="mediumCount" type="number" min="0" step="1"')
-        self.assertContains(response, 'id="hardCount" type="number" min="0" step="1"')
-        self.assertNotIn("M?c ?? c?u h?i", content)
-        self.assertNotIn("c?u h?i", content)
-        self.assertNotContains(response, 'class="stepper-input"')
-        self.assertNotContains(response, 'type="hidden" id="easyCount"')
-
-    def test_legacy_create_session_route_redirects_to_session_wizard(self):
-        response = self.client.get(
-            reverse("qna:lecturer_create_exam_session", args=[self.subject.subject_code])
-        )
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(
-            response["Location"],
-            f"{reverse('qna:lecturer_create_session_screen')}?subject_id={self.subject.id}",
-        )
-
-    def test_exam_set_list_shows_set_code_and_clickable_row_without_edit_icon(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-
-        response = self.client.get(reverse("qna:lecturer_exam_codes_screen"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.context["rows"]), 1)
-        self.assertEqual(response.context["rows"][0]["exam_set_code"], f"BD-{exam_set.id:04d}")
-        self.assertEqual(
-            response.context["rows"][0]["detail_url"],
-            reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id]),
-        )
-        self.assertContains(response, 'class="qm2-clickable-row"')
-        self.assertContains(response, f'data-detail-url="/lecturer/exam-codes/{exam_set.id}/"')
-        self.assertNotContains(response, "fa-pen")
-
-    def test_exam_set_detail_hides_regenerate_action_and_shows_set_code(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, f"BD-{exam_set.id:04d}")
-        self.assertNotContains(response, "fa-rotate-right")
-        self.assertNotContains(response, "Sinh láº¡i")
-
-    def test_exam_set_detail_uses_bulk_toolbar_and_keeps_manual_create_action(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="btnManualCreate"')
-        self.assertContains(response, 'id="bulkBar"')
-        self.assertContains(response, 'id="drawerTitle"')
-        self.assertContains(response, 'clearCodeSelection()')
-        self.assertContains(response, 'fa-circle-check')
-        self.assertNotContains(response, 'id="btnBatchApprove"')
-        self.assertNotContains(response, 'class="summary-bar"')
-        self.assertNotContains(response, "fa-eye")
-
-    def test_exam_set_list_filters_by_linked_usage(self):
-        used_exam_set = self._create_exam_set(number_of_versions=1)
-        unused_exam_set = self._create_exam_set(number_of_versions=1)
-
-        used_code = used_exam_set.exam_codes.first()
-        self._link_exam_code(used_code)
-
-        used_response = self.client.get(reverse("qna:lecturer_exam_codes_screen"), {"linked": "USED"})
-        self.assertContains(used_response, f"BD-{used_exam_set.id:04d}")
-        self.assertNotContains(used_response, f"BD-{unused_exam_set.id:04d}")
-
-        unused_response = self.client.get(reverse("qna:lecturer_exam_codes_screen"), {"linked": "UNUSED"})
-        self.assertContains(unused_response, f"BD-{unused_exam_set.id:04d}")
-        self.assertNotContains(unused_response, f"BD-{used_exam_set.id:04d}")
-
-    def test_exam_set_list_shows_approved_and_used_code_counts(self):
-        exam_set = self._create_exam_set(number_of_versions=2)
-        approved_code, _ = list(exam_set.exam_codes.order_by("code_number", "exam_code_id"))
-        approved_code.is_approved = True
-        approved_code.save(update_fields=["is_approved", "updated_at"])
-        self._link_exam_code(approved_code)
-
-        response = self.client.get(reverse("qna:lecturer_exam_codes_screen"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, f"BD-{exam_set.id:04d}")
-        self.assertEqual(len(response.context["rows"]), 1)
-        self.assertEqual(response.context["rows"][0]["approved_codes_count"], 1)
-        self.assertEqual(response.context["rows"][0]["used_codes_count"], 1)
-
-    def test_create_manual_exam_code_creates_blank_questions_and_updates_counts(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        manual_items = [
-            {
-                "display_order": 1,
-                "difficulty": DifficultyLevel.EASY,
-                "content": "Cau thu cong de",
-            },
-            {
-                "display_order": 2,
-                "difficulty": DifficultyLevel.MEDIUM,
-                "content": "Cau thu cong trung binh",
-            },
-            {
-                "display_order": 3,
-                "difficulty": DifficultyLevel.HARD,
-                "content": "Cau thu cong kho",
-            },
-        ]
-
-        response = self._post_json(
-            "qna:lecturer_create_manual_exam_code",
-            {"items": manual_items},
-            args=[exam_set.id],
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        exam_set.refresh_from_db()
-
-        self.assertEqual(payload["status"], "SUCCESS")
-        self.assertEqual(exam_set.exam_codes.count(), 2)
-        self.assertEqual(exam_set.number_of_versions, 1)
-
-        new_code = exam_set.exam_codes.order_by("-code_number", "-exam_code_id").first()
-        items = list(new_code.exam_code_questions.select_related("question_id").order_by("display_order"))
-
-        self.assertEqual(payload["exam_code"]["id"], new_code.id)
-        self.assertEqual(payload["exam_code"]["code_number"], new_code.code_number)
-        self.assertFalse(new_code.is_approved)
-        self.assertEqual(len(items), 3)
-        self.assertEqual(
-            [item.question.question_text for item in items],
-            [item["content"] for item in manual_items],
-        )
-        self.assertEqual(
-            [item.difficulty for item in items],
-            [DifficultyLevel.EASY, DifficultyLevel.MEDIUM, DifficultyLevel.HARD],
-        )
-        self.assertTrue(all(item.question.is_exam_clone for item in items))
-
-    def test_bulk_approve_exam_codes_marks_only_valid_codes(self):
-        exam_set = self._create_exam_set(number_of_versions=2)
-        valid_code, invalid_code = list(exam_set.exam_codes.order_by("code_number", "exam_code_id"))
-        invalid_item = invalid_code.exam_code_questions.select_related("question_id").order_by("display_order").first()
-        invalid_item.question.question_text = "   "
-        invalid_item.question.save(update_fields=["question_text"])
-
-        response = self._post_json(
-            "qna:lecturer_bulk_approve_exam_codes",
-            {"exam_code_ids": [valid_code.id, invalid_code.id]},
-            args=[exam_set.id],
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        valid_code.refresh_from_db()
-        invalid_code.refresh_from_db()
-
-        self.assertEqual(payload["status"], "SUCCESS")
-        self.assertEqual(payload["approved_count"], 1)
-        self.assertTrue(valid_code.is_approved)
-        self.assertFalse(invalid_code.is_approved)
-
-    def test_publish_requires_all_codes_to_be_approved_first(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-
-        publish_response = self.client.post(
-            reverse("qna:lecturer_publish_exam_set", args=[exam_set.id])
-        )
-        self.assertEqual(publish_response.status_code, 400)
-        self.assertEqual(publish_response.json()["status"], "FAIL")
-
-        exam_code = exam_set.exam_codes.get()
-        approve_response = self.client.post(
-            reverse("qna:lecturer_approve_exam_code", args=[exam_code.id])
-        )
-        self.assertEqual(approve_response.status_code, 200)
-
-        publish_response = self.client.post(
-            reverse("qna:lecturer_publish_exam_set", args=[exam_set.id])
-        )
-        self.assertEqual(publish_response.status_code, 200)
-
-        exam_set.refresh_from_db()
-        self.assertEqual(exam_set.status, ExamSetStatus.APPROVED)
-
-    def test_updating_approved_exam_code_downgrades_exam_set_to_draft(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-
-        approve_response = self.client.post(
-            reverse("qna:lecturer_approve_exam_code", args=[exam_code.id])
-        )
-        self.assertEqual(approve_response.status_code, 200)
-
-        publish_response = self.client.post(
-            reverse("qna:lecturer_publish_exam_set", args=[exam_set.id])
-        )
-        self.assertEqual(publish_response.status_code, 200)
-
-        exam_code.refresh_from_db()
-        items = list(exam_code.exam_code_questions.select_related("question_id").all())
-        update_response = self._post_json(
-            "qna:lecturer_update_exam_code_content",
-            {
-                "items": [
-                    {
-                        "id": item.id,
-                        "display_order": item.display_order,
-                        "difficulty": item.difficulty,
-                        "content": f"{item.question.question_text} da sua",
-                    }
-                    for item in items
-                ]
-            },
-            args=[exam_code.id],
-        )
-
-        self.assertEqual(update_response.status_code, 200)
-        exam_set.refresh_from_db()
-        exam_code.refresh_from_db()
-        self.assertEqual(exam_set.status, ExamSetStatus.DRAFT)
-        self.assertFalse(exam_code.is_approved)
-
-    def test_used_exam_code_cannot_be_edited(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        self._link_exam_code(exam_code)
-        items = list(exam_code.exam_code_questions.select_related("question_id").all())
-
-        response = self._post_json(
-            "qna:lecturer_update_exam_code_content",
-            {
-                "items": [
-                    {
-                        "id": item.id,
-                        "display_order": item.display_order,
-                        "difficulty": item.difficulty,
-                        "content": f"{item.question.question_text} da sua",
-                    }
-                    for item in items
-                ]
-            },
-            args=[exam_code.id],
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-
-    def test_update_exam_code_content_is_blocked_while_exam_is_ongoing(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        items = list(exam_code.exam_code_questions.select_related("question_id").all())
-        self._create_active_exam_group(exam_code)
-
-        response = self._post_json(
-            "qna:lecturer_update_exam_code_content",
-            {
-                "items": [
-                    {
-                        "id": item.id,
-                        "display_order": item.display_order,
-                        "difficulty": item.difficulty,
-                        "content": f"{item.question.question_text} dang khoa",
-                    }
-                    for item in items
-                ]
-            },
-            args=[exam_code.id],
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(response.json()["message"])
-
-    def test_publish_exam_set_is_blocked_while_exam_is_ongoing(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        exam_code.is_approved = True
-        exam_code.save(update_fields=["is_approved", "updated_at"])
-        self._create_active_exam_group(exam_code)
-
-        response = self.client.post(
-            reverse("qna:lecturer_publish_exam_set", args=[exam_set.id])
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(response.json()["message"])
-
-class LecturerExamSessionManagementTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer_sessions",
-            password="Password123!",
-        )
-        self.profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Session",
-        )
-        self.subject = Subject.objects.create(
-            name="To chuc ca thi",
-            subject_code="DS403",
-        )
-        self.profile.subjects_taught.add(self.subject)
-        self.client.force_login(self.lecturer)
-
-        self.bank = QuestionBank.objects.create(
-            subject=self.subject,
-            name="Ngan hang ca thi",
-        )
-
-        for index in range(3):
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Easy session {index}",
-                question_id_in_barem=f"SE_{index}",
-                difficulty=DifficultyLevel.EASY,
-            )
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Medium session {index}",
-                question_id_in_barem=f"SM_{index}",
-                difficulty=DifficultyLevel.MEDIUM,
-            )
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Hard session {index}",
-                question_id_in_barem=f"SH_{index}",
-                difficulty=DifficultyLevel.HARD,
-            )
-
-        self.student_user_1 = self.user_model.objects.create_user(
-            username="SV9001",
-            password="Password123!",
-        )
-        UserProfile.objects.create(
-            user=self.student_user_1,
-            is_lecturer=False,
-            full_name="Sinh Vien 1",
-            student_id="SV9001",
-        )
-        self.student_user_2 = self.user_model.objects.create_user(
-            username="SV9002",
-            password="Password123!",
-        )
-        UserProfile.objects.create(
-            user=self.student_user_2,
-            is_lecturer=False,
-            full_name="Sinh Vien 2",
-            student_id="SV9002",
-        )
-
-        self.roster = StudentRosterUpload.objects.create(
-            subject=self.subject,
-            academic_year="2025-2026",
-            semester="HK1",
-            title="Danh_sach_L01",
-            original_file_name="Danh_sach_L01.xlsx",
-            total_students=2,
-            created_by=self.lecturer,
-        )
-        self.roster_student_1 = StudentRosterStudent.objects.create(
-            roster=self.roster,
-            row_number=1,
-            student_code="SV9001",
-            full_name="Sinh Vien 1",
-            linked_user=self.student_user_1,
-            account_created=True,
-            account_status=StudentRosterAccountStatus.EXISTING,
-        )
-        self.roster_student_2 = StudentRosterStudent.objects.create(
-            roster=self.roster,
-            row_number=2,
-            student_code="SV9002",
-            full_name="Sinh Vien 2",
-            linked_user=self.student_user_2,
-            account_created=True,
-            account_status=StudentRosterAccountStatus.EXISTING,
-        )
-
-        self.exam_set = self._create_approved_exam_set()
-        self.exam_codes = list(self.exam_set.exam_codes.order_by("code_number", "exam_code_id"))
-
-
-@override_settings(CACHES=TEST_CACHES)
-class StudentExamAccessTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(username="lecturer_exam_access", password="testpass")
-        self.lecturer_profile = UserProfile.objects.create(user=self.lecturer, is_lecturer=True)
-        self.student = self.user_model.objects.create_user(username="SVEXAM01", password="testpass")
-        UserProfile.objects.create(user=self.student, is_lecturer=False, full_name="Sinh Vien Exam", student_id="SVEXAM01")
-        self.subject = Subject.objects.create(name="Mon thi truy cap", subject_code="DS500")
-        self.lecturer_profile.subjects_taught.add(self.subject)
-
-        self.exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi truy cap",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() + timedelta(minutes=15),
-            duration_minutes=60,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-            configuration_data={"rooms": [], "rosters": []},
-        )
-
-        self.room = self.exam_group.session_rooms.create(
-            room_name="Phong 101",
-            expected_students=1,
-            room_password="ABCDE",
-            display_order=1,
-        )
-        self.room.students.add(self.student)
-
-        self.bank = QuestionBank.objects.create(
-            subject=self.subject,
-            name="Ngan hang ca thi",
-        )
-
-        for index in range(3):
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Easy session {index}",
-                question_id_in_barem=f"SE_{index}",
-                difficulty=DifficultyLevel.EASY,
-            )
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Medium session {index}",
-                question_id_in_barem=f"SM_{index}",
-                difficulty=DifficultyLevel.MEDIUM,
-            )
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Hard session {index}",
-                question_id_in_barem=f"SH_{index}",
-                difficulty=DifficultyLevel.HARD,
-            )
-
-        self.student_user_1 = self.user_model.objects.create_user(
-            username="SV9001",
-            password="Password123!",
-        )
-        UserProfile.objects.create(
-            user=self.student_user_1,
-            is_lecturer=False,
-            full_name="Sinh Vien 1",
-            student_id="SV9001",
-        )
-        self.student_user_2 = self.user_model.objects.create_user(
-            username="SV9002",
-            password="Password123!",
-        )
-        UserProfile.objects.create(
-            user=self.student_user_2,
-            is_lecturer=False,
-            full_name="Sinh Vien 2",
-            student_id="SV9002",
-        )
-
-        self.roster = StudentRosterUpload.objects.create(
-            subject=self.subject,
-            academic_year="2025-2026",
-            semester="HK1",
-            title="Danh_sach_L01",
-            original_file_name="Danh_sach_L01.xlsx",
-            total_students=2,
-            created_by=self.lecturer,
-        )
-        self.roster_student_1 = StudentRosterStudent.objects.create(
-            roster=self.roster,
-            row_number=1,
-            student_code="SV9001",
-            full_name="Sinh Vien 1",
-            linked_user=self.student_user_1,
-            account_created=True,
-            account_status=StudentRosterAccountStatus.EXISTING,
-        )
-        self.roster_student_2 = StudentRosterStudent.objects.create(
-            roster=self.roster,
-            row_number=2,
-            student_code="SV9002",
-            full_name="Sinh Vien 2",
-            linked_user=self.student_user_2,
-            account_created=True,
-            account_status=StudentRosterAccountStatus.EXISTING,
-        )
-
-        self.client.force_login(self.lecturer)
-        self.exam_set = self._create_approved_exam_set()
-        self.exam_codes = list(self.exam_set.exam_codes.order_by("code_number", "exam_code_id"))
-
-        self.seb_headers = {
-            "HTTP_USER_AGENT": "SEB",
-            "HTTP_X_SAFEEXAMBROWSER_REQUESTHASH": "test-hash",
-        }
-
-    def _open_exam_window(self):
-        self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-
-    def _verify_room_password(self, password="ABCDE"):
-        return self.client.post(
-            reverse("qna:verify_exam_password", args=[self.subject.subject_code]),
-            {"password": password},
-            **self.seb_headers,
-        )
-
-    def _verify_face(self):
-        return self.client.post(
-            reverse("qna:verify_face"),
-            {
-                "face_image": "data:image/jpeg;base64,ZmFrZQ==",
-                "subject_code": self.subject.subject_code,
-            },
-            **self.seb_headers,
-        )
-
-    def _complete_pre_exam_flow(self):
-        password_response = self._verify_room_password()
-        self.assertEqual(password_response.status_code, 302)
-        face_response = self._verify_face()
-        self.assertEqual(face_response.status_code, 200)
-        return face_response
-
-    def test_student_dashboard_disables_exam_button_when_exam_not_open(self):
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("qna:dashboard"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Chua the vao thi")
-        self.assertContains(response, "Chua den gio thi")
-
-    def test_exam_password_rejects_access_outside_exam_window(self):
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("qna:exam_password", args=[self.subject.subject_code]), **self.seb_headers)
-        self.assertEqual(response.status_code, 302)
-
-    def test_verify_exam_password_accepts_matching_room_password_during_open_window(self):
-        self._open_exam_window()
-        self.client.force_login(self.student)
-
-        response = self._verify_room_password()
-
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("qna:pre_exam_verification", args=[self.subject.subject_code]), response.url)
-        self.assertEqual(ExamSession.objects.filter(subject_id=self.subject).count(), 0)
-        password_state = self.client.session.get(views._student_exam_password_session_key(self.exam_group.pk))
-        self.assertEqual(password_state["room_id"], self.room.pk)
-
-    def test_exam_page_rejects_when_password_not_verified(self):
-        self._open_exam_window()
-        self.client.force_login(self.student)
-
-        response = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:exam_password", args=[self.subject.subject_code]))
-        self.assertFalse(ExamSession.objects.filter(subject_id=self.subject, exam_session_group_id=self.exam_group).exists())
-
-    def test_exam_page_rejects_when_face_verification_missing(self):
-        self._open_exam_window()
-        self.client.force_login(self.student)
-        self._verify_room_password()
-
-        response = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:pre_exam_verification", args=[self.subject.subject_code]))
-        self.assertFalse(ExamSession.objects.filter(subject_id=self.subject, exam_session_group_id=self.exam_group).exists())
-
-    def test_exam_page_rejects_when_entry_token_missing(self):
-        self._open_exam_window()
-        self.client.force_login(self.student)
-        self._complete_pre_exam_flow()
-
-        session_store = self.client.session
-        session_store.pop(views._student_exam_entry_session_key(self.exam_group.pk), None)
-        session_store.save()
-
-        response = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:pre_exam_verification", args=[self.subject.subject_code]))
-        self.assertFalse(ExamSession.objects.filter(subject_id=self.subject, exam_session_group_id=self.exam_group).exists())
-    def test_student_dashboard_enables_exam_button_during_open_window_without_room_password(self):
-        self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        self.room.room_password = ""
-        self.room.save(update_fields=["room_password"])
-        self.client.force_login(self.student)
-
-        response = self.client.get(reverse("qna:dashboard"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Dang trong ca thi")
-        self.assertContains(response, "Vao thi")
-        self.assertNotContains(response, "Thieu mat khau")
-
-    def test_exam_password_redirects_directly_to_verification_when_room_has_no_password(self):
-        self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        self.room.room_password = ""
-        self.room.save(update_fields=["room_password"])
-        self.client.force_login(self.student)
-
-        response = self.client.get(reverse("qna:exam_password", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:pre_exam_verification", args=[self.subject.subject_code]))
-
-    def test_exam_page_rejects_direct_url_after_exam_window_closes(self):
-        self._open_exam_window()
-        Question.objects.create(
-            subject=self.subject,
-            question_text="Cau hoi dong bo thoi gian",
-            question_id_in_barem="Q_LOCK_TIME",
-            difficulty=DifficultyLevel.EASY,
-        )
-        self.client.force_login(self.student)
-
-        verify_response = self._complete_pre_exam_flow()
-        self.assertEqual(verify_response.status_code, 200)
-
-        self.exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-
-        response = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:dashboard"))
-    def test_exam_page_renders_server_synced_deadline_constants(self):
-        self._open_exam_window()
-        Question.objects.create(
-            subject=self.subject,
-            question_text="Cau hoi hien thi deadline",
-            question_id_in_barem="Q_SERVER_TIME",
-            difficulty=DifficultyLevel.EASY,
-        )
-        self.client.force_login(self.student)
-
-        verify_response = self._complete_pre_exam_flow()
-        self.assertEqual(verify_response.status_code, 200)
-
-        response = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "const SERVER_NOW_MS =")
-        self.assertContains(response, "const EXAM_END_AT_MS =")
-        self.assertEqual(ExamSession.objects.filter(subject_id=self.subject, exam_session_group_id=self.exam_group).count(), 1)
-    def test_student_dashboard_shows_finished_exam_as_outside_exam_window(self):
-        self.exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        self.client.force_login(self.student)
-
-        response = self.client.get(reverse("qna:dashboard"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Ngoai thoi gian thi")
-        self.assertContains(response, "Chua the vao thi")
-    def test_student_dashboard_renders_realtime_live_note_hook(self):
-        self.client.force_login(self.student)
-
-        response = self.client.get(reverse("qna:dashboard"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "data-live-note")
-        self.assertContains(response, "data-entry-button")
-
-    def test_student_dashboard_disables_entry_after_exam_started(self):
-        self._open_exam_window()
-        ExamSession.objects.create(
-            user=self.student,
-            subject=self.subject,
-            exam_session_group_id=self.exam_group,
-            started_at=timezone.now(),
-            session_status="STARTED",
-            verification_status="ALLOW",
-        )
-        self.client.force_login(self.student)
-
-        response = self.client.get(reverse("qna:dashboard"))
-
-        self.assertContains(response, 'data-entry-lock-state="STARTED"')
-        self.assertContains(response, "Khong the vao lai")
-        self.assertContains(response, "Da bat dau ca thi")
-    def test_verify_face_does_not_create_exam_session_before_exam_entry(self):
-        self._open_exam_window()
-        self.client.force_login(self.student)
-        self._verify_room_password()
-
-        response = self._verify_face()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(ExamSession.objects.filter(subject_id=self.subject).count(), 0)
-        entry_state = self.client.session.get(views._student_exam_entry_session_key(self.exam_group.pk))
-        self.assertEqual(entry_state["room_id"], self.room.pk)
-        self.assertTrue(entry_state["entry_token"])
-    def test_save_exam_result_is_rejected_after_exam_window_closes(self):
-        question = Question.objects.create(
-            subject=self.subject,
-            question_text="Cau hoi nop sau gio",
-            question_id_in_barem="Q_AFTER_WINDOW",
-            difficulty=DifficultyLevel.EASY,
-        )
-        session = ExamSession.objects.create(
-            user=self.student,
-            subject=self.subject,
-            exam_session_group_id=self.exam_group,
-            started_at=timezone.now(),
-            session_status="STARTED",
-            verification_status="ALLOW",
-        )
-        session.questions.add(question)
-        ExamResult.objects.create(
-            exam_session_id=session,
-            question_id=question,
-            transcript="Ban ghi server",
-            score=8.0,
-            feedback="Nhan xet server",
-        )
-        self.client.force_login(self.student)
-
-        self.exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-
-        response = self.client.post(
-            reverse("qna:save_exam_result"),
-            {
-                "session_id": session.id,
-                "question_id": question.id,
-                "audio_file": SimpleUploadedFile(
-                    "answer.webm",
-                    b"fake-webm-data",
-                    content_type="audio/webm",
-                ),
-            },
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "error")
-        self.assertIn("thoi gian thi", response.json()["message"].lower())
-    def test_student_can_only_enter_exam_page_once(self):
-        self._open_exam_window()
-        Question.objects.create(
-            subject=self.subject,
-            question_text="Cau hoi thi 1",
-            question_id_in_barem="Q1",
-            difficulty=DifficultyLevel.EASY,
-        )
-        self.client.force_login(self.student)
-
-        verify_response = self._complete_pre_exam_flow()
-        self.assertEqual(verify_response.status_code, 200)
-
-        first_entry = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-        self.assertEqual(first_entry.status_code, 200)
-
-        second_entry = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-        self.assertEqual(second_entry.status_code, 302)
-        self.assertEqual(second_entry.url, reverse("qna:dashboard"))
-        self.assertEqual(ExamSession.objects.filter(subject_id=self.subject, exam_session_group_id=self.exam_group).count(), 1)
-    def test_verify_face_rejects_reentry_after_student_started_exam(self):
-        self._open_exam_window()
-        Question.objects.create(
-            subject=self.subject,
-            question_text="Cau hoi thi 2",
-            question_id_in_barem="Q2",
-            difficulty=DifficultyLevel.EASY,
-        )
-        self.client.force_login(self.student)
-
-        self._complete_pre_exam_flow()
-        self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]), **self.seb_headers)
-
-        self._verify_room_password()
-        reentry_response = self._verify_face()
-
-        self.assertEqual(reentry_response.status_code, 400)
-        self.assertEqual(reentry_response.json()["status"], "error")
-        self.assertIn("1 lan", reentry_response.json()["message"])
-    def _post_json(self, route_name, payload, args=None):
-        return self.client.post(
-            reverse(route_name, args=args or []),
-            data=json.dumps(payload),
-            content_type="application/json",
-        )
-
-    def _create_approved_exam_set(self):
-        response = self._post_json(
-            "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": 2,
-                "easy_count": 1,
-                "medium_count": 1,
-                "hard_count": 1,
-                "easy_score": 2,
-                "medium_score": 3,
-                "hard_score": 5,
-                "allow_duplicate_questions": False,
-                "source_bank_ids": [self.bank.id],
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        exam_set = ExamSet.objects.get(pk=response.json()["exam_set_id"])
-
-        for exam_code in exam_set.exam_codes.all():
-            approve_response = self.client.post(
-                reverse("qna:lecturer_approve_exam_code", args=[exam_code.id])
-            )
-            self.assertEqual(approve_response.status_code, 200)
-
-        publish_response = self.client.post(
-            reverse("qna:lecturer_publish_exam_set", args=[exam_set.id])
-        )
-        self.assertEqual(publish_response.status_code, 200)
-        exam_set.refresh_from_db()
-        return exam_set
-
-    def _build_session_payload(self, submit_action="CONFIRM"):
-        future_start = timezone.localtime(timezone.now() + timedelta(days=2)).replace(
-            hour=8,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-        future_end = future_start + timedelta(minutes=90)
-        return {
-            "subject_id": self.subject.id,
-            "group_name": "Thi giua ky DS403",
-            "academic_year": "2025-2026",
-            "semester": "HK1",
-            "exam_date": future_start.strftime("%Y-%m-%d"),
-            "start_time": future_start.strftime("%H:%M"),
-            "end_time": future_end.strftime("%H:%M"),
-            "description": "Ca thi duoc tao tu wizard moi",
-            "exam_password": "EXAM123",
-            "roster_ids": [self.roster.id],
-            "submit_action": submit_action,
-            "rooms": [
-                {
-                    "client_id": "room-1",
-                    "room_name": "Phong A101",
-                    "student_count": 1,
-                    "password": "A1011",
-                    "exam_set_id": self.exam_set.id,
-                    "exam_code_ids": [self.exam_codes[0].id],
-                    "assignments": [
-                        {
-                            "roster_student_id": self.roster_student_1.id,
-                            "student_code": self.roster_student_1.student_code,
-                            "full_name": self.roster_student_1.full_name,
-                            "linked_user_id": self.student_user_1.id,
-                            "exam_code_id": self.exam_codes[0].id,
-                            "display_order": 1,
-                        }
-                    ],
-                    "display_order": 1,
-                },
-                {
-                    "client_id": "room-2",
-                    "room_name": "Phong A102",
-                    "student_count": 1,
-                    "password": "A1022",
-                    "exam_set_id": self.exam_set.id,
-                    "exam_code_ids": [self.exam_codes[1].id],
-                    "assignments": [
-                        {
-                            "roster_student_id": self.roster_student_2.id,
-                            "student_code": self.roster_student_2.student_code,
-                            "full_name": self.roster_student_2.full_name,
-                            "linked_user_id": self.student_user_2.id,
-                            "exam_code_id": self.exam_codes[1].id,
-                            "display_order": 1,
-                        }
-                    ],
-                    "display_order": 2,
-                },
-            ],
-        }
-
-    def _create_exam_group(self, submit_action="CONFIRM", **overrides):
-        payload = self._build_session_payload(submit_action=submit_action)
-        payload.update(overrides)
-        response = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            payload,
-        )
-        self.assertEqual(response.status_code, 200)
-        return ExamSessionGroup.objects.get(pk=response.json()["exam_group_id"])
-
-    def test_create_session_screen_renders_new_wizard(self):
-        response = self.client.get(
-            reverse("qna:lecturer_create_session_screen"),
-            {"subject_id": self.subject.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'data-step-panel="1"')
-        self.assertContains(response, 'data-step-panel="2"')
-        self.assertContains(response, 'data-step-panel="3"')
-        self.assertContains(response, "wizardSubmitButton")
-        self.assertNotContains(response, "Tao de thi moi")
-
-    def test_create_session_screen_uses_clean_room_fields(self):
-        response = self.client.get(
-            reverse("qna:lecturer_create_session_screen"),
-            {"subject_id": self.subject.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        self.assertIn('class="es-input es-room-count-input"', content)
-        self.assertIn('placeholder="Mật khẩu tự random"', content)
-        self.assertNotIn('placeholder="Nh?p 5 k? t?"', content)
-        self.assertNotIn('data-room-step="increase"', content)
-        self.assertNotIn('${assignedCount}/${room.student_count || 0} SV', content)
-        self.assertNotIn('Giảng viên tự nhập đúng 5 ký tự cho phòng thi.', content)
-        self.assertNotIn(': "Chưa gắn bộ đề";', content)
-        self.assertNotIn(': "Chưa gắn";', content)
-        self.assertNotIn('Vui lÃ²ng', content)
-        self.assertNotIn('GiÃ¡Âº', content)
-
-    def test_create_exam_group_screen_persists_session_configuration(self):
-        response = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            self._build_session_payload(),
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["success"])
-
-        exam_group = ExamSessionGroup.objects.get(pk=payload["exam_group_id"])
-        self.assertEqual(exam_group.subject, self.subject)
-        self.assertEqual(exam_group.academic_year, "2025-2026")
-        self.assertEqual(exam_group.semester, "HK1")
-        self.assertEqual(exam_group.description, "Ca thi duoc tao tu wizard moi")
-        self.assertEqual(exam_group.status, "SCHEDULED")
-        self.assertEqual(exam_group.exam_codes.count(), 2)
-        self.assertEqual(exam_group.session_rooms.count(), 2)
-        self.assertEqual(exam_group.session_rooms.first().exam_set, self.exam_set)
-        self.assertEqual(exam_group.configuration_data["rosters"][0]["id"], self.roster.id)
-        self.assertEqual(len(exam_group.configuration_data["rooms"]), 2)
-        self.assertEqual(
-            exam_group.configuration_data["rooms"][0]["assignments"][0]["student_code"],
-            "SV9001",
-        )
-
-    def test_exam_sessions_list_filters_by_status_and_keyword(self):
-        confirmed = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            self._build_session_payload(),
-        )
-        self.assertEqual(confirmed.status_code, 200)
-
-        draft_payload = self._build_session_payload(submit_action="DRAFT")
-        draft_payload["group_name"] = "Nhap tam DS403"
-        draft_payload["roster_ids"] = []
-        draft_payload["rooms"] = []
-        draft_response = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            draft_payload,
-        )
-        self.assertEqual(draft_response.status_code, 200)
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_sessions_list"),
-            {
-                "subject_id": self.subject.id,
-                "status": "DRAFT",
-                "q": "Nhap tam",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Nhap tam DS403")
-        self.assertNotContains(response, "Thi giua ky DS403")
-        self.assertContains(response, 'name="status"')
-
-    def test_exam_session_detail_screen_renders_new_detail_layout(self):
-        exam_group = self._create_exam_group()
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Chi tiết ca thi")
-        self.assertContains(response, exam_group.group_name)
-        self.assertContains(
-            response,
-            reverse("qna:lecturer_exam_session_common_list_screen", args=[exam_group.id]),
-        )
-        self.assertContains(response, "Phong A101")
-        self.assertContains(response, "A1011")
-
-    def test_exam_session_common_list_screen_renders_assigned_students(self):
-        exam_group = self._create_exam_group()
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_session_common_list_screen", args=[exam_group.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Xem danh sách chung")
-        self.assertContains(response, "SV9001")
-        self.assertContains(response, "SV9002")
-        self.assertContains(response, "Phong A101")
-        self.assertContains(response, "Phong A102")
-
-    def test_delete_exam_group_removes_upcoming_session(self):
-        exam_group = self._create_exam_group()
-
-        response = self.client.post(
-            reverse("qna:lecturer_delete_exam_group", args=[exam_group.id]),
-            follow=True,
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(ExamSessionGroup.objects.filter(pk=exam_group.id).exists())
-        self.assertContains(response, "XÃ³a ca thi thÃ nh cÃ´ng")
-
-    def test_locked_exam_session_detail_hides_edit_actions(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        exam_group.status = "SCHEDULED"
-        exam_group.save(update_fields=["exam_date", "status", "updated_at"])
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_session_detail_screen", args=[exam_group.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Chi tiết ca thi")
-        self.assertNotContains(response, "Xóa ca thi")
-        self.assertNotContains(response, "Chỉnh sửa")
-
-    def test_edit_mode_falls_back_to_view_when_session_is_locked(self):
-        exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi da khoa",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() - timedelta(hours=2),
-            duration_minutes=60,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_create_session_screen"),
-            {
-                "subject_id": self.subject.id,
-                "session_id": exam_group.id,
-                "mode": "edit",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "wizardViewBackButton")
-        self.assertNotContains(
-            response,
-            'id="saveDraftButton" class="es-btn es-btn-secondary"',
-        )
-
-    def test_draft_session_is_auto_locked_when_exam_window_is_ongoing(self):
-        exam_group = self._create_exam_group(submit_action="DRAFT")
-        exam_group.exam_date = timezone.now() - timedelta(minutes=10)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-
-        exam_group.refresh_from_db()
-        self.assertEqual(exam_group.computed_status, "ONGOING")
-        self.assertFalse(exam_group.can_modify)
-
-        response = self.client.get(
-            reverse("qna:lecturer_create_session_screen"),
-            {
-                "subject_id": self.subject.id,
-                "session_id": exam_group.id,
-                "mode": "edit",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "wizardViewBackButton")
-        self.assertContains(response, "Äang diá»…n ra")
-        self.assertNotContains(
-            response,
-            'id="saveDraftButton" class="es-btn es-btn-secondary"',
-        )
-
-    def test_create_exam_group_screen_allows_extra_room_capacity(self):
-        payload = self._build_session_payload()
-        payload["rooms"][0]["student_count"] = 2
-        payload["rooms"][1]["student_count"] = 3
-
-        response = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            payload,
-        )
-
-        self.assertEqual(response.status_code, 200)
-        exam_group = ExamSessionGroup.objects.get(pk=response.json()["exam_group_id"])
-        room_counts = list(
-            exam_group.session_rooms.order_by("display_order").values_list("expected_students", flat=True)
-        )
-
-        self.assertEqual(room_counts, [2, 3])
-
-    def test_student_review_shows_only_one_red_triangle_for_flagged_session(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-
-        flagged_session = ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-            cheating_flag=True,
-            session_status="COMPLETED",
-        )
-        flagged_session.violation_images.create(
-            image_blob=b"img1",
-            image_mime="image/jpeg",
-            violation_type="TWO_FACES",
-        )
-        ExamSession.objects.create(
-            user=self.student_user_2,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-            cheating_flag=False,
-            session_status="COMPLETED",
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_student_review_screen"),
-            {"subject_id": self.subject.id, "exam_group_id": exam_group.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        html = response.content.decode("utf-8")
-        self.assertEqual(html.count("fa-exclamation-triangle"), 1)
-        self.assertNotIn("detail-link-disabled", html)
-
-    def test_student_review_hides_no_face_only_warning_from_lecturer(self):
-        exam_group = self._create_exam_group()
-        session = ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-            cheating_flag=True,
-        )
-        session.violation_images.create(
-            image_blob=b"img1",
-            image_mime="image/jpeg",
-            violation_type="NO_FACE",
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_student_review_screen"),
-            {"subject_id": self.subject.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        html = response.content.decode("utf-8")
-        self.assertEqual(html.count("fa-exclamation-triangle"), 0)
-
-    def test_lecturer_can_open_incomplete_session_detail_after_exam_ends(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        session = ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_session_detail", args=[session.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Váº¯ng thi")
-
-    def test_lecturer_cannot_open_ongoing_session_detail(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(minutes=10)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        session = ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_session_detail", args=[session.id])
-        )
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:lecturer_student_review_screen"))
-
-    def test_student_review_does_not_link_ongoing_session_detail(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(minutes=10)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        session = ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-            cheating_flag=True,
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_student_review_screen"),
-            {"subject_id": self.subject.id, "exam_group_id": exam_group.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        html = response.content.decode("utf-8")
-        self.assertNotIn(f'data-detail-url="{reverse("qna:lecturer_session_detail", args=[session.id])}"', html)
-
-    def test_student_review_marks_assigned_student_without_session_as_absent(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-
-        ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-            session_status="COMPLETED",
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_student_review_screen"),
-            {"subject_id": self.subject.id, "exam_group_id": exam_group.id},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "SV9002")
-        html = response.content.decode("utf-8")
-        self.assertIn('status-pill status-absent', html)
-        self.assertIn("Vắng thi", html)
-
-    def test_session_detail_renders_all_violation_items_for_expand_button(self):
-        exam_group = self._create_exam_group()
-        exam_group.exam_date = timezone.now() - timedelta(hours=2)
-        exam_group.duration_minutes = 60
-        exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
-        session = ExamSession.objects.create(
-            user=self.student_user_1,
-            subject=self.subject,
-            exam_session_group_id=exam_group,
-            session_status="COMPLETED",
-            cheating_flag=True,
-        )
-        session.violation_images.create(
-            image_blob=b"img1",
-            image_mime="image/jpeg",
-            violation_type="TWO_FACES",
-        )
-        session.violation_images.create(
-            image_blob=b"img2",
-            image_mime="image/jpeg",
-            violation_type="NO_FACE",
-        )
-        session.violation_images.create(
-            image_blob=b"img3",
-            image_mime="image/jpeg",
-            violation_type="CAMERA_OFF",
-        )
-
-        response = self.client.get(
-            reverse("qna:lecturer_session_detail", args=[session.id])
-        )
-
-        self.assertEqual(response.status_code, 200)
-        html = response.content.decode("utf-8")
-        self.assertNotIn("KhÃ´ng phÃ¡t hiá»‡n khuÃ´n máº·t trong khung hÃ¬nh", html)
-        self.assertEqual(html.count('class="fraud-item'), 2)
-        self.assertIn("data-fraud-toggle", html)
-
-    def test_create_exam_group_screen_rejects_room_password_not_exactly_five_characters(self):
-        payload = self._build_session_payload()
-        payload["rooms"][0]["password"] = "A101"
-
-        response = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            payload,
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.json()["success"])
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertIn("5", response.json()["message"])
-
-    def test_create_exam_group_screen_auto_generates_room_password_when_blank(self):
-        payload = self._build_session_payload()
-        payload["rooms"][0]["password"] = ""
-
-        response = self._post_json(
-            "qna:lecturer_create_exam_group_screen",
-            payload,
-        )
-
-        self.assertEqual(response.status_code, 200)
-        exam_group = ExamSessionGroup.objects.get(pk=response.json()["exam_group_id"])
-        first_room = exam_group.session_rooms.order_by("display_order").first()
-        self.assertTrue(first_room.room_password)
-        self.assertEqual(len(first_room.room_password), 5)
-
-    def test_update_exam_group_rejects_start_time_in_past(self):
-        exam_group = self._create_exam_group()
-        payload = self._build_session_payload()
-        local_now = timezone.localtime()
-        if local_now.hour >= 2:
-            past_start = local_now.replace(hour=local_now.hour - 1, minute=0, second=0, microsecond=0)
-        else:
-            past_start = (local_now - timedelta(days=1)).replace(hour=22, minute=0, second=0, microsecond=0)
-        past_end = past_start + timedelta(minutes=90)
-
-        payload["exam_date"] = past_start.strftime("%Y-%m-%d")
-        payload["start_time"] = past_start.strftime("%H:%M")
-        payload["end_time"] = past_end.strftime("%H:%M")
-
-        response = self._post_json(
-            "qna:lecturer_update_exam_group",
-            payload,
-            args=[exam_group.id],
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.json()["success"])
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(response.json()["message"])
-
-    def test_update_locked_exam_group_is_rejected(self):
-        exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi da dien ra",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() - timedelta(hours=2),
-            duration_minutes=60,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-        )
-        exam_group.exam_codes.add(*self.exam_codes)
-
-        response = self._post_json(
-            "qna:lecturer_update_exam_group",
-            self._build_session_payload(),
-            args=[exam_group.id],
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-
-@override_settings(CACHES=TEST_CACHES)
-class ExamWindowBoundaryTests(TestCase):
-    def setUp(self):
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(username="lecturer_boundary", password="testpass")
-        self.lecturer_profile = UserProfile.objects.create(user=self.lecturer, is_lecturer=True)
-        self.student = self.user_model.objects.create_user(username="SVBOUND01", password="testpass")
-        UserProfile.objects.create(
-            user=self.student,
-            is_lecturer=False,
-            full_name="Sinh Vien Boundary",
-            student_id="SVBOUND01",
-        )
-        self.subject = Subject.objects.create(name="Mon thi boundary", subject_code="DS550")
-        self.lecturer_profile.subjects_taught.add(self.subject)
-        self.bank = QuestionBank.objects.create(subject=self.subject, name="Ngan hang boundary")
-
-        for index, difficulty in enumerate(
-            [DifficultyLevel.EASY, DifficultyLevel.MEDIUM, DifficultyLevel.HARD],
-            start=1,
-        ):
-            Question.objects.create(
-                subject=self.subject,
-                bank=self.bank,
-                question_text=f"Cau hoi boundary {index}",
-                question_id_in_barem=f"QB_{index}",
-                difficulty=difficulty,
-            )
-
-        self.exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi boundary",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() + timedelta(minutes=15),
-            duration_minutes=30,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-            configuration_data={"rooms": [], "rosters": []},
-        )
-
-        self.room = self.exam_group.session_rooms.create(
-            room_name="Phong Boundary",
-            expected_students=1,
-            room_password="ABCDE",
-            display_order=1,
-        )
-        self.room.students.add(self.student)
-        self.seb_headers = {
-            "HTTP_USER_AGENT": "SEB",
-            "HTTP_X_SAFEEXAMBROWSER_REQUESTHASH": "test-hash",
-        }
-
-    def _move_exam_window_to_exact_end(self):
-        fixed_now = timezone.now().replace(microsecond=0)
-        self.exam_group.exam_date = fixed_now - timedelta(minutes=30)
-        self.exam_group.duration_minutes = 30
-        self.exam_group.status = "SCHEDULED"
-        self.exam_group.save(update_fields=["exam_date", "duration_minutes", "status", "updated_at"])
-        return fixed_now
-
-    def test_verify_exam_password_accepts_matching_room_password_at_exact_end_boundary(self):
-        fixed_now = self._move_exam_window_to_exact_end()
-        self.client.force_login(self.student)
-
-        with patch("qna.models.timezone.now", return_value=fixed_now):
-            response = self.client.post(
-                reverse("qna:verify_exam_password", args=[self.subject.subject_code]),
-                {"password": "ABCDE"},
-                **self.seb_headers,
-            )
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("qna:pre_exam_verification", args=[self.subject.subject_code]))
-
-    def test_exam_sessions_list_renders_realtime_schedule_dataset(self):
-        self.client.force_login(self.lecturer)
-
-        response = self.client.get(reverse("qna:lecturer_exam_sessions_list"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "data-start=")
-        self.assertContains(response, "data-end=")
-        self.assertContains(response, "data-status-note")
-
-    def test_delete_exam_group_is_blocked_while_window_hits_exact_end_boundary(self):
-        fixed_now = self._move_exam_window_to_exact_end()
-        self.client.force_login(self.lecturer)
-
-        with patch("qna.models.timezone.now", return_value=fixed_now):
-            response = self.client.post(
-                reverse("qna:lecturer_delete_exam_group", args=[self.exam_group.id]),
-                follow=True,
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(ExamSessionGroup.objects.filter(pk=self.exam_group.id).exists())
-
-    def test_create_manual_question_is_blocked_while_exam_is_ongoing(self):
-        fixed_now = self._move_exam_window_to_exact_end()
-        self.client.force_login(self.lecturer)
-
-        with patch("qna.views.timezone.now", return_value=fixed_now):
-            response = self.client.post(
-                reverse("qna:api_create_manual_question"),
-                data=json.dumps(
-                    {
-                        "subject_id": str(self.subject.id),
-                        "question_text": "Cau hoi moi khi dang thi",
-                        "difficulty": DifficultyLevel.EASY,
-                    }
-                ),
-                content_type="application/json",
-            )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(response.json()["message"])
-
-    def test_create_exam_set_is_blocked_while_exam_is_ongoing(self):
-        fixed_now = self._move_exam_window_to_exact_end()
-        self.client.force_login(self.lecturer)
-
-        with patch("qna.exam_management.timezone.now", return_value=fixed_now):
-            response = self.client.post(
-                reverse("qna:lecturer_create_exam_set"),
-                data=json.dumps(
-                    {
-                        "subject_id": str(self.subject.id),
-                        "academic_year": "2025-2026",
-                        "semester": "HK1",
-                        "number_of_versions": 1,
-                        "easy_count": 1,
-                        "medium_count": 1,
-                        "hard_count": 1,
-                        "easy_score": 2,
-                        "medium_score": 3,
-                        "hard_score": 5,
-                        "allow_duplicate_questions": False,
-                        "source_bank_ids": [self.bank.id],
-                    }
-                ),
-                content_type="application/json",
-            )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(response.json()["message"])
-
-    def test_import_students_to_room_is_blocked_while_exam_is_ongoing(self):
-        fixed_now = self._move_exam_window_to_exact_end()
-        self.client.force_login(self.lecturer)
-        upload = SimpleUploadedFile(
-            "boundary_students.csv",
-            "username\nSVBOUND01\n".encode("utf-8-sig"),
-            content_type="text/csv",
-        )
-
-        with patch("qna.models.timezone.now", return_value=fixed_now):
-            response = self.client.post(
-                reverse("qna:lecturer_import_students_to_room", args=[self.room.id]),
-                {"csv_file": upload},
-            )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertIn("Ä‘ang diá»…n ra", response.json()["message"])
-
-    def test_random_assign_students_is_blocked_while_exam_is_ongoing(self):
-        fixed_now = self._move_exam_window_to_exact_end()
-        self.client.force_login(self.lecturer)
-
-        with patch("qna.models.timezone.now", return_value=fixed_now):
-            response = self.client.post(
-                reverse("qna:lecturer_random_assign_students", args=[self.exam_group.id]),
-            )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertIn("Ä‘ang diá»…n ra", response.json()["message"])
-
-
-class LecturerExamManagementTests(LecturerExamManagementTests):
-    def test_used_exam_code_cannot_be_deleted(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        self._link_exam_code(exam_code)
-
-        response = self.client.post(
-            reverse("qna:lecturer_delete_exam_code", args=[exam_code.id])
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        self.assertTrue(ExamCode.objects.filter(pk=exam_code.id).exists())
-
-    def test_used_exam_code_cannot_be_edited_via_legacy_update_endpoint(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        self._link_exam_code(exam_code)
-
-        response = self.client.post(
-            reverse("qna:lecturer_update_exam_code_question", args=[exam_code.id]),
-            {"difficulty": "EASY"},
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.json()["success"])
-
-    def test_used_exam_code_cannot_be_edited_via_legacy_text_endpoint(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        self._link_exam_code(exam_code)
-
-        response = self.client.post(
-            reverse("qna:lecturer_edit_exam_code_question", args=[exam_code.id]),
-            {"difficulty": "EASY", "new_text": "Noi dung moi"},
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.json()["success"])
-
-    def test_used_exam_set_cannot_be_published(self):
-        exam_set = self._create_exam_set(number_of_versions=1)
-        exam_code = exam_set.exam_codes.get()
-        exam_code.is_approved = True
-        exam_code.save(update_fields=["is_approved", "updated_at"])
-        self._link_exam_code(exam_code)
-
-        response = self.client.post(
-            reverse("qna:lecturer_publish_exam_set", args=[exam_set.id])
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json()["status"], "FAIL")
-        exam_set.refresh_from_db()
-        self.assertEqual(exam_set.status, ExamSetStatus.DRAFT)
-
-    def test_create_exam_set_allows_zero_counts_for_unused_difficulty_buckets(self):
-        response = self._post_json(
-            "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": 1,
-                "easy_count": 0,
-                "medium_count": 2,
-                "hard_count": 0,
-                "easy_score": 2,
-                "medium_score": 3,
-                "hard_score": 5,
-                "shuffle_question_order": False,
-                "allow_duplicate_questions": False,
-                "source_bank_ids": [self.bank.id],
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        exam_set = ExamSet.objects.get(pk=response.json()["exam_set_id"])
-        exam_code = exam_set.exam_codes.get()
-        items = list(exam_code.exam_code_questions.select_related("question_id").all())
-
-        self.assertEqual(exam_set.easy_pool_size, 0)
-        self.assertEqual(exam_set.medium_pool_size, 2)
-        self.assertEqual(exam_set.hard_pool_size, 0)
-        self.assertEqual(len(items), 2)
-        self.assertTrue(all(item.difficulty == DifficultyLevel.MEDIUM for item in items))
-
-    def test_update_exam_code_content_uses_item_ids_not_payload_order(self):
-        exam_set = ExamSet.objects.create(
-            subject=self.subject,
-            name=self.subject.name,
-            academic_year="2025-2026",
-            semester="HK1",
-            number_of_versions=1,
-            easy_pool_size=1,
-            medium_pool_size=1,
-            hard_pool_size=1,
-            created_by=self.lecturer,
-        )
-        exam_set.question_banks.add(self.bank)
-
-        exam_code = ExamCode.objects.create(
-            subject=self.subject,
-            exam_set=exam_set,
-            code_name="101",
-            code_number=101,
-            source_material=self.bank.name,
-        )
-
-        medium_question = Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Medium goc",
-            question_id_in_barem="EC_MEDIUM",
-            difficulty=DifficultyLevel.MEDIUM,
-            is_exam_clone=True,
-        )
-        easy_question = Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Easy goc",
-            question_id_in_barem="EC_EASY",
-            difficulty=DifficultyLevel.EASY,
-            is_exam_clone=True,
-        )
-        hard_question = Question.objects.create(
-            subject=self.subject,
-            bank=self.bank,
-            question_text="Hard goc",
-            question_id_in_barem="EC_HARD",
-            difficulty=DifficultyLevel.HARD,
-            is_exam_clone=True,
-        )
-
-        medium_item = ExamCodeQuestion.objects.create(
-            exam_code=exam_code,
-            question=medium_question,
-            difficulty=DifficultyLevel.MEDIUM,
-            display_order=1,
-            score=3,
-        )
-        easy_item = ExamCodeQuestion.objects.create(
-            exam_code=exam_code,
-            question=easy_question,
-            difficulty=DifficultyLevel.EASY,
-            display_order=2,
-            score=2,
-        )
-        hard_item = ExamCodeQuestion.objects.create(
-            exam_code=exam_code,
-            question=hard_question,
-            difficulty=DifficultyLevel.HARD,
-            display_order=3,
-            score=5,
-        )
-
-        response = self._post_json(
-            "qna:lecturer_update_exam_code_content",
-            {
-                "items": [
-                    {
-                        "id": easy_item.id,
-                        "display_order": easy_item.display_order,
-                        "difficulty": easy_item.difficulty,
-                        "content": "Easy da sua",
-                    },
-                    {
-                        "id": medium_item.id,
-                        "display_order": medium_item.display_order,
-                        "difficulty": medium_item.difficulty,
-                        "content": "Medium da sua",
-                    },
-                    {
-                        "id": hard_item.id,
-                        "display_order": hard_item.display_order,
-                        "difficulty": hard_item.difficulty,
-                        "content": "Hard da sua",
-                    },
-                ]
-            },
-            args=[exam_code.id],
-        )
-
-        self.assertEqual(response.status_code, 200)
-        easy_question.refresh_from_db()
-        medium_question.refresh_from_db()
-        hard_question.refresh_from_db()
-
-        self.assertEqual(easy_question.question_text, "Easy da sua")
-        self.assertEqual(medium_question.question_text, "Medium da sua")
-        self.assertEqual(hard_question.question_text, "Hard da sua")
-
-    def test_create_exam_set_rejects_non_numeric_counts(self):
-        response = self._post_json(
-            "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": "abc",
-                "easy_count": 1,
-                "medium_count": 1,
-                "hard_count": 1,
-                "source_bank_ids": [self.bank.id],
-            },
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["status"], "FAIL")
-
-
-
-@override_settings(CACHES=TEST_CACHES, CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
-class ExamSubmissionRegressionTests(TestCase):
-    def setUp(self):
-        self.media_root = tempfile.mkdtemp(dir=os.path.dirname(__file__))
-        self.media_override = override_settings(MEDIA_ROOT=self.media_root)
-        self.media_override.enable()
-
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer-regression",
-            password="Password123!",
-        )
-        self.student = self.user_model.objects.create_user(
-            username="SVREG001",
-            password="Password123!",
-        )
-        self.other_student = self.user_model.objects.create_user(
-            username="SVREG002",
-            password="Password123!",
-        )
-
-        self.lecturer_profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Regression",
-        )
-        UserProfile.objects.create(
-            user=self.student,
-            is_lecturer=False,
-            full_name="Sinh Vien Regression",
-            student_id="SVREG001",
-        )
-        UserProfile.objects.create(
-            user=self.other_student,
-            is_lecturer=False,
-            full_name="Sinh Vien Khac",
-            student_id="SVREG002",
-        )
-
-        self.subject = Subject.objects.create(
-            name="Mon hoi quy",
-            subject_code="REG401",
-        )
-        self.lecturer_profile.subjects_taught.add(self.subject)
-
-        self.exam_group = ExamSessionGroup.objects.create(
-            subject=self.subject,
-            group_name="Ca thi hoi quy",
-            academic_year="2025-2026",
-            semester="HK1",
-            exam_date=timezone.now() - timedelta(minutes=5),
-            duration_minutes=30,
-            status="SCHEDULED",
-            created_by=self.lecturer,
-            configuration_data={"rooms": [], "rosters": []},
-        )
-        self.room = self.exam_group.session_rooms.create(
-            room_name="Phong Regression",
-            expected_students=1,
-            room_password="ABCDE",
-            display_order=1,
-        )
-        self.room.students.add(self.student)
-
-        self.question = Question.objects.create(
-            subject=self.subject,
-            question_text="Trinh bay noi dung hoi quy.",
-            question_id_in_barem="REG_Q1",
-            difficulty=DifficultyLevel.EASY,
-        )
-        self.session = ExamSession.objects.create(
-            user=self.student,
-            subject=self.subject,
-            exam_session_group_id=self.exam_group,
-        )
-        self.session.questions.add(self.question)
-
-        self.client.force_login(self.student)
-
-    def _start_session(self):
-        self.session.started_at = timezone.now()
-        self.session.session_status = "STARTED"
-        self.session.verification_status = "ALLOW"
-        self.session.save(update_fields=["started_at", "session_status", "verification_status"])
-        return self.session
-
-
-    def tearDown(self):
-        self.media_override.disable()
-        shutil.rmtree(self.media_root, ignore_errors=True)
-
-    def test_exam_consumer_rejects_session_of_other_user(self):
-        from channels.routing import URLRouter
-        from .routing import websocket_urlpatterns
-
-        communicator = WebsocketCommunicator(
-            URLRouter(websocket_urlpatterns),
-            f"/ws/exam/{self.session.id}/",
-        )
-        communicator.scope["user"] = self.other_student
-
-        connected, close_code = async_to_sync(communicator.connect)()
-
-        self.assertFalse(connected)
-        self.assertEqual(close_code, 4403)
-
-    def test_exam_consumer_rejects_session_that_has_not_started(self):
-        from channels.routing import URLRouter
-        from .routing import websocket_urlpatterns
-
-        communicator = WebsocketCommunicator(
-            URLRouter(websocket_urlpatterns),
-            f"/ws/exam/{self.session.id}/",
-        )
-        communicator.scope["user"] = self.student
-
-        connected, close_code = async_to_sync(communicator.connect)()
-
-        self.assertFalse(connected)
-        self.assertEqual(close_code, 4408)
-    def test_worker_main_question_is_idempotent_for_same_session_question(self):
-        from .management.commands import run_workers
-
-        first = async_to_sync(run_workers._create_main_exam_result)(
-            self.session.id,
-            self.question.id,
-            "Ban ghi lan 1",
-            7.5,
-            "Nhan xet lan 1",
-        )
-        second = async_to_sync(run_workers._create_main_exam_result)(
-            self.session.id,
-            self.question.id,
-            "Ban ghi lan 2",
-            8.5,
-            "Nhan xet lan 2",
-        )
-
-        self.assertTrue(first["created"])
-        self.assertFalse(second["created"])
-        self.assertEqual(
-            ExamResult.objects.filter(exam_session_id=self.session, question_id=self.question).count(),
-            1,
-        )
-        result = ExamResult.objects.get(exam_session_id=self.session, question_id=self.question)
-        self.assertEqual(result.transcript, "Ban ghi lan 1")
-        self.assertEqual(result.score, 7.5)
-        self.assertEqual(result.feedback, "Nhan xet lan 1")
-    def test_save_exam_result_returns_audio_url_when_audio_uploaded(self):
-        self._start_session()
-        result = ExamResult.objects.create(
-            exam_session_id=self.session,
-            question_id=self.question,
-            transcript="Server transcript",
-            score=6.0,
-            feedback="Server feedback",
-            analysis=["server-analysis"],
-        )
-
-        response = self.client.post(
-            reverse("qna:save_exam_result"),
-            {
-                "session_id": self.session.id,
-                "question_id": self.question.id,
-                "score": 99,
-                "transcript": "Browser transcript",
-                "feedback": "Browser feedback",
-                "analysis": json.dumps(["browser-analysis"]),
-                "audio_file": SimpleUploadedFile(
-                    "answer.webm",
-                    b"fake-webm-data",
-                    content_type="audio/webm",
-                ),
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["status"], "ok")
-        self.assertTrue(payload["audio_url"])
-        self.assertIn("student_audio/", payload["audio_url"])
-
-        result.refresh_from_db()
-        self.assertEqual(result.transcript, "Server transcript")
-        self.assertEqual(result.score, 6.0)
-        self.assertEqual(result.feedback, "Server feedback")
-        self.assertEqual(result.analysis, ["server-analysis"])
-        self.assertTrue(result.audio_file)
-
-    def test_save_exam_result_rejects_when_result_does_not_exist(self):
-        self._start_session()
-
-        response = self.client.post(
-            reverse("qna:save_exam_result"),
-            {
-                "session_id": self.session.id,
-                "question_id": self.question.id,
-                "score": 10,
-                "transcript": "Browser transcript",
-                "audio_file": SimpleUploadedFile(
-                    "answer.webm",
-                    b"fake-webm-data",
-                    content_type="audio/webm",
-                ),
-            },
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["status"], "error")
-        self.assertIn("Chua co ket qua", response.json()["message"])
-        self.assertEqual(ExamResult.objects.filter(exam_session_id=self.session, question_id=self.question).count(), 0)
-    def test_submit_exam_appeal_allows_within_window(self):
-        self.session.session_status = "COMPLETED"
-        self.session.completed_at = timezone.now() - timedelta(minutes=5)
-        self.session.final_score = 8.0
-        self.session.save(update_fields=["session_status", "completed_at", "final_score"])
-
-        response = self.client.post(
-            reverse("qna:submit_exam_appeal", args=[self.session.id]),
-            data=json.dumps({"reason": "Toi muon phuc khao lai ket qua bai thi."}),
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["status"], "success")
-        self.assertTrue(payload["created"])
-        self.assertTrue(ExamAppeal.objects.filter(exam_session_id=self.session).exists())
-
-    def test_submit_exam_appeal_rejects_after_window(self):
-        self.session.session_status = "COMPLETED"
-        self.session.completed_at = timezone.now() - views.APPEAL_WINDOW_DELTA - timedelta(seconds=1)
-        self.session.final_score = 8.0
-        self.session.save(update_fields=["session_status", "completed_at", "final_score"])
-
-        response = self.client.post(
-            reverse("qna:submit_exam_appeal", args=[self.session.id]),
-            data=json.dumps({"reason": "Toi muon phuc khao lai ket qua bai thi."}),
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 403)
-        payload = response.json()
-        self.assertEqual(payload["status"], "error")
-        self.assertIn("gian", payload["message"])
-        self.assertFalse(ExamAppeal.objects.filter(exam_session_id=self.session).exists())
-
-    def test_update_profile_image_accepts_profile_image_and_avatar(self):
-        first_response = self.client.post(
-            reverse("qna:update_profile_image"),
-            {
-                "profile_image": SimpleUploadedFile(
-                    "profile.png",
-                    b"profile-image-data",
-                    content_type="image/png",
-                )
-            },
-        )
-        self.assertEqual(first_response.status_code, 200)
-        first_payload = first_response.json()
-        self.assertTrue(first_payload["success"])
-        self.assertTrue(first_payload["image_data_url"])
-        self.assertEqual(first_payload["image_data_url"], first_payload["avatar_url"])
-
-        second_response = self.client.post(
-            reverse("qna:update_profile_image"),
-            {
-                "avatar": SimpleUploadedFile(
-                    "avatar.png",
-                    b"avatar-image-data",
-                    content_type="image/png",
-                )
-            },
-        )
-        self.assertEqual(second_response.status_code, 200)
-        second_payload = second_response.json()
-        self.assertTrue(second_payload["success"])
-        self.assertTrue(second_payload["image_data_url"])
-        self.assertEqual(second_payload["image_data_url"], second_payload["avatar_url"])
-
-        profile = self.student.userprofile
-        profile.refresh_from_db()
-        self.assertEqual(profile.profile_image_blob, b"avatar-image-data")
-
-
-    def test_lecturer_student_review_screen_does_not_assign_readonly_property(self):
-        self.client.force_login(self.lecturer)
-        response = self.client.get(
-            reverse("qna:lecturer_student_review_screen"),
-            {"subject_id": self.subject.id},
-        )
-        self.assertEqual(response.status_code, 200)
-
-    def test_finalize_session_is_idempotent(self):
-        first = self.client.post(reverse("qna:finalize_session", args=[self.session.id]))
-        second = self.client.post(reverse("qna:finalize_session", args=[self.session.id]))
-
-        self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 200)
-        self.assertFalse(first.json()["already_finalized"])
-        self.assertTrue(second.json()["already_finalized"])
-
-    def test_save_exam_result_rejects_after_finalize(self):
-        ExamResult.objects.create(
-            exam_session_id=self.session,
-            question_id=self.question,
-            transcript="Server transcript",
-            score=7.0,
-            feedback="Server feedback",
-        )
-        self.session.session_status = "COMPLETED"
-        self.session.completed_at = timezone.now()
-        self.session.save(update_fields=["session_status", "completed_at"])
-
-        response = self.client.post(
-            reverse("qna:save_exam_result"),
-            {
-                "session_id": self.session.id,
-                "question_id": self.question.id,
-                "audio_file": SimpleUploadedFile(
-                    "answer.webm",
-                    b"fake-webm-data",
-                    content_type="audio/webm",
-                ),
-            },
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["status"], "error")
-@override_settings(CACHES=TEST_CACHES, CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
-class LecturerGenerateQuestionsTests(TestCase):
-    def setUp(self):
-        views.QUESTION_JOB_LOCAL_FALLBACK.clear()
-
-        self.user_model = get_user_model()
-        self.lecturer = self.user_model.objects.create_user(
-            username="lecturer-generate",
-            password="Password123!",
-        )
-        self.profile = UserProfile.objects.create(
-            user=self.lecturer,
-            is_lecturer=True,
-            full_name="Giang Vien Tao Cau Hoi",
-        )
-        self.subject = Subject.objects.create(
-            name="Tri tue nhan tao",
-            subject_code="AI401",
-        )
-        self.profile.subjects_taught.add(self.subject)
-        self.material = LectureMaterial.objects.create(
-            subject=self.subject,
-            title="Bai giang chuong 1",
-            file_path="materials/chuong_1.txt",
-            file_type="text/plain",
-            workspace_id="ws_test",
-        )
-        self.client.force_login(self.lecturer)
-
-    def tearDown(self):
-        views.QUESTION_JOB_LOCAL_FALLBACK.clear()
-
-    @patch("qna.views.cache.get", side_effect=ConnectionError("redis down"))
-    @patch("qna.views.cache.set", side_effect=ConnectionError("redis down"))
-    @patch("qna.views._generate_questions_from_ai")
-    def test_generate_questions_uses_local_job_fallback_when_cache_is_unavailable(
-        self,
-        mock_generate_questions,
-        mock_cache_set,
-        mock_cache_get,
-    ):
-        mock_generate_questions.return_value = [
-            {
-                "content": "Trinh bay cac thanh phan cua mot he thong AI.",
-                "difficulty": "MEDIUM",
-                "source": "Bai giang chuong 1",
-            }
-        ]
-
-        response = self.client.post(
-            reverse("qna:api_generate_questions"),
-            data=json.dumps(
-                {
-                    "subject_id": self.subject.id,
-                    "document_ids": [self.material.id],
-                    "total_count": 1,
-                    "level_config": {"easy": 0, "medium": 1, "hard": 0},
-                    "workspace_id": "ws_test",
-                }
-            ),
-            content_type="application/json",
-            HTTP_ACCEPT="application/json",
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["status"], "SUCCESS")
-        self.assertEqual(len(payload["questions"]), 1)
-        self.assertEqual(payload["summary"]["medium"], 1)
-        self.assertEqual(Question.objects.filter(subject_id=self.subject).count(), 1)
-        self.assertTrue(
-            Question.objects.get(subject_id=self.subject).question_id_in_barem.startswith("DRAFT_ws_test_")
-        )
-
-        status_response = self.client.get(
-            reverse("qna:api_generate_questions_status"),
-            {"job_id": payload["job_id"]},
-            HTTP_ACCEPT="application/json",
-        )
-        self.assertEqual(status_response.status_code, 200)
-        status_payload = status_response.json()
-        self.assertEqual(status_payload["status"], "SUCCESS")
-        self.assertEqual(status_payload["process_status"], "COMPLETE")
-        self.assertEqual(status_payload["summary"]["medium"], 1)
-
-    @patch("qna.views._generate_questions_from_ai")
-    def test_generate_questions_returns_friendly_message_when_api_key_is_invalid(self, mock_generate_questions):
-        from httpx import Request, Response
-        from openai import AuthenticationError
-
-        mock_generate_questions.side_effect = AuthenticationError(
-            "Incorrect API key provided",
-            response=Response(401, request=Request("POST", "https://api.openai.com/v1/chat/completions")),
-            body={
-                "error": {
-                    "message": "Incorrect API key provided",
-                    "code": "invalid_api_key",
-                }
-            },
-        )
-
-        response = self.client.post(
-            reverse("qna:api_generate_questions"),
-            data=json.dumps(
-                {
-                    "subject_id": self.subject.id,
-                    "document_ids": [self.material.id],
-                    "total_count": 1,
-                    "level_config": {"easy": 0, "medium": 1, "hard": 0},
-                    "workspace_id": "ws_test",
-                }
-            ),
-            content_type="application/json",
-            HTTP_ACCEPT="application/json",
-        )
-
-        self.assertEqual(response.status_code, 400)
-        payload = response.json()
-        self.assertEqual(payload["status"], "FAIL")
-        self.assertIn("OpenAI API key khÃ´ng há»£p lá»‡", payload["message"])
-        self.assertNotIn("Incorrect API key", payload["message"])
-        self.assertEqual(Question.objects.filter(subject_id=self.subject).count(), 0)
-
-    @patch("qna.views._generate_questions_from_ai")
-    def test_generate_questions_regenerates_when_ai_returns_duplicate_items(self, mock_generate_questions):
-        Question.objects.create(
-            subject=self.subject,
-            question_text="Cau trung lap",
-            question_id_in_barem="MAN_EXISTING_DUP",
-            difficulty=DifficultyLevel.MEDIUM,
-        )
-        mock_generate_questions.side_effect = [
-            [
-                {
-                    "content": "Cau trung lap",
-                    "difficulty": "MEDIUM",
-                    "source": "Bai giang chuong 1",
-                },
-                {
-                    "content": "Cau moi hop le",
-                    "difficulty": "HARD",
-                    "source": "Bai giang chuong 1",
-                },
-            ],
-            [
-                {
-                    "content": "Cau moi bo sung",
-                    "difficulty": "MEDIUM",
-                    "source": "Bai giang chuong 1",
-                },
-            ],
-        ]
-
-        response = self.client.post(
-            reverse("qna:api_generate_questions"),
-            data=json.dumps(
-                {
-                    "subject_id": self.subject.id,
-                    "document_ids": [self.material.id],
-                    "total_count": 2,
-                    "level_config": {"easy": 0, "medium": 1, "hard": 1},
-                    "workspace_id": "ws_test",
-                }
-            ),
-            content_type="application/json",
-            HTTP_ACCEPT="application/json",
-        )
-        
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["created_count"], 2)
-        self.assertEqual(payload["requested_count"], 2)
-        self.assertEqual(payload["skipped_duplicates"], 1)
-        self.assertIn("tá»± sinh bÃ¹ 1 cÃ¢u bá»‹ trÃ¹ng", payload["message"])
-
-
-
-
-
-
+from .session_management import (
+    lecturer_create_exam_group,
+    lecturer_create_exam_group_screen,
+    lecturer_create_exam_session,
+    lecturer_create_session_screen,
+    lecturer_delete_exam_group,
+    lecturer_exam_session_common_list_export,
+    lecturer_exam_session_common_list_screen,
+    lecturer_exam_session_detail_screen,
+    lecturer_exam_sessions_list,
+    lecturer_import_students_to_room,
+    lecturer_random_assign_students,
+    lecturer_update_exam_group,
+)
 
 
 
