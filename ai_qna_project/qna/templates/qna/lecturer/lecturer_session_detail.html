@@ -43,7 +43,7 @@
   .meta-value { color: #111827; font-size: 1.05rem; font-weight: 700; }
   .status-pill { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: 999px; font-size: 0.84rem; font-weight: 700; }
   .status-completed { background: var(--detail-green-soft); color: var(--detail-green); }
-  .status-in-progress { background: #ffedd5; color: #d97706; }
+  .status-ended { background: #ffedd5; color: #d97706; }
   .status-absent { background: var(--detail-red-soft); color: var(--detail-red); }
   .exam-info-card { padding: 20px 22px; }
   .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--detail-text); font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
@@ -61,19 +61,27 @@
   .question-score-label { color: var(--detail-muted); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
   .question-score-value { color: var(--detail-blue); font-size: 2rem; font-weight: 800; }
   .question-text { color: #1f2937; font-size: 1.05rem; line-height: 1.65; }
-  .transcript-box { background: #f8fafc; border-radius: 18px; padding: 18px 20px; border: 1px solid #eef2f7; }
-  .transcript-label { color: var(--detail-muted); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
-  .transcript-text { color: #374151; font-size: 1rem; line-height: 1.8; font-style: italic; }
-  .audio-player { display: flex; align-items: center; gap: 14px; background: #f8fafc; border: 1px solid #edf2f7; border-radius: 18px; padding: 14px 16px; }
-  .audio-player-icon { width: 38px; height: 38px; border-radius: 999px; background: #082f63; color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-  .audio-player-body { flex: 1; min-width: 0; }
-  .audio-player-name { color: #0f172a; font-size: 0.9rem; font-weight: 700; margin-bottom: 8px; }
+  .response-box { background: #f8fafc; border-radius: 18px; padding: 18px 20px; border: 1px solid #eef2f7; }
+  .response-label { color: var(--detail-muted); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .response-text { color: #374151; font-size: 1rem; line-height: 1.8; }
+  .response-text.is-empty { color: #9ca3af; font-style: italic; }
+  .audio-player { display: flex; flex-direction: column; align-items: stretch; gap: 8px; background: #f8fafc; border: 1px solid #edf2f7; border-radius: 18px; padding: 14px 16px; }
+  .audio-player-name { color: #0f172a; font-size: 0.9rem; font-weight: 700; }
   .audio-player audio { width: 100%; height: 34px; }
+  .audio-player-fallback { color: #64748b; font-size: 0.85rem; line-height: 1.5; }
+  .audio-player-fallback a { color: #2563eb; font-weight: 600; text-decoration: none; }
+  .audio-player-fallback a:hover { text-decoration: underline; }
   .collapsed-question { padding: 26px 28px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
   .collapsed-question-title { color: #334e68; font-size: 1.8rem; font-weight: 800; }
   .collapsed-question-note { margin-top: 10px; color: #9ca3af; font-size: 1rem; font-style: italic; }
   .side-column { display: flex; flex-direction: column; gap: 20px; }
   .summary-card, .fraud-card { padding: 18px 18px 20px; }
+  .verification-card { padding: 18px 18px 20px; }
+  .verification-title { color: #4b5563; font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
+  .verification-image-wrap { border-radius: 18px; overflow: hidden; border: 1px solid #e5e7eb; background: #f8fafc; }
+  .verification-image { display: block; width: 100%; height: auto; object-fit: cover; }
+  .verification-empty { color: #6b7280; font-size: 0.92rem; line-height: 1.6; }
+  .verification-meta { margin-top: 10px; font-size: 0.85rem; color: #475569; }
   .summary-title, .fraud-title { color: #4b5563; font-size: 1rem; font-weight: 700; margin-bottom: 22px; }
   .summary-score-label { color: #6b7280; font-size: 0.75rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.08em; text-align: center; }
   .summary-score-value { margin-top: 8px; text-align: center; color: #111827; font-size: 4rem; font-weight: 800; line-height: 1; }
@@ -176,7 +184,7 @@
               </div>
               <div class="detail-block">
                 <div class="meta-label">Mã đề</div>
-                <div class="meta-value">101</div>
+                <div class="meta-value">{{ session.exam_code_display|default:'-' }}</div>
               </div>
               <div class="detail-block">
                 <div class="meta-label">Mã học phần</div>
@@ -184,16 +192,12 @@
               </div>
               <div class="detail-block">
                 <div class="meta-label">Phòng thi</div>
-                <div class="meta-value">501-D9</div>
+                <div class="meta-value">{{ session.room_display|default:'-' }}</div>
               </div>
               <div class="detail-block">
                 <div class="meta-label">Thời gian thi</div>
                 <div class="meta-value">
-                  {% if session.exam_group.start_time and session.exam_group.end_time %}
-                    60 phút
-                  {% else %}
-                    60 phút
-                  {% endif %}
+                  {{ session.actual_duration_display|default:'-' }}
                 </div>
               </div>
             </div>
@@ -202,45 +206,44 @@
 
         <div class="question-heading">
           <span class="question-heading-bar"></span>
-          <span class="question-heading-text">Chi tiết câu hỏi chính</span>
+          <span class="question-heading-text">Chi tiết câu hỏi</span>
         </div>
 
-        {% for result in results %}
-          {% if forloop.first %}
-            <div class="detail-card question-card">
-              <div class="question-card-top">
-                <h3 class="question-title">Câu {{ forloop.counter }}</h3>
-                <div class="question-score-box">
-                  <div class="question-score-label">Điểm đạt được</div>
-                  <div class="question-score-value">{{ result.score|floatformat:1 }} <span style="color:#6b7280;font-size:1.4rem;font-weight:700;">/ 3.0</span></div>
-                </div>
+        {% for item in question_details %}
+          <div class="detail-card question-card">
+            <div class="question-card-top">
+              <h3 class="question-title">Câu {{ item.order }}</h3>
+              <div class="question-score-box">
+                <div class="question-score-label">Điểm đạt được</div>
+                <div class="question-score-value">{{ item.display_score_value|floatformat:-2 }} <span style="color:#6b7280;font-size:1.4rem;font-weight:700;">{{ item.display_score_suffix }}</span></div>
               </div>
-              <div class="question-text">{{ result.question.question_text }}</div>
-              <div class="transcript-box">
-                <div class="transcript-label">Transcript (Bản ghi âm hội thoại)</div>
-                <div class="transcript-text">"{{ result.transcript|default:'Chưa có bản ghi.' }}"</div>
-              </div>
-              {% if result.audio_file %}
-                <div class="audio-player">
-                  <div class="audio-player-icon"><i class="fas fa-play"></i></div>
-                  <div class="audio-player-body">
-                    <div class="audio-player-name">{{ result.audio_file.name|cut:'student_audio/' }}</div>
-                    <audio controls preload="metadata">
-                      <source src="{{ result.audio_file.url }}" type="audio/mpeg">
-                    </audio>
-                  </div>
-                </div>
+            </div>
+            <div class="question-text">{{ item.question.question_text }}</div>
+            <div class="response-box">
+              <div class="response-label">Transcript câu trả lời</div>
+              {% if item.result and item.result.transcript %}
+                <div class="response-text whitespace-pre-wrap">{{ item.result.transcript }}</div>
+              {% else %}
+                <div class="response-text is-empty">Không có câu trả lời.</div>
               {% endif %}
             </div>
-          {% else %}
-            <div class="detail-card collapsed-question">
-              <div>
-                <div class="collapsed-question-title">Câu {{ forloop.counter }}</div>
-                <div class="collapsed-question-note">Nhấn để xem chi tiết bài làm câu hỏi {{ forloop.counter }}...</div>
+            {% if item.result and item.result.feedback %}
+              <div class="response-box">
+                <div class="response-label">Nhận xét từ hệ thống</div>
+                <div class="response-text">{{ item.result.feedback }}</div>
               </div>
-              <div class="question-score-value">{{ result.score|floatformat:1 }} <span style="color:#6b7280;font-size:1.4rem;font-weight:700;">/ 3.5</span></div>
-            </div>
-          {% endif %}
+            {% endif %}
+            {% if item.result and item.result.audio_file %}
+              <div class="audio-player">
+                <div class="audio-player-name">{{ item.result.audio_display_name|default:"audio-answer" }}</div>
+                <audio controls preload="metadata">
+                  <source src="{{ item.result.audio_file.url }}"{% if item.result.audio_mime_type %} type="{{ item.result.audio_mime_type }}"{% endif %}>
+                  Trình duyệt không hỗ trợ phát file ghi âm.
+                </audio>
+                <div class="audio-player-fallback">Nếu player không phát được, mở trực tiếp <a href="{{ item.result.audio_file.url }}" target="_blank" rel="noopener">file MP3</a>.</div>
+              </div>
+            {% endif %}
+          </div>
         {% empty %}
           <div class="detail-card question-card">
             <div class="question-text">Chưa có dữ liệu câu trả lời.</div>
@@ -249,10 +252,35 @@
       </div>
 
       <div class="side-column">
+        <div class="detail-card verification-card">
+          <div class="verification-title">Ảnh xác thực trước khi vào thi</div>
+
+          {% if face_image_url %}
+            <div class="verification-image-wrap">
+              <img src="{{ face_image_url }}" alt="Ảnh xác thực khuôn mặt" class="verification-image">
+            </div>
+            <div class="verification-meta">
+              Trạng thái xác thực:
+              <strong>{{ session.get_verification_status_display|default:session.verification_status|default:"-" }}</strong>
+            </div>
+          {% else %}
+            <div class="verification-empty">Không có ảnh xác thực khuôn mặt được lưu cho phiên thi này.</div>
+          {% endif %}
+        </div>
+
+        {% if id_card_image_url %}
+        <div class="detail-card verification-card">
+          <div class="verification-title">Ảnh giấy tờ xác thực</div>
+          <div class="verification-image-wrap">
+            <img src="{{ id_card_image_url }}" alt="Ảnh giấy tờ xác thực" class="verification-image">
+          </div>
+        </div>
+        {% endif %}
+
         <div class="detail-card summary-card">
           <div class="summary-title">Tổng kết điểm</div>
           <div class="summary-score-label">Tổng điểm</div>
-          <div class="summary-score-value">{{ final_total|floatformat:1 }}<span>/10</span></div>
+          <div class="summary-score-value">{{ session.final_display_score|floatformat:-2 }}<span>{{ session.final_display_score_suffix }}</span></div>
         </div>
 
         <div class="detail-card fraud-card">

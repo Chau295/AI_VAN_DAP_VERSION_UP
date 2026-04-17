@@ -38,7 +38,7 @@
 
       <div class="mt-8 pt-6 border-t flex justify-end items-center">
         <button id="finish-exam-btn" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors">
-          <i class="fas fa-flag-checkered mr-2"></i>Kết thúc
+          <i class="fas fa-flag-checkered mr-2"></i>Kết thúc bài thi
         </button>
       </div>
     </div>
@@ -64,14 +64,17 @@
         </div>
         <div id="recording-state" class="hidden w-full">
           <h2 class="text-2xl font-bold text-blue-600 mt-4">Đang ghi âm...</h2>
-          <p class="text-gray-500 mt-2">Hãy nói rõ ràng. Nhấn Dừng để nộp bài.</p>
+          <p class="text-gray-500 mt-2">Hãy nói rõ ràng. Nhấn Dừng ghi âm để gửi câu trả lời cho AI chấm điểm.</p>
           <button id="stop-recording-btn" class="mt-8 bg-red-600 text-white font-bold py-3 px-8 rounded-full hover:bg-red-700 transition-all text-lg shadow-lg">
-            <i class="fas fa-stop mr-2"></i>Dừng & Nộp bài
+            <i class="fas fa-stop mr-2"></i>Dừng ghi âm
           </button>
         </div>
-        <div id="grading-state" class="hidden">
-          <i class="fas fa-spinner fa-spin text-5xl text-gray-400"></i>
-          <h2 class="text-2xl font-bold text-gray-800 mt-4">Đang chấm điểm...</h2>
+        <div id="grading-state" class="hidden w-full max-w-2xl text-left">
+          <div class="text-center">
+            <i class="fas fa-spinner fa-spin text-5xl text-gray-400"></i>
+            <h2 id="grading-stage-text" class="text-2xl font-bold text-gray-800 mt-4">Đang chờ xử lý âm thanh...</h2>
+            <p id="grading-stage-detail" class="text-gray-500 mt-2">Hệ thống sẽ cập nhật tiến trình chấm bài theo thời gian thực.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -175,21 +178,21 @@
           <i class="fas fa-stop-circle"></i>
         </div>
         <h3 class="exam-confirm-title">Xác nhận dừng ghi âm</h3>
-        <p class="exam-confirm-subtitle">Câu trả lời hiện tại sẽ được gửi đi chấm điểm ngay sau khi bạn xác nhận.</p>
+        <p class="exam-confirm-subtitle">Hệ thống sẽ dừng ghi âm, gửi câu trả lời hiện tại cho AI chấm điểm và đưa bạn quay lại danh sách câu hỏi.</p>
       </div>
       <div class="exam-confirm-body">
         <div class="exam-confirm-highlight exam-confirm-highlight-danger">
-          <span class="exam-confirm-highlight-label">Quan trọng</span>
-          <div class="exam-confirm-highlight-text">Bạn sẽ không thể ghi âm lại cho chính câu hỏi này sau khi nộp.</div>
+          <span class="exam-confirm-highlight-label">Lưu ý</span>
+          <div class="exam-confirm-highlight-text">Thao tác này chỉ kết thúc phần trả lời của câu hiện tại, không nộp toàn bộ bài thi.</div>
         </div>
         <div class="exam-confirm-points">
-          <div class="exam-confirm-point"><i class="fas fa-microphone-slash"></i><span>Ghi âm sẽ dừng ngay lập tức.</span></div>
-          <div class="exam-confirm-point"><i class="fas fa-paper-plane"></i><span>Câu trả lời sẽ được gửi đi để chấm tự động.</span></div>
+          <div class="exam-confirm-point"><i class="fas fa-microphone-slash"></i><span>Ghi âm của câu hiện tại sẽ dừng ngay lập tức.</span></div>
+          <div class="exam-confirm-point"><i class="fas fa-robot"></i><span>AI sẽ chấm điểm câu này trước khi bạn chọn câu tiếp theo.</span></div>
         </div>
       </div>
       <div class="exam-confirm-actions">
         <button id="btnCancelStopRecording" class="btn exam-confirm-btn-secondary">Tiếp tục ghi âm</button>
-        <button id="btnConfirmStopRecording" class="btn btn-primary exam-confirm-btn-danger">Xác nhận nộp bài</button>
+        <button id="btnConfirmStopRecording" class="btn btn-primary exam-confirm-btn-danger">Dừng ghi âm và chấm câu này</button>
       </div>
     </div>
   </div>
@@ -201,7 +204,6 @@
       </div>
       <div class="p-6 flex-grow overflow-y-auto space-y-4">
         <div class="card p-4"><div class="text-sm text-gray-500">Câu hỏi</div><div id="detailQuestion" class="mt-1 font-semibold text-gray-800"></div></div>
-        <div class="card p-4"><div class="text-sm text-gray-500">Câu trả lời của bạn</div><div id="detailTranscript" class="mt-1 text-gray-800 italic"></div></div>
         <div class="card p-4"><div class="text-sm text-gray-500">Nhận xét</div><div id="detailFeedback" class="mt-1 text-gray-800"></div></div>
         <div id="detailAnalysisBlock" class="card p-4" style="display:none;">
           <div class="text-sm text-gray-500">Phân tích đáp án</div>
@@ -301,6 +303,19 @@ document.addEventListener('DOMContentLoaded', () => {
   let scoreScaleWarning = SCORE_SCALE_WARNING;
   let wsRetryCount = 0;
 
+  const PROGRESS_STAGE_LABELS = {
+    received_audio: 'Đã nhận âm thanh',
+    converting_audio: 'Đang chuyển đổi âm thanh...',
+    wav_ready: 'Âm thanh WAV đã sẵn sàng',
+    transcribing: 'Đang nhận diện giọng nói...',
+    transcript_ready: 'Đã nhận transcript từ Whisper',
+    rephrasing: 'Đang chuẩn hóa câu trả lời...',
+    rephrase_ready: 'Đã chuẩn hóa câu trả lời',
+    scoring: 'Đang chấm điểm...',
+    score_ready: 'Đã có điểm tạm thời',
+    result_saved: 'Đã lưu kết quả bài làm'
+  };
+
   const elements = {
     selection: document.getElementById('question-selection-area'),
     answer: document.getElementById('answer-area'),
@@ -309,6 +324,8 @@ document.addEventListener('DOMContentLoaded', () => {
     interaction: document.getElementById('interaction-state'),
     recording: document.getElementById('recording-state'),
     grading: document.getElementById('grading-state'),
+    gradingStageText: document.getElementById('grading-stage-text'),
+    gradingStageDetail: document.getElementById('grading-stage-detail'),
     aTitle: document.getElementById('answer-area-title'),
     aQuestion: document.getElementById('answer-area-question'),
     stickyTimer: document.getElementById('sticky-timer'),
@@ -321,16 +338,24 @@ document.addEventListener('DOMContentLoaded', () => {
     currentQuestion: null,
     totalScoreMain: 0,
     examFinished: false,
+    pendingExamFinalize: false,
+    pendingFinalizeIsTimeout: false,
     mainTimerEnd: null,
     socket: null,
     mediaRecorder: null,
     audioChunks: [],
     currentAudioBlob: null,
-    currentAudioMimeType: 'audio/webm',
-    skipAudioSubmit: false,
+    currentAudioMimeType: '',
     forcedFinishReason: '',
     isSubmittingAnswer: false,
-    hasUnloadGuard: true
+    isFinalizingExam: false,
+    hasUnloadGuard: true,
+    exitFinalizeSent: false,
+    gradingProgress: {
+      stage: '',
+      detail: '',
+      score: null,
+    }
   };
 
   document.querySelectorAll('.question-choice-btn').forEach(btn => {
@@ -349,6 +374,45 @@ document.addEventListener('DOMContentLoaded', () => {
   const formatScore = (n) => (Math.round(Number(n || 0) * 100) / 100).toFixed(2);
   const nowMs = () => Date.now() + SERVER_CLIENT_OFFSET_MS;
 
+  function normalizeAudioMimeType(mimeType) {
+    const normalized = String(mimeType || '').split(';', 1)[0].trim().toLowerCase();
+
+    switch (normalized) {
+      case 'audio/mp3':
+        return 'audio/mpeg';
+      case 'audio/x-wav':
+        return 'audio/wav';
+      case 'audio/aac':
+      case 'audio/x-m4a':
+        return 'audio/mp4';
+      default:
+        return normalized;
+    }
+  }
+
+  function resolveAudioExtensionFromMime(mimeType) {
+    switch (normalizeAudioMimeType(mimeType)) {
+      case 'audio/mpeg':
+        return '.mp3';
+      case 'audio/wav':
+        return '.wav';
+      case 'audio/ogg':
+        return '.ogg';
+      case 'audio/mp4':
+        return '.m4a';
+      case 'audio/webm':
+        return '.webm';
+      default:
+        return '.webm';
+    }
+  }
+
+  function logTranscriptDebug(label, value, questionId) {
+    const text = String(value || '').trim();
+    if (!text) return;
+    console.log(`[${label}]`, { questionId: questionId || null, text });
+  }
+
   const formatTime = (ms) => {
     const s = Math.max(0, Math.ceil(ms / 1000));
     const m = Math.floor(s / 60);
@@ -366,10 +430,100 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 5000);
   };
 
+  function resetGradingProgress(detail = 'Hệ thống đang chờ worker nhận audio...') {
+    state.gradingProgress = {
+      stage: '',
+      detail,
+      score: null,
+    };
+    pushGradingLog(detail);
+    renderGradingProgress();
+  }
+
+  function pushGradingLog(message) {
+    const text = String(message || '').trim();
+    if (!text) return;
+    console.log('[exam.progress.detail]', {
+      questionId: state.currentQuestion?.id || null,
+      detail: text,
+    });
+  }
+
+  function renderGradingProgress() {
+    const progress = state.gradingProgress;
+    const stageLabel = PROGRESS_STAGE_LABELS[progress.stage] || 'Đang chờ xử lý âm thanh...';
+
+    if (elements.gradingStageText) {
+      elements.gradingStageText.textContent = stageLabel;
+    }
+    if (elements.gradingStageDetail) {
+      elements.gradingStageDetail.textContent = progress.detail || 'Hệ thống sẽ cập nhật tiến trình chấm bài theo thời gian thực.';
+    }
+  }
+
+  function applyProgressPayload(payload) {
+    if (!payload) return;
+
+    const currentQuestionId = state.currentQuestion?.id;
+    const payloadQuestionId = Number(payload.question_id || 0);
+    if (currentQuestionId && payloadQuestionId && payloadQuestionId !== currentQuestionId) {
+      return;
+    }
+
+    logTranscriptDebug('exam.progress.transcript', payload.transcript, payloadQuestionId || currentQuestionId);
+    logTranscriptDebug('exam.progress.rephrased', payload.rephrased, payloadQuestionId || currentQuestionId);
+
+    const detail = payload.detail || PROGRESS_STAGE_LABELS[payload.stage] || 'Đang cập nhật tiến trình...';
+    state.gradingProgress = {
+      ...state.gradingProgress,
+      stage: payload.stage || state.gradingProgress.stage,
+      detail,
+      score: payload.score ?? state.gradingProgress.score,
+    };
+
+    pushGradingLog(detail);
+  }
+
+  function finalizeSessionInBackground(reason = 'pagehide') {
+    if (state.exitFinalizeSent || state.examFinished || state.isFinalizingExam) {
+      return;
+    }
+
+    state.exitFinalizeSent = true;
+
+    try {
+      const formData = new FormData();
+      formData.append('csrfmiddlewaretoken', csrfToken);
+      formData.append('reason', reason);
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(API_ENDPOINTS.FINALIZE, formData);
+        console.log('Background finalize beacon:', { reason, sent });
+        if (sent) {
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Finalize beacon error:', error);
+    }
+
+    fetch(API_ENDPOINTS.FINALIZE, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken
+      },
+      body: JSON.stringify({ reason }),
+      credentials: 'same-origin',
+      keepalive: true
+    }).catch((error) => {
+      console.error('Finalize keepalive error:', error);
+    });
+  }
+
   function syncFinishExamButtonState() {
     const finishBtn = document.getElementById('finish-exam-btn');
     if (!finishBtn) return;
-    const disabled = state.isSubmittingAnswer;
+    const disabled = state.isSubmittingAnswer || state.pendingExamFinalize || state.isFinalizingExam;
     finishBtn.disabled = disabled;
     finishBtn.classList.toggle('opacity-60', disabled);
     finishBtn.classList.toggle('cursor-not-allowed', disabled);
@@ -378,6 +532,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function setSubmittingAnswer(isSubmitting) {
     state.isSubmittingAnswer = isSubmitting;
     syncFinishExamButtonState();
+  }
+
+  const shouldAllowLateAnswerFlush = () => state.pendingExamFinalize && state.pendingFinalizeIsTimeout;
+
+  async function finalizePendingExamIfNeeded() {
+    if (!state.pendingExamFinalize) return;
+
+    const finalizeAsTimeout = state.pendingFinalizeIsTimeout;
+    state.pendingExamFinalize = false;
+    state.pendingFinalizeIsTimeout = false;
+    syncFinishExamButtonState();
+    await finalizeAndShowResult(finalizeAsTimeout, state.forcedFinishReason);
   }
 
   function setQuestionListLocked(locked) {
@@ -413,30 +579,47 @@ document.addEventListener('DOMContentLoaded', () => {
   let mainTimerInterval = null;
 
   function forceExamTermination(message) {
-    if (state.examFinished) {
+    if (state.examFinished || state.isFinalizingExam) {
       if (message && !state.forcedFinishReason) {
         state.forcedFinishReason = message;
       }
       return;
     }
 
-    state.examFinished = true;
+    if (state.pendingExamFinalize) {
+      if (message && !state.forcedFinishReason) {
+        state.forcedFinishReason = message;
+      }
+      return;
+    }
+
+    state.pendingExamFinalize = true;
+    state.pendingFinalizeIsTimeout = true;
     state.forcedFinishReason = message || state.forcedFinishReason;
+    syncFinishExamButtonState();
     clearInterval(mainTimerInterval);
     modal.hide('confirmStopRecordingModal');
     modal.hide('confirmFinishModal');
+    setQuestionListLocked(true);
+    stopMonitoring();
 
     if (message) {
       showAlert(message);
     }
 
     if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
-      state.skipAudioSubmit = true;
+      setAnswerUIState('grading');
       state.mediaRecorder.stop();
       return;
     }
 
-    finalizeAndShowResult(true, state.forcedFinishReason);
+    if (state.isSubmittingAnswer) {
+      return;
+    }
+
+    finalizePendingExamIfNeeded().catch((error) => {
+      console.error('Finalize pending exam error:', error);
+    });
   }
 
   function startMainTimer(durationMs = EXAM_TOTAL_DURATION_MS) {
@@ -478,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function startAnswering(questionData) {
-    if (state.examFinished || isExamTimeExpired()) {
+    if (state.examFinished || state.pendingExamFinalize || state.isFinalizingExam || isExamTimeExpired()) {
       forceExamTermination('Đã hết giờ thi.');
       return;
     }
@@ -489,6 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setQuestionListLocked(true);
     state.currentQuestion = { ...questionData, type: 'main' };
+    resetGradingProgress(`Đã chọn câu ${questionData.order}. Chuẩn bị ghi âm câu trả lời.`);
     elements.aTitle.textContent = 'Câu hỏi';
     elements.backBtn.style.display = 'block';
     elements.aQuestion.textContent = questionData.question_text;
@@ -510,21 +694,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     state.socket.onmessage = (event) => {
       try {
+        console.log('Raw WebSocket message:', event.data);
         const message = JSON.parse(event.data);
-        if (message.type === 'exam.result') {
+        if (message.type === 'exam.progress') {
+          console.log('exam.progress payload:', message.message);
+          Promise.resolve(handleExamProgress(message.message)).catch((error) => {
+            console.error('Progress handling error:', error);
+          });
+        } else if (message.type === 'exam.result') {
+          console.log('exam.result payload:', message.message);
           Promise.resolve(handleExamResult(message.message)).catch((error) => {
             console.error('Result handling error:', error);
             showAlert(error.message || 'Có lỗi khi cập nhật kết quả.');
           });
         } else if (message.type === 'exam.error') {
-          setSubmittingAnswer(false);
-          state.currentQuestion = null;
-          state.currentAudioBlob = null;
-          state.audioChunks = [];
-          showAlert(message.message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
-          setQuestionListLocked(false);
-          showScreen('selection');
-          setAnswerUIState('interaction');
+          Promise.resolve(handleExamError(message.message)).catch((error) => {
+            console.error('Exam error handling failed:', error);
+          });
         }
       } catch (e) {
         console.error('Error parsing WebSocket message:', e);
@@ -534,7 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.socket.onclose = () => {
       console.warn('WebSocket closed.');
       document.getElementById('websocket-banner').style.display = 'block';
-      if (!state.examFinished) {
+      if (!state.examFinished && !state.isFinalizingExam) {
         const waitMs = Math.min(10000, 1000 * (wsRetryCount + 1));
         wsRetryCount += 1;
         window.clearTimeout(window.__wsReconnectTimer);
@@ -558,10 +744,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ? 'audio/webm;codecs=opus'
         : '';
 
-      state.currentAudioMimeType = preferredMimeType || 'audio/webm';
       state.mediaRecorder = preferredMimeType
         ? new MediaRecorder(stream, { mimeType: preferredMimeType })
         : new MediaRecorder(stream);
+      state.currentAudioMimeType = normalizeAudioMimeType(state.mediaRecorder.mimeType || preferredMimeType);
 
       state.mediaRecorder.ondataavailable = e => {
         if (e.data.size > 0) state.audioChunks.push(e.data);
@@ -570,14 +756,15 @@ document.addEventListener('DOMContentLoaded', () => {
       state.mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
 
-        if (state.skipAudioSubmit) {
-          state.currentAudioBlob = null;
-          state.skipAudioSubmit = false;
-          finalizeAndShowResult(true, state.forcedFinishReason);
-          return;
-        }
-
-        const audioBlob = new Blob(state.audioChunks, { type: state.currentAudioMimeType });
+        const recordedMimeType = normalizeAudioMimeType(
+          state.audioChunks.find(chunk => chunk?.type)?.type
+          || state.mediaRecorder?.mimeType
+          || state.currentAudioMimeType
+        );
+        const audioBlob = recordedMimeType
+          ? new Blob(state.audioChunks, { type: recordedMimeType })
+          : new Blob(state.audioChunks);
+        state.currentAudioMimeType = normalizeAudioMimeType(audioBlob.type || recordedMimeType);
         state.currentAudioBlob = audioBlob;
         await submitAudio(audioBlob);
       };
@@ -601,6 +788,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function confirmAndStopRecording() {
     if (state.mediaRecorder?.state === 'recording') {
+      state.pendingExamFinalize = false;
+      resetGradingProgress('Đang xử lý âm thanh');
       state.mediaRecorder.stop();
       setAnswerUIState('grading');
     }
@@ -609,8 +798,14 @@ document.addEventListener('DOMContentLoaded', () => {
   async function submitAudio(blob) {
     if (state.isSubmittingAnswer) return;
     setSubmittingAnswer(true);
+    const allowLateAnswerFlush = shouldAllowLateAnswerFlush();
+    const audioMimeType = normalizeAudioMimeType(blob?.type || state.currentAudioMimeType);
 
-    if (isExamTimeExpired()) {
+    if (audioMimeType) {
+      state.currentAudioMimeType = audioMimeType;
+    }
+
+    if (isExamTimeExpired() && !allowLateAnswerFlush) {
       setSubmittingAnswer(false);
       forceExamTermination('Đã hết giờ thi.');
       return;
@@ -619,29 +814,46 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!blob || !blob.size) {
       setSubmittingAnswer(false);
       showAlert('Không ghi nhận được file ghi âm.');
+      state.currentQuestion = null;
+      state.currentAudioBlob = null;
+      state.audioChunks = [];
+
+      if (state.pendingExamFinalize) {
+        await finalizePendingExamIfNeeded();
+        return;
+      }
+
       setQuestionListLocked(false);
       showScreen('selection');
       setAnswerUIState('interaction');
-      state.currentQuestion = null;
       return;
     }
 
     if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
       setSubmittingAnswer(false);
       showAlert('Kênh chấm điểm chưa sẵn sàng. Vui lòng thử lại.');
+      state.currentQuestion = null;
+
+      if (state.pendingExamFinalize) {
+        await finalizePendingExamIfNeeded();
+        return;
+      }
+
       setQuestionListLocked(false);
       showScreen('selection');
       setAnswerUIState('interaction');
-      state.currentQuestion = null;
       return;
     }
 
     const { id } = state.currentQuestion;
+    pushGradingLog('Đã gửi yêu cầu bắt đầu stream audio tới worker.');
 
     state.socket.send(JSON.stringify({
       action: 'start_stream',
       session_id: SESSION_ID,
-      question_id: id
+      question_id: id,
+      audio_mime_type: audioMimeType,
+      allow_after_expiry: allowLateAnswerFlush
     }));
 
     state.socket.send(await blob.arrayBuffer());
@@ -650,22 +862,42 @@ document.addEventListener('DOMContentLoaded', () => {
       action: 'end_stream',
       mode: 'main',
       session_id: SESSION_ID,
-      question_id: id
+      question_id: id,
+      audio_mime_type: audioMimeType,
+      allow_after_expiry: allowLateAnswerFlush
     }));
   }
 
-  function blobToWebmFile(blob, fileName) {
-    return new File([blob], fileName, { type: 'audio/webm' });
+  function blobToAudioFile(blob, fileBaseName) {
+    const mimeType = normalizeAudioMimeType(state.currentAudioMimeType || blob?.type);
+    const extension = resolveAudioExtensionFromMime(mimeType);
+    const baseName = String(fileBaseName || 'audio').replace(/\.[^.]+$/, '');
+    const fileName = `${baseName}${extension}`;
+
+    return mimeType
+      ? new File([blob], fileName, { type: mimeType })
+      : new File([blob], fileName);
   }
 
   async function saveResultAudio(questionId) {
     if (!state.currentAudioBlob) return '';
 
-    const file = blobToWebmFile(state.currentAudioBlob, `audio_${SESSION_ID}_${questionId}.webm`);
+    const file = blobToAudioFile(state.currentAudioBlob, `audio_${SESSION_ID}_${questionId}`);
+    console.log('Uploading answer audio', {
+      questionId,
+      fileName: file.name,
+      fileType: file.type,
+      blobType: state.currentAudioBlob.type,
+      audioMimeType: state.currentAudioMimeType,
+      size: file.size,
+    });
     const formData = new FormData();
     formData.append('session_id', SESSION_ID);
     formData.append('question_id', questionId);
     formData.append('audio_file', file);
+    if (shouldAllowLateAnswerFlush()) {
+      formData.append('allow_after_expiry', '1');
+    }
 
     const response = await fetch('{% url "qna:save_exam_result" %}', {
       method: 'POST',
@@ -681,17 +913,52 @@ document.addEventListener('DOMContentLoaded', () => {
     return data.audio_url || '';
   }
 
+  async function handleExamProgress(payload) {
+    applyProgressPayload(payload);
+  }
+
+  async function handleExamError(message) {
+    pushGradingLog(message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
+    setSubmittingAnswer(false);
+    state.currentQuestion = null;
+    state.currentAudioBlob = null;
+    state.audioChunks = [];
+    showAlert(message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
+
+    if (state.pendingExamFinalize) {
+      await finalizePendingExamIfNeeded();
+      return;
+    }
+
+    setQuestionListLocked(false);
+    showScreen('selection');
+    setAnswerUIState('interaction');
+  }
+
   async function handleExamResult(payload) {
     const data = payload.data || {};
 
     if (payload.type === 'main_question_complete') {
+      logTranscriptDebug('exam.result.transcript', data.transcript, data.question_id);
+      applyProgressPayload({
+        stage: 'score_ready',
+        question_id: data.question_id,
+        score: data.score,
+        detail: PROGRESS_STAGE_LABELS.score_ready
+      });
+      applyProgressPayload({
+        stage: 'result_saved',
+        question_id: data.question_id,
+        result_id: data.result_id,
+        detail: `Đã lưu ExamResult #${data.result_id}`
+      });
+
       let localResult = state.mainResults.find(r => r.question_id === data.question_id);
 
       if (!localResult) {
         localResult = {
           question_id: data.question_id,
           score: data.score,
-          transcript: data.transcript,
           feedback: data.feedback,
           analysis: data.analysis || [],
           result_id: data.result_id,
@@ -727,19 +994,25 @@ document.addEventListener('DOMContentLoaded', () => {
       state.currentAudioBlob = null;
       state.audioChunks = [];
 
-      if (state.examFinished) {
-        await finalizeAndShowResult(true, state.forcedFinishReason);
-      } else {
-        setQuestionListLocked(false);
-        showScreen('selection');
-        setAnswerUIState('interaction');
+      if (state.pendingExamFinalize) {
+        await finalizePendingExamIfNeeded();
+        return;
       }
+
+      setQuestionListLocked(false);
+      showScreen('selection');
+      setAnswerUIState('interaction');
     }
   }
 
   async function finalizeAndShowResult(isTimeout = false, forcedNote = '') {
+    if (state.examFinished || state.isFinalizingExam) {
+      return;
+    }
+
     clearInterval(mainTimerInterval);
-    state.examFinished = true;
+    state.isFinalizingExam = true;
+    syncFinishExamButtonState();
     state.totalScoreMain = calculateTotalScoreMain();
     stopMonitoring();
 
@@ -753,6 +1026,14 @@ document.addEventListener('DOMContentLoaded', () => {
       scoreScaleWarning = data.score_scale_warning || '';
     } catch (error) {
       console.error('Finalize error:', error);
+    } finally {
+      state.isFinalizingExam = false;
+      state.examFinished = true;
+      state.exitFinalizeSent = true;
+      state.pendingExamFinalize = false;
+      state.pendingFinalizeIsTimeout = false;
+      setSubmittingAnswer(false);
+      syncFinishExamButtonState();
     }
 
     showFinalResult(isTimeout, forcedNote || state.forcedFinishReason);
@@ -804,10 +1085,9 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.show('finalResultModal');
   }
 
-  function showAnswerDetail({ title, question, transcript, feedback, analysis, score, max, audioUrl }) {
+  function showAnswerDetail({ title, question, feedback, analysis, score, max, audioUrl }) {
     document.getElementById('detailTitle').textContent = title || 'Chi tiết câu trả lời';
     document.getElementById('detailQuestion').textContent = question || '';
-    document.getElementById('detailTranscript').textContent = transcript || 'Chưa có bản ghi';
     document.getElementById('detailFeedback').textContent = feedback || 'Chưa có nhận xét';
 
     const analysisBlock = document.getElementById('detailAnalysisBlock');
@@ -829,9 +1109,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (audioUrl) {
       audioBlock.style.display = 'block';
       audioEl.src = audioUrl;
+      audioEl.load();
     } else {
       audioBlock.style.display = 'none';
       audioEl.removeAttribute('src');
+      audioEl.load();
     }
 
     modal.show('answerDetailModal');
@@ -857,7 +1139,6 @@ document.addEventListener('DOMContentLoaded', () => {
       showAnswerDetail({
         title: `Câu ${question?.order || ''}`,
         question: question?.question_text || '',
-        transcript: result?.transcript || 'Không có câu trả lời',
         feedback: result?.feedback || 'Chưa có nhận xét',
         analysis: result?.analysis || [],
         score: result?.score || 0,
@@ -867,7 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     elements.backBtn.onclick = () => {
-      if (state.mediaRecorder?.state === 'recording' || state.isSubmittingAnswer) return;
+      if (state.mediaRecorder?.state === 'recording' || state.isSubmittingAnswer || state.pendingExamFinalize || state.isFinalizingExam) return;
       state.currentQuestion = null;
       setQuestionListLocked(false);
       showScreen('selection');
@@ -878,11 +1159,28 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnCancelFinish').onclick = () => modal.hide('confirmFinishModal');
 
     document.getElementById('btnConfirmFinish').onclick = async () => {
-      if (state.isSubmittingAnswer || state.mediaRecorder?.state === 'recording') {
-        showAlert('Hãy nộp xong câu hỏi hiện tại trước khi kết thúc bài thi.');
+      if (state.isFinalizingExam) {
         return;
       }
+
+      if (state.isSubmittingAnswer) {
+        showAlert('Hệ thống đang chấm câu hiện tại. Vui lòng chờ hoàn tất trước khi nộp bài.');
+        state.pendingExamFinalize = true;
+        state.pendingFinalizeIsTimeout = false;
+        syncFinishExamButtonState();
+        modal.hide('confirmFinishModal');
+        return;
+      }
+
+      if (state.mediaRecorder?.state === 'recording') {
+        showAlert('Vui lòng dừng ghi âm câu hiện tại trước khi kết thúc bài thi.');
+        return;
+      }
+
       modal.hide('confirmFinishModal');
+      state.pendingExamFinalize = false;
+      state.pendingFinalizeIsTimeout = false;
+      syncFinishExamButtonState();
       await finalizeAndShowResult(false);
     };
 
@@ -901,10 +1199,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.addEventListener('beforeunload', (event) => {
-      if (!state.examFinished && state.hasUnloadGuard) {
+      if (!state.examFinished && !state.isFinalizingExam && state.hasUnloadGuard) {
         event.preventDefault();
         event.returnValue = '';
       }
+    });
+
+    window.addEventListener('pagehide', () => {
+      finalizeSessionInBackground('pagehide');
     });
   }
 
@@ -931,7 +1233,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let multipleFaceTimeout = null;
   let cameraOffTimeout = null;
 
-  function shouldTerminateByViolations() {
+  function hasReachedViolationWarningLimit() {
     return (
       proctoringState.violations.noFace >= PROCTORING_MAX_WARNINGS ||
       proctoringState.violations.multipleFaces >= PROCTORING_MAX_WARNINGS
@@ -1056,10 +1358,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleCameraInterrupted() {
-    if (cameraOffTimeout) return;
+    if (document.hidden || cameraOffTimeout) return;
 
     cameraOffTimeout = setTimeout(() => {
-      if (proctoringState.cameraInterrupted) return;
+      if (document.hidden || proctoringState.cameraInterrupted) {
+        cameraOffTimeout = null;
+        return;
+      }
       proctoringState.cameraInterrupted = true;
 
       if (noFaceTimeout) {
@@ -1070,7 +1375,12 @@ document.addEventListener('DOMContentLoaded', () => {
       proctoringState.violations.noFace++;
       updateViolationDisplay('noface', proctoringState.violations.noFace);
       sendProctoringViolation('CAMERA_OFF', 0);
-      forceExamTermination('Camera bị tắt hoặc ngắt kết nối quá lâu. Bài thi sẽ kết thúc ngay.');
+      showProctoringWarning(
+        hasReachedViolationWarningLimit()
+          ? 'Đã ghi nhận nhiều lần camera bị gián đoạn. Vui lòng bật lại camera và giữ ổn định kết nối.'
+          : 'Camera bị tắt hoặc ngắt kết nối quá lâu. Vui lòng bật lại camera.'
+      );
+      cameraOffTimeout = null;
     }, 3000);
   }
 
@@ -1105,11 +1415,32 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!proctoringState.isMonitoring) return;
 
       try {
+        if (document.hidden) {
+          if (noFaceTimeout) {
+            clearTimeout(noFaceTimeout);
+            noFaceTimeout = null;
+          }
+          if (multipleFaceTimeout) {
+            clearTimeout(multipleFaceTimeout);
+            multipleFaceTimeout = null;
+          }
+          if (cameraOffTimeout) {
+            clearTimeout(cameraOffTimeout);
+            cameraOffTimeout = null;
+          }
+          requestAnimationFrame(monitor);
+          return;
+        }
+
         const videoTrack = proctoringState.stream?.getVideoTracks?.()[0] || null;
         if (!videoTrack || videoTrack.readyState !== 'live' || videoTrack.muted || videoTrack.enabled === false) {
           handleCameraInterrupted();
           requestAnimationFrame(monitor);
           return;
+        }
+
+        if (proctoringState.cameraInterrupted) {
+          proctoringState.cameraInterrupted = false;
         }
 
         const detections = await detectFaces();
@@ -1121,16 +1452,12 @@ document.addEventListener('DOMContentLoaded', () => {
             noFaceTimeout = setTimeout(() => {
               proctoringState.violations.noFace++;
               updateViolationDisplay('noface', proctoringState.violations.noFace);
-
-              if (shouldTerminateByViolations()) {
-                sendProctoringViolation('NO_FACE', 0);
-                noFaceTimeout = null;
-                forceExamTermination('Bạn đã vi phạm quy định giám sát quá nhiều lần.');
-                return;
-              }
-
-              showProctoringWarning('Không phát hiện khuôn mặt trong 4 giây. Vui lòng ngồi trước camera.');
               sendProctoringViolation('NO_FACE', 0);
+              showProctoringWarning(
+                hasReachedViolationWarningLimit()
+                  ? 'Đã ghi nhận nhiều lần không phát hiện khuôn mặt. Vui lòng quay lại vị trí trước camera.'
+                  : 'Không phát hiện khuôn mặt trong 4 giây. Vui lòng ngồi trước camera.'
+              );
               noFaceTimeout = null;
             }, PROCTORING_CONFIG.NO_FACE_THRESHOLD);
           }
@@ -1146,16 +1473,12 @@ document.addEventListener('DOMContentLoaded', () => {
             multipleFaceTimeout = setTimeout(() => {
               proctoringState.violations.multipleFaces++;
               updateViolationDisplay('multiface', proctoringState.violations.multipleFaces);
-
-              if (shouldTerminateByViolations()) {
-                sendProctoringViolation('TWO_FACES', detections.length);
-                multipleFaceTimeout = null;
-                forceExamTermination('Bạn đã vi phạm quy định giám sát quá nhiều lần.');
-                return;
-              }
-
-              showProctoringWarning(`Phát hiện ${detections.length} khuôn mặt. Chỉ được phép 1 người trong khung hình.`);
               sendProctoringViolation('TWO_FACES', detections.length);
+              showProctoringWarning(
+                hasReachedViolationWarningLimit()
+                  ? `Đã ghi nhận nhiều lần phát hiện ${detections.length} khuôn mặt. Chỉ được phép 1 người trong khung hình.`
+                  : `Phát hiện ${detections.length} khuôn mặt. Chỉ được phép 1 người trong khung hình.`
+              );
               multipleFaceTimeout = null;
             }, PROCTORING_CONFIG.MULTIPLE_FACE_COOLDOWN);
           }
@@ -1187,6 +1510,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (proctoringState.stream) proctoringState.stream.getTracks().forEach(track => track.stop());
     if (noFaceTimeout) clearTimeout(noFaceTimeout);
     if (multipleFaceTimeout) clearTimeout(multipleFaceTimeout);
+    if (cameraOffTimeout) clearTimeout(cameraOffTimeout);
+    noFaceTimeout = null;
+    multipleFaceTimeout = null;
+    cameraOffTimeout = null;
+    proctoringState.cameraInterrupted = false;
     const container = document.getElementById('proctoring-container');
     if (container) container.remove();
   }
@@ -1203,6 +1531,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function init() {
     const sidebar = document.getElementById('sidebar');
     if (sidebar) sidebar.classList.add('collapsed');
+    resetGradingProgress();
 
     history.pushState({ examLocked: true }, '', window.location.href);
     window.addEventListener('popstate', () => {

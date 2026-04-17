@@ -60,6 +60,41 @@
     </div>
     {% endfor %}
 </div>
+
+{% if page_obj and page_obj.paginator.num_pages > 1 %}
+<div class="mt-8 bg-white rounded-xl shadow-sm border">
+    <div class="qm2-pagination">
+        <div>
+            Hiển thị <strong style="color:#1f2937;">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+            trong số <strong style="color:#1f2937;">{{ page_obj.paginator.count }}</strong> môn học
+        </div>
+        <div class="qm2-page-controls">
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}" class="qm2-page-btn">
+                    <i class="fas fa-chevron-left" style="font-size:10px;"></i>
+                </a>
+            {% else %}
+                <span class="qm2-page-btn disabled">
+                    <i class="fas fa-chevron-left" style="font-size:10px;"></i>
+                </span>
+            {% endif %}
+
+            <span class="qm2-page-btn active">{{ page_obj.number }}</span>
+
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}" class="qm2-page-btn">
+                    <i class="fas fa-chevron-right" style="font-size:10px;"></i>
+                </a>
+            {% else %}
+                <span class="qm2-page-btn disabled">
+                    <i class="fas fa-chevron-right" style="font-size:10px;"></i>
+                </span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% else %}
 <div class="bg-white rounded-xl shadow-md p-8 text-center">
     <div class="text-gray-400 text-5xl mb-4">
@@ -255,72 +290,58 @@
             button.removeAttribute("href");
             button.setAttribute("aria-disabled", "true");
             button.setAttribute("tabindex", "-1");
-            button.dataset.disabled = "1";
         } else {
+            button.setAttribute("href", entryUrl);
             button.removeAttribute("aria-disabled");
             button.removeAttribute("tabindex");
-            button.dataset.disabled = "0";
-
-            if (entryUrl) {
-                button.setAttribute("href", entryUrl);
-            } else {
-                button.removeAttribute("href");
-            }
         }
     }
 
-    function updateExamCards() {
-        document.querySelectorAll(".exam-card").forEach((card) => {
-            const lockState = (card.dataset.entryLockState || "").toUpperCase();
-            const lockedStatus = lockState && statusMeta[`LOCKED_${lockState}`] ? `LOCKED_${lockState}` : "";
-            const currentStatus = lockedStatus || computeRealtimeStatus(card);
-            const meta = statusMeta[currentStatus] || statusMeta.NONE;
+    function updateCard(card) {
+        const entryLockState = card.dataset.entryLockState || "";
+        const realtimeStatus = computeRealtimeStatus(card);
+        const finalStatus = entryLockState === "STARTED"
+            ? "LOCKED_STARTED"
+            : entryLockState === "COMPLETED"
+            ? "LOCKED_COMPLETED"
+            : realtimeStatus;
 
-            const startTs = Number(card.dataset.startTs || 0);
-            const endTs = Number(card.dataset.endTs || 0);
+        const meta = statusMeta[finalStatus] || statusMeta.NONE;
 
-            const badge = card.querySelector("[data-status-badge]");
-            const badgeIcon = card.querySelector("[data-status-icon]");
-            const badgeLabel = card.querySelector("[data-status-label]");
-            const button = card.querySelector("[data-entry-button]");
-            const liveNote = card.querySelector("[data-live-note]");
+        const badge = card.querySelector("[data-status-badge]");
+        const badgeIcon = card.querySelector("[data-status-icon]");
+        const badgeLabel = card.querySelector("[data-status-label]");
+        const button = card.querySelector("[data-entry-button]");
+        const liveNote = card.querySelector("[data-live-note]");
 
-            if (badge) {
-                badge.className = `${meta.badgeClass} px-3 py-1 rounded-full text-xs font-semibold flex items-center`;
-            }
-
-            if (badgeIcon) {
-                badgeIcon.className = `fas ${meta.icon} mr-1`;
-            }
-
-            if (badgeLabel) {
-                badgeLabel.textContent = meta.label;
-            }
-
-            if (button) {
-                applyButtonState(button, meta, lockedStatus ? "" : (card.dataset.entryUrl || ""));
-            }
-
-            if (liveNote) {
-                const liveNoteText = buildLiveNote(currentStatus, startTs, endTs);
-                liveNote.textContent = liveNoteText;
-                liveNote.classList.toggle("hidden", !liveNoteText);
-            }
-        });
-    }
-
-    document.addEventListener("click", (event) => {
-        const disabledLink = event.target.closest("[data-entry-button][data-disabled='1']");
-        if (disabledLink) {
-            event.preventDefault();
+        if (badge) {
+            badge.className = `${meta.badgeClass} px-3 py-1 rounded-full text-xs font-semibold flex items-center`;
         }
-    });
-
-    updateExamCards();
-
-    if (document.querySelectorAll(".exam-card").length) {
-        window.setInterval(updateExamCards, 1000);
+        if (badgeIcon) {
+            badgeIcon.className = `fas ${meta.icon} mr-1`;
+        }
+        if (badgeLabel) {
+            badgeLabel.textContent = meta.label;
+        }
+        if (button) {
+            applyButtonState(button, meta, card.dataset.entryUrl);
+        }
+        if (liveNote) {
+            const note = buildLiveNote(finalStatus, Number(card.dataset.startTs || 0), Number(card.dataset.endTs || 0));
+            liveNote.textContent = note;
+            liveNote.classList.toggle("hidden", !note);
+        }
     }
+
+    const cards = document.querySelectorAll(".exam-card");
+    if (!cards.length) {
+        return;
+    }
+
+    cards.forEach(updateCard);
+    setInterval(() => {
+        cards.forEach(updateCard);
+    }, 1000);
 })();
 </script>
 {% endblock %}

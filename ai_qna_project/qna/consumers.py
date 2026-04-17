@@ -4,23 +4,14 @@ import logging
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
-from django.utils import timezone
 
+from .exam_runtime import is_exam_group_open, should_mark_lecturer_cheating_flag
 from .models import ExamSession, ViolationImage
 
 logger = logging.getLogger(__name__)
 
-
-def _is_exam_group_open(exam_group):
-    if not exam_group or exam_group.status == "CANCELLED":
-        return False
-    now = timezone.now()
-    start_at = getattr(exam_group, "start_at", None)
-    end_at = getattr(exam_group, "end_at", None)
-    if not start_at or not end_at:
-        return False
-    return start_at <= now <= end_at
-
+ASR_TASK_CHANNEL = "asr-tasks"
+CHUNK_LOG_INTERVAL = 25
 
 def _session_is_valid_for_exam(session):
     if not session:
@@ -37,7 +28,7 @@ def _session_is_valid_for_exam(session):
         return False
 
     exam_group = getattr(session, "exam_session_group_id", None) or getattr(session, "exam_session_group", None)
-    return _is_exam_group_open(exam_group)
+    return is_exam_group_open(exam_group)
 
 
 class ExamConsumer(AsyncWebsocketConsumer):
@@ -67,6 +58,10 @@ class ExamConsumer(AsyncWebsocketConsumer):
         if not is_valid:
             await self.close(code=4408)
             return
+
+        self.audio_stream_started = False
+        self.audio_chunk_count = 0
+        self.current_audio_question_id = None
 
         self.room_group_name = f"exam_{self.session_id}"
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -106,28 +101,60 @@ class ExamConsumer(AsyncWebsocketConsumer):
                 normalized_action = "violation"
 
             if normalized_action == "start_stream":
+                question_id = data.get("question_id")
+                audio_mime_type = data.get("audio_mime_type") or ""
+                self.audio_stream_started = True
+                self.audio_chunk_count = 0
+                self.current_audio_question_id = question_id
+                logger.info(
+                    "[WS->Redis] Gửi asr.stream.start: target=%s reply_channel=%s session_id=%s question_id=%s audio_mime_type=%s",
+                    ASR_TASK_CHANNEL,
+                    self.channel_name,
+                    self.session_id,
+                    question_id,
+                    audio_mime_type,
+                )
                 await self.channel_layer.send(
-                    "asr_worker",
+                    ASR_TASK_CHANNEL,
                     {
                         "type": "asr.stream.start",
                         "session_id": self.session_id,
-                        "question_id": data.get("question_id"),
+                        "question_id": question_id,
+                        "audio_mime_type": audio_mime_type,
                         "reply_channel": self.channel_name,
                     },
                 )
                 return
 
             if normalized_action == "end_stream":
+                question_id = data.get("question_id") or self.current_audio_question_id
+                mode = data.get("mode", "main")
+                audio_mime_type = data.get("audio_mime_type") or ""
+                logger.info(
+                    "[WS->Redis] Gửi asr.stream.end: target=%s reply_channel=%s session_id=%s question_id=%s mode=%s chunk_count=%s stream_started=%s audio_mime_type=%s",
+                    ASR_TASK_CHANNEL,
+                    self.channel_name,
+                    self.session_id,
+                    question_id,
+                    mode,
+                    self.audio_chunk_count,
+                    self.audio_stream_started,
+                    audio_mime_type,
+                )
                 await self.channel_layer.send(
-                    "asr_worker",
+                    ASR_TASK_CHANNEL,
                     {
                         "type": "asr.stream.end",
                         "session_id": self.session_id,
-                        "question_id": data.get("question_id"),
-                        "mode": data.get("mode", "main"),
+                        "question_id": question_id,
+                        "mode": mode,
+                        "audio_mime_type": audio_mime_type,
                         "reply_channel": self.channel_name,
                     },
                 )
+                self.audio_stream_started = False
+                self.audio_chunk_count = 0
+                self.current_audio_question_id = None
                 return
 
             if normalized_action == "violation":
@@ -135,18 +162,41 @@ class ExamConsumer(AsyncWebsocketConsumer):
                 image_data_url = data.get("image") or data.get("image_base64")
                 if violation_type and image_data_url:
                     await self.save_violation_image(violation_type, image_data_url)
-                    await self.mark_session_cheating()
+                    await self.mark_session_cheating(violation_type)
                 return
 
             logger.warning("Unsupported websocket message: %s", data)
             return
 
         if bytes_data:
+            self.audio_chunk_count += 1
+            chunk_index = self.audio_chunk_count
+            if not self.audio_stream_started:
+                logger.warning(
+                    "[WS->Redis] Nhận audio chunk trước start_stream: reply_channel=%s session_id=%s question_id=%s chunk_bytes=%s",
+                    self.channel_name,
+                    self.session_id,
+                    self.current_audio_question_id,
+                    len(bytes_data),
+                )
+            if chunk_index == 1 or chunk_index % CHUNK_LOG_INTERVAL == 0:
+                logger.info(
+                    "[WS->Redis] Gửi asr.chunk: target=%s reply_channel=%s session_id=%s question_id=%s chunk_index=%s chunk_bytes=%s stream_started=%s",
+                    ASR_TASK_CHANNEL,
+                    self.channel_name,
+                    self.session_id,
+                    self.current_audio_question_id,
+                    chunk_index,
+                    len(bytes_data),
+                    self.audio_stream_started,
+                )
             await self.channel_layer.send(
-                "asr_worker",
+                ASR_TASK_CHANNEL,
                 {
                     "type": "asr.chunk",
                     "audio_chunk": bytes_data,
+                    "session_id": self.session_id,
+                    "question_id": self.current_audio_question_id,
                     "reply_channel": self.channel_name,
                 },
             )
@@ -168,12 +218,36 @@ class ExamConsumer(AsyncWebsocketConsumer):
             logger.exception("Error saving violation image for session %s", self.session_id)
 
     @sync_to_async
-    def mark_session_cheating(self):
+    def mark_session_cheating(self, violation_type):
+        if not should_mark_lecturer_cheating_flag(violation_type) or self.session.cheating_flag:
+            return
         self.session.cheating_flag = True
         self.session.save(update_fields=["cheating_flag"])
 
     async def exam_result(self, event):
+        logger.info(
+            "[Redis->WS] Gửi exam.result tới browser: session_id=%s question_id=%s result_type=%s",
+            self.session_id,
+            event.get("message", {}).get("data", {}).get("question_id"),
+            event.get("message", {}).get("type"),
+        )
         await self.send(text_data=json.dumps({"type": "exam.result", "message": event["message"]}))
 
     async def exam_error(self, event):
+        logger.warning(
+            "[Redis->WS] Gửi exam.error tới browser: session_id=%s message=%s",
+            self.session_id,
+            event.get("message"),
+        )
         await self.send(text_data=json.dumps({"type": "exam.error", "message": event["message"]}))
+
+    async def exam_progress(self, event):
+        payload = event.get("message", {})
+        logger.info(
+            "[Redis->WS] Gửi exam.progress tới browser: session_id=%s question_id=%s stage=%s detail=%s",
+            self.session_id,
+            payload.get("question_id"),
+            payload.get("stage"),
+            payload.get("detail"),
+        )
+        await self.send(text_data=json.dumps({"type": "exam.progress", "message": payload}))

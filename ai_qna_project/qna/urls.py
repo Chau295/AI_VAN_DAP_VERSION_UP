@@ -7,6 +7,7 @@ app_name = "qna"
 
 urlpatterns = [
     path("", views.root_redirect, name="root"),
+    path("media/student_audio/<path:relative_path>", views.serve_student_audio_media, name="serve_student_audio_media"),
 
     path("student/dashboard/", views.dashboard_view, name="dashboard"),
     path("student/exam_page/<str:subject_code>/", views.exam_page_view, name="exam_page"),

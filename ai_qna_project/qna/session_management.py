@@ -37,6 +37,9 @@ from .models import (
     StudentRosterUpload,
     Subject,
 )
+
+LIST_PAGE_SIZE = 8
+
 from .student_accounts import normalize_student_code
 
 User = get_user_model()
@@ -905,7 +908,7 @@ def lecturer_exam_sessions_list(request):
         reverse=True,
     )
 
-    paginator = Paginator(filtered_groups, 10)
+    paginator = Paginator(filtered_groups, LIST_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
 
     # Add timestamps for realtime updates
@@ -984,7 +987,7 @@ def lecturer_exam_session_common_list_screen(request, exam_group_id):
     if room_filter:
         student_rows = [item for item in student_rows if item["room_name"] == room_filter]
 
-    paginator = Paginator(student_rows, 5)
+    paginator = Paginator(student_rows, LIST_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
 
     context = {

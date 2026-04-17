@@ -1,5 +1,4 @@
 {% load static %}
-<!DOCTYPE html>
 <html lang="vi" class="h-full">
 <head>
     <meta charset="UTF-8">
@@ -75,10 +74,96 @@
                 margin-left: 0;
             }
         }
+
+        .global-toast-stack {
+            position: fixed;
+            top: 22px;
+            right: 22px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .global-toast {
+            min-width: 300px;
+            max-width: 420px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: 0 18px 36px rgba(15, 23, 42, .14);
+            border-left: 4px solid #22c55e;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            font-weight: 600;
+            color: #1f2937;
+            pointer-events: auto;
+            animation: globalToastIn 0.25s ease;
+        }
+
+        .global-toast.success {
+            border-left-color: #22c55e;
+        }
+
+        .global-toast.error {
+            border-left-color: #ef4444;
+        }
+
+        .global-toast.warning {
+            border-left-color: #f59e0b;
+        }
+
+        .global-toast.info {
+            border-left-color: #3b82f6;
+        }
+
+        .global-toast-close {
+            border: 0;
+            background: transparent;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .global-toast-close:hover {
+            color: #334155;
+        }
+
+        @keyframes globalToastIn {
+            from {
+                opacity: 0;
+                transform: translateX(24px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .global-toast-stack {
+                top: 16px;
+                left: 16px;
+                right: 16px;
+            }
+
+            .global-toast {
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+            }
+        }
+
     </style>
 </head>
 <body class="bg-gray-100 font-sans h-full">
     <div class="flex h-screen overflow-hidden">
+        {% if user.is_authenticated %}
         <aside id="sidebar" class="w-64 bg-blue-800 text-gray-200 flex flex-col flex-shrink-0">
             <div class="p-6 flex items-center justify-center border-b border-orange-500">
                 <img src="{% static 'images/logo.jpg' %}" alt="Logo" class="w-10 h-10 mr-3 rounded-md object-cover">
@@ -157,24 +242,11 @@
                         <span class="ml-3">Ca thi</span>
                     </a>
 
-                    <div>
-                        <button type="button"
-                                onclick="toggleSubmenu('resultMenu')"
-                                class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 text-left {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}bg-blue-700{% endif %}">
-                            <div class="flex items-center">
-                                <i class="fas fa-chart-bar w-6 text-gray-300"></i>
-                                <span class="ml-3">Kết quả</span>
-                            </div>
-                            <i class="fas fa-chevron-down text-gray-400 transition-transform {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}rotate-180{% endif %}" id="resultMenuArrow"></i>
-                        </button>
-
-                        <div id="resultMenu" class="submenu ml-6 space-y-1 {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}open{% endif %}">
-                            <a href="{% url 'qna:lecturer_student_review_screen' %}"
-                               class="submenu-link block px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-blue-700 transition-colors {% if request.resolver_match.url_name == 'lecturer_student_review_screen' %}active{% endif %}">
-                                <i class="fas fa-user-graduate w-5 mr-2"></i>Xem bài làm sinh viên
-                            </a>
-                        </div>
-                    </div>
+                    <a href="{% url 'qna:lecturer_student_review_screen' %}"
+                       class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_student_review_screen' or request.resolver_match.url_name == 'lecturer_session_detail' %}active{% endif %}">
+                        <i class="fas fa-chart-bar w-6 text-gray-300"></i>
+                        <span class="ml-3">Kết quả</span>
+                    </a>
 
                     <a href="{% url 'qna:lecturer_profile' %}"
                        class="sidebar-link flex items-center px-4 py-3 rounded-lg transition-colors hover:bg-blue-700 {% if request.resolver_match.url_name == 'lecturer_profile' %}active{% endif %}">
@@ -213,33 +285,31 @@
                 </form>
             </div>
         </aside>
+        {% endif %}
 
-        <main class="flex-1 p-6 md:p-10 overflow-y-auto relative">
+        <main id="page-scroll-container" class="flex-1 overflow-y-auto relative {% if user.is_authenticated %}p-6 md:p-10{% endif %}">
+            {% if user.is_authenticated %}
             <button
                 type="button"
                 onclick="toggleMobileMenu()"
                 class="mobile-menu-btn fixed top-4 left-4 z-50 bg-blue-800 text-white p-3 rounded-lg shadow-lg hover:bg-blue-700">
                 <i class="fas fa-bars text-xl"></i>
             </button>
+            {% endif %}
 
-            {% if messages %}
-                <div class="mb-6 space-y-3">
+            <div class="global-toast-stack" id="globalToastStack" aria-live="polite" aria-atomic="true">
+                {% if messages %}
                     {% for message in messages %}
-                        <div class="rounded-lg px-4 py-3 border
-                            {% if message.tags == 'error' %}
-                                bg-red-50 text-red-700 border-red-200
-                            {% elif message.tags == 'warning' %}
-                                bg-yellow-50 text-yellow-800 border-yellow-200
-                            {% elif message.tags == 'success' %}
-                                bg-green-50 text-green-700 border-green-200
-                            {% else %}
-                                bg-blue-50 text-blue-700 border-blue-200
-                            {% endif %}">
-                            {{ message }}
+                        <div
+                            class="global-toast {% if 'error' in message.tags %}error{% elif 'warning' in message.tags %}warning{% elif 'info' in message.tags %}info{% else %}success{% endif %}"
+                            data-global-toast
+                        >
+                            <div>{{ message }}</div>
+                            <button type="button" class="global-toast-close" aria-label="Đóng">&times;</button>
                         </div>
                     {% endfor %}
-                </div>
-            {% endif %}
+                {% endif %}
+            </div>
 
             {% block content %}{% endblock %}
         </main>
@@ -248,17 +318,6 @@
     {% block extra_js %}{% endblock %}
 
     <script>
-        function toggleSubmenu(menuId) {
-            const menu = document.getElementById(menuId);
-            const arrow = document.getElementById(menuId + 'Arrow');
-            if (!menu) return;
-
-            menu.classList.toggle('open');
-            if (arrow) {
-                arrow.classList.toggle('rotate-180');
-            }
-        }
-
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
@@ -295,6 +354,281 @@
                 if (icon) icon.classList.remove('rotate-180');
             }
         }
+
+        (function () {
+            const scrollContainerId = "page-scroll-container";
+            const ajaxHeader = { "X-Requested-With": "XMLHttpRequest" };
+            const loadingClassList = ["opacity-60", "pointer-events-none"];
+
+            function getScrollContainer() {
+                return document.getElementById(scrollContainerId);
+            }
+
+            function getMainContainer() {
+                return document.getElementById(scrollContainerId);
+            }
+
+            function setLoading(el, isLoading) {
+                if (!el) return;
+                loadingClassList.forEach(cls => {
+                    el.classList.toggle(cls, isLoading);
+                });
+            }
+
+            function getPanelIdentity(panel) {
+                if (!panel) return null;
+                return panel.getAttribute("data-paginated-panel");
+            }
+
+            function findMatchingPanel(doc, panelName) {
+                if (!panelName) return null;
+                return doc.querySelector(`[data-paginated-panel="${panelName}"]`);
+            }
+
+            function executeInlineScripts(container) {
+                if (!container) return;
+
+                const scripts = container.querySelectorAll("script");
+                scripts.forEach((oldScript) => {
+                    const newScript = document.createElement("script");
+
+                    for (const attr of oldScript.attributes) {
+                        newScript.setAttribute(attr.name, attr.value);
+                    }
+
+                    if (oldScript.textContent) {
+                        newScript.textContent = oldScript.textContent;
+                    }
+
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
+            }
+
+            async function fetchHtml(url) {
+                const response = await fetch(url, {
+                    headers: ajaxHeader,
+                    credentials: "same-origin"
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                return await response.text();
+            }
+
+            function parseHtml(html) {
+                return new DOMParser().parseFromString(html, "text/html");
+            }
+
+            async function replaceOnlyPanel(url, clickedLink) {
+                const currentPanel =
+                    clickedLink.closest("[data-paginated-panel]") ||
+                    document.querySelector("[data-paginated-panel]");
+
+                if (!currentPanel) {
+                    return false;
+                }
+
+                const panelName = getPanelIdentity(currentPanel);
+                if (!panelName) {
+                    return false;
+                }
+
+                const scrollContainer = getScrollContainer();
+                const currentScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+
+                setLoading(currentPanel, true);
+
+                try {
+                    const html = await fetchHtml(url);
+                    const doc = parseHtml(html);
+                    const nextPanel = findMatchingPanel(doc, panelName);
+
+                    if (!nextPanel) {
+                        return false;
+                    }
+
+                    currentPanel.innerHTML = nextPanel.innerHTML;
+                    executeInlineScripts(currentPanel);
+
+                    if (window.history && window.history.pushState) {
+                        window.history.pushState(
+                            { ajaxPaginator: true, url: url, panel: panelName },
+                            "",
+                            url
+                        );
+                    }
+
+                    if (scrollContainer) {
+                        requestAnimationFrame(() => {
+                            scrollContainer.scrollTop = currentScrollTop;
+                        });
+                    }
+
+                    return true;
+                } catch (error) {
+                    console.error("AJAX panel pagination error:", error);
+                    return false;
+                } finally {
+                    setLoading(currentPanel, false);
+                }
+            }
+
+            async function replaceMainContent(url) {
+                const main = getMainContainer();
+                if (!main) {
+                    window.location.href = url;
+                    return;
+                }
+
+                const currentScrollTop = main.scrollTop;
+                setLoading(main, true);
+
+                try {
+                    const html = await fetchHtml(url);
+                    const doc = parseHtml(html);
+                    const nextMain = doc.getElementById(scrollContainerId);
+
+                    if (!nextMain) {
+                        window.location.href = url;
+                        return;
+                    }
+
+                    main.innerHTML = nextMain.innerHTML;
+                    executeInlineScripts(main);
+                    if (typeof window.initGlobalToasts === "function") {
+                        window.initGlobalToasts(main);
+                    }
+
+                    if (window.history && window.history.pushState) {
+                        window.history.pushState(
+                            { ajaxPaginator: true, url: url, panel: null },
+                            "",
+                            url
+                        );
+                    }
+
+                    requestAnimationFrame(() => {
+                        main.scrollTop = currentScrollTop;
+                    });
+                } catch (error) {
+                    console.error("AJAX main pagination error:", error);
+                    window.location.href = url;
+                } finally {
+                    setLoading(main, false);
+                }
+            }
+
+            document.addEventListener("click", async function (event) {
+                const pageLink = event.target.closest("a.qm2-page-btn");
+                if (!pageLink) return;
+
+                const url = pageLink.getAttribute("href");
+                if (!url) return;
+
+                event.preventDefault();
+
+                const replacedPanel = await replaceOnlyPanel(url, pageLink);
+                if (!replacedPanel) {
+                    await replaceMainContent(url);
+                }
+            });
+
+            window.addEventListener("popstate", async function () {
+                if (!window.location.href) return;
+
+                const anyPanel = document.querySelector("[data-paginated-panel]");
+                if (anyPanel) {
+                    const fakeLink = document.createElement("a");
+                    fakeLink.setAttribute("href", window.location.href);
+                    fakeLink.closest = function (selector) {
+                        if (selector === "[data-paginated-panel]") {
+                            return anyPanel;
+                        }
+                        return null;
+                    };
+
+                    const ok = await replaceOnlyPanel(window.location.href, fakeLink);
+                    if (ok) return;
+                }
+
+                await replaceMainContent(window.location.href);
+            });
+        })();
+
+        (function () {
+            function normalizeToastType(type) {
+                return ["error", "warning", "info"].includes(type) ? type : "success";
+            }
+
+            function removeToast(toast) {
+                if (!toast || toast.dataset.globalToastRemoving === "true") {
+                    return;
+                }
+
+                toast.dataset.globalToastRemoving = "true";
+                toast.style.opacity = "0";
+                toast.style.transform = "translateX(24px)";
+                toast.style.transition = "all 0.22s ease";
+                window.setTimeout(() => {
+                    toast.remove();
+                }, 220);
+            }
+
+            function bindToast(toast) {
+                if (!toast || toast.dataset.globalToastBound === "true") {
+                    return;
+                }
+
+                toast.dataset.globalToastBound = "true";
+                const closeBtn = toast.querySelector(".global-toast-close");
+                const dismiss = () => removeToast(toast);
+
+                if (closeBtn) {
+                    closeBtn.addEventListener("click", dismiss);
+                }
+
+                window.setTimeout(dismiss, 4000);
+            }
+
+            function createToast(message, type) {
+                const toast = document.createElement("div");
+                toast.className = `global-toast ${normalizeToastType(type)}`;
+                toast.setAttribute("data-global-toast", "");
+
+                const content = document.createElement("div");
+                content.textContent = message;
+
+                const closeBtn = document.createElement("button");
+                closeBtn.type = "button";
+                closeBtn.className = "global-toast-close";
+                closeBtn.setAttribute("aria-label", "Đóng");
+                closeBtn.innerHTML = "&times;";
+
+                toast.appendChild(content);
+                toast.appendChild(closeBtn);
+                return toast;
+            }
+
+            window.initGlobalToasts = function (root = document) {
+                root.querySelectorAll("[data-global-toast]").forEach(bindToast);
+            };
+
+            window.showGlobalToast = function (message, type = "success") {
+                const stack = document.getElementById("globalToastStack");
+                if (!stack || !message) {
+                    return null;
+                }
+
+                const toast = createToast(message, type);
+                stack.appendChild(toast);
+                bindToast(toast);
+                return toast;
+            };
+
+            window.initGlobalToasts(document);
+        })();
     </script>
 </body>
 </html>

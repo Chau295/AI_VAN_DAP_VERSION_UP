@@ -1,4 +1,5 @@
 ﻿from datetime import timedelta
+from pathlib import Path
 import re
 import unicodedata
 
@@ -40,6 +41,47 @@ def normalize_question_text(value: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = re.sub(r"\s+", " ", text)
     return text
+
+
+AUDIO_MIME_TYPE_BY_EXTENSION = {
+    ".aac": "audio/aac",
+    ".m4a": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+}
+
+AUDIO_EXTENSION_BY_MIME_TYPE = {
+    "audio/aac": ".m4a",
+    "audio/mp3": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/wav": ".wav",
+    "audio/webm": ".webm",
+    "audio/x-m4a": ".m4a",
+    "audio/x-wav": ".wav",
+}
+
+
+def resolve_audio_mime_type(file_name: str) -> str:
+    extension = Path(file_name or "").suffix.lower()
+    return AUDIO_MIME_TYPE_BY_EXTENSION.get(extension, "")
+
+
+def resolve_uploaded_audio_extension(file_name: str, content_type: str = "") -> str:
+    extension = Path(file_name or "").suffix.lower()
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    resolved_extension = AUDIO_EXTENSION_BY_MIME_TYPE.get(normalized_content_type, "")
+
+    if resolved_extension:
+        return resolved_extension
+
+    if extension in AUDIO_MIME_TYPE_BY_EXTENSION:
+        return extension
+
+    return ".webm"
 
 
 class Subject(models.Model):
@@ -924,7 +966,40 @@ class ExamSession(models.Model):
 
     @property
     def is_completed(self):
-        return self.session_status == "COMPLETED"
+        return self.session_status == "COMPLETED" or self.completed_at is not None
+
+    def has_started_attempt(self):
+        if self.is_completed:
+            return True
+
+        has_results = False
+        if getattr(self, "pk", None):
+            has_results = self.results.exists()
+
+        return bool(
+            self.started_at
+            or self.session_status == "STARTED"
+            or has_results
+        )
+
+    def resolve_display_status(self, *, allow_in_progress=True):
+        if self.is_completed:
+            return "COMPLETED"
+
+        exam_group = getattr(self, "exam_session_group_id", None) or getattr(self, "exam_group", None)
+        exam_group_closed = bool(
+            exam_group and getattr(exam_group, "computed_status", None) in {"COMPLETED", "CANCELLED"}
+        )
+
+        if self.has_started_attempt():
+            if exam_group_closed or not allow_in_progress:
+                return "COMPLETED"
+            return "IN_PROGRESS"
+
+        if exam_group_closed:
+            return "ABSENT"
+
+        return "IN_PROGRESS"
 
     @property
     def exam_group(self):
@@ -936,15 +1011,7 @@ class ExamSession(models.Model):
 
     @property
     def display_status(self):
-        if self.session_status == "COMPLETED":
-            return "COMPLETED"
-
-        exam_group = getattr(self, "exam_session_group_id", None) or getattr(self, "exam_group", None)
-        if exam_group and getattr(exam_group, "computed_status", None) == "COMPLETED":
-            answered_count = self.results.count() if hasattr(self, "results") else 0
-            return "ENDED" if answered_count > 0 else "ABSENT"
-
-        return "IN_PROGRESS"
+        return self.resolve_display_status(allow_in_progress=False)
 
     @property
     def calculated_final_score(self):
@@ -972,7 +1039,7 @@ class ExamResult(models.Model):
         upload_to="student_audio/%Y/%m/",
         null=True,
         blank=True,
-        verbose_name="File ghi âm MP3"
+        verbose_name="File ghi âm"
     )
     answered_at = models.DateTimeField(auto_now_add=True)
 
@@ -993,6 +1060,18 @@ class ExamResult(models.Model):
     @property
     def id(self):
         return self.exam_result_id
+
+    @property
+    def audio_display_name(self):
+        if not self.audio_file:
+            return ""
+        return Path(self.audio_file.name).name
+
+    @property
+    def audio_mime_type(self):
+        if not self.audio_file:
+            return ""
+        return resolve_audio_mime_type(self.audio_file.name)
 
     @property
     def session(self):

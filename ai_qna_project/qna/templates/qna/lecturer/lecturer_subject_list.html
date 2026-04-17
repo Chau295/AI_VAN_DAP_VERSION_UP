@@ -109,9 +109,12 @@ if (window.history.length > 1) {
         </div>
     </div>
     {% else %}
-    <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4" role="alert">
-        <p class="font-bold">Chưa có môn học</p>
-        <p>Bạn chưa được phân công giảng dạy môn học nào. Vui lòng liên hệ quản trị viên để được hỗ trợ.</p>
+    <div class="max-w-2xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm px-8 py-10 text-center">
+        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+            <i class="fas fa-book-open text-xl"></i>
+        </div>
+        <p class="text-xl font-semibold text-slate-900">Chưa có môn học</p>
+        <p class="mt-2 text-slate-600">Bạn chưa được phân công giảng dạy môn học nào. Vui lòng liên hệ quản trị viên để được hỗ trợ.</p>
     </div>
     {% endif %}
 </div>

@@ -792,14 +792,6 @@
   dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
   input.addEventListener('change', event => addFiles(event.target.files));
 
-  window.addEventListener('load', () => {
-    {% if messages %}
-      {% for message in messages %}
-        toast('Hệ thống', '{{ message|escapejs }}', {% if message.tags == 'error' %}true{% else %}false{% endif %});
-      {% endfor %}
-    {% endif %}
-  });
-
   render();
 })();
 </script>

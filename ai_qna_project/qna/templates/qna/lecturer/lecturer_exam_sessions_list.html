@@ -298,68 +298,50 @@
     color: var(--session-text);
   }
 
-  .pagination {
-    display: inline-flex;
+  .qm2-pagination {
+    display: flex;
     align-items: center;
-    gap: 0.35rem;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border, #e6ebf2);
+    font-size: 13px;
+    color: var(--muted, #7a8699);
+    background: #fff;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 
-  .pagination a,
-  .pagination span {
-    width: 34px;
-    height: 34px;
-    border: 1px solid #d8e0eb;
+  .qm2-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .qm2-page-btn {
+    width: 30px;
+    height: 30px;
     border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #475569;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #fff;
-    color: #5b6574;
-    text-decoration: none;
-    font-weight: 700;
-  }
-
-  .pagination .active {
-    background: var(--session-blue);
-    border-color: var(--session-blue);
-    color: #fff;
-  }
-
-  .session-toast-stack {
-    position: fixed;
-    top: 1.55rem;
-    right: 1.65rem;
-    display: grid;
-    gap: 0.75rem;
-    z-index: 70;
-  }
-
-  .session-toast {
-    min-width: 320px;
-    max-width: 420px;
-    padding: 0.9rem 1rem 0.9rem 0.95rem;
-    border-radius: 12px;
-    background: #fff;
-    box-shadow: var(--session-shadow);
-    border-left: 5px solid #22c55e;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .session-toast.error {
-    border-left-color: #dc2626;
-  }
-
-  .session-toast button {
-    border: 0;
-    background: transparent;
-    color: #9aa6b8;
     cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
+    font-weight: 600;
+    text-decoration: none;
   }
+
+  .qm2-page-btn:hover { background: #f1f5f9; }
+  .qm2-page-btn.active { background: var(--blue, #1f6feb); color: #fff; }
+  .qm2-page-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    transform: none;
+  }
+
+
 
   @media (max-width: 1024px) {
     .session-page {
@@ -400,19 +382,6 @@
 </style>
 
 <div class="session-page">
-  {% if messages %}
-    <div class="session-toast-stack">
-      {% for message in messages %}
-        <div class="session-toast {% if message.tags == 'error' %}error{% endif %}" data-session-toast>
-          <div>{{ message }}</div>
-          <button type="button" aria-label="Đóng" data-close-session-toast>
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-      {% endfor %}
-    </div>
-  {% endif %}
-
   <div class="session-shell">
     <div class="session-breadcrumb">
       <span>Quản lý ca thi</span>
@@ -538,44 +507,35 @@
         {% endif %}
       </div>
 
-      <div class="session-footer">
+      <div class="qm2-pagination">
         <div>
           Hiển thị
           {% if page_obj.paginator.count %}
-            <strong>{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+            <strong style="color: var(--session-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
           {% else %}
-            <strong>0</strong>
+            <strong style="color: var(--session-text);">0</strong>
           {% endif %}
-          trong <strong>{{ page_obj.paginator.count }}</strong> ca thi
+          trong số <strong style="color: var(--session-text);">{{ page_obj.paginator.count }}</strong> ca thi
         </div>
+        <div class="qm2-page-controls">
+          {% if page_obj.has_previous %}
+            <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}">
+              <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
+            </a>
+          {% else %}
+            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+          {% endif %}
 
-        {% if page_obj.paginator.num_pages > 1 %}
-          <div class="pagination">
-            {% if page_obj.has_previous %}
-              <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}">
-                <i class="fas fa-chevron-left"></i>
-              </a>
-            {% else %}
-              <span><i class="fas fa-chevron-left"></i></span>
-            {% endif %}
+          <span class="qm2-page-btn active">{{ page_obj.number }}</span>
 
-            {% for page_number in page_obj.paginator.page_range %}
-              {% if page_number == page_obj.number %}
-                <span class="active">{{ page_number }}</span>
-              {% elif page_number >= page_obj.number|add:-1 and page_number <= page_obj.number|add:1 %}
-                <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_number }}">{{ page_number }}</a>
-              {% endif %}
-            {% endfor %}
-
-            {% if page_obj.has_next %}
-              <a href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}">
-                <i class="fas fa-chevron-right"></i>
-              </a>
-            {% else %}
-              <span><i class="fas fa-chevron-right"></i></span>
-            {% endif %}
-          </div>
-        {% endif %}
+          {% if page_obj.has_next %}
+            <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}">
+              <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
+            </a>
+          {% else %}
+            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
@@ -692,21 +652,6 @@
       }
     });
   }
-
-  document.querySelectorAll("[data-session-toast]").forEach((toast) => {
-    window.setTimeout(() => {
-      toast.remove();
-    }, 5000);
-  });
-
-  document.querySelectorAll("[data-close-session-toast]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const toast = button.closest("[data-session-toast]");
-      if (toast) {
-        toast.remove();
-      }
-    });
-  });
 
   updateRealtimeSessionRows();
   if (document.querySelectorAll(".lecturer-exam-row").length) {

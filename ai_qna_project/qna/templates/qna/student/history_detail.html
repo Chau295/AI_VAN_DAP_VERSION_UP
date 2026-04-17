@@ -49,7 +49,7 @@
       </div>
       <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Điểm Tổng Kết</p>
       <p class="text-5xl font-extrabold text-blue-600 my-1">
-        {{ session.calculated_final_score|default:0|floatformat:2 }}{% if session.score_scale_suffix %}<span class="text-3xl font-semibold text-gray-500">{{ session.score_scale_suffix }}</span>{% endif %}
+        {{ session.final_display_score|default:0|floatformat:-2 }}{% if session.final_display_score_suffix %}<span class="text-3xl font-semibold text-gray-500">{{ session.final_display_score_suffix }}</span>{% endif %}
       </p>
     </div>
   </div>
@@ -82,41 +82,27 @@
             </div>
             <div class="flex-shrink-0 text-right bg-white border border-blue-100 px-4 py-2 rounded-lg shadow-sm">
               <p class="text-2xl font-bold text-blue-700 leading-none">
-                {% if item.result %}{{ item.result.score|default:0|floatformat:2 }}{% else %}0.00{% endif %}
-                {% if item.raw_question_score %}<span class="text-sm text-gray-500">/ {{ item.raw_question_score|floatformat:2 }}</span>{% endif %}
+                {{ item.display_score_value|default:0|floatformat:-2 }}
+                {% if item.display_score_suffix %}<span class="text-sm text-gray-500">{{ item.display_score_suffix }}</span>{% endif %}
               </p>
               <p class="text-xs text-blue-500 font-medium">điểm</p>
             </div>
           </div>
 
-          <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-gray-50 rounded-lg p-4">
-              <p class="text-xs font-bold text-gray-400 uppercase mb-2">Trạng thái</p>
-              <p class="text-gray-700">{{ item.status_label }}</p>
-            </div>
-
+          <div class="p-5 grid grid-cols-1 gap-6">
             <div class="bg-gray-50 rounded-lg p-4">
               <p class="text-xs font-bold text-gray-400 uppercase mb-2">Câu trả lời của bạn</p>
               {% if item.result and item.result.transcript %}
-                <p class="text-gray-700 italic">"{{ item.result.transcript }}"</p>
+                <p class="text-gray-700 whitespace-pre-wrap">{{ item.result.transcript }}</p>
               {% else %}
                 <p class="text-gray-400 italic">Không có câu trả lời</p>
               {% endif %}
             </div>
 
             {% if item.result and item.result.feedback %}
-            <div class="bg-blue-50/50 rounded-lg p-4 md:col-span-2">
+            <div class="bg-blue-50/50 rounded-lg p-4">
               <p class="text-xs font-bold text-blue-400 uppercase mb-2">Nhận xét từ hệ thống</p>
               <p class="text-gray-700 text-justify">{{ item.result.feedback }}</p>
-            </div>
-            {% endif %}
-
-            {% if item.result and item.result.audio_file %}
-            <div class="bg-white rounded-lg p-4 border md:col-span-2">
-              <p class="text-xs font-bold text-gray-400 uppercase mb-2">Ghi âm</p>
-              <audio controls class="w-full">
-                <source src="{{ item.result.audio_file.url }}">
-              </audio>
             </div>
             {% endif %}
           </div>

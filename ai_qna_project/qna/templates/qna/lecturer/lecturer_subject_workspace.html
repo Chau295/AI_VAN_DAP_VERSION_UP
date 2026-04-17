@@ -23,7 +23,6 @@
         </div>
     </div>
 
-    <!-- Thống kê nhanh -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
             <div class="flex items-center justify-between">
@@ -53,7 +52,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-gray-500">Ca thi sắp tới</p>
-                    <p class="text-2xl font-bold text-gray-900">{{ upcoming_groups|length }}</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ upcoming_groups_page_obj.paginator.count|default:0 }}</p>
                 </div>
                 <div class="flex-shrink-0">
                     <i class="fas fa-calendar-alt text-purple-500 text-3xl"></i>
@@ -74,7 +73,6 @@
         </div>
     </div>
 
-    <!-- Các hành động nhanh -->
     <div class="bg-white rounded-xl shadow-md p-6 mb-8">
         <h3 class="text-xl font-bold text-gray-800 mb-4">Hành động nhanh</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
@@ -93,172 +91,6 @@
         </div>
     </div>
 
-    {% comment %}
-    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-            <div>
-                <h3 class="text-xl font-bold text-gray-800">Tiến độ tạo tài khoản sinh viên</h3>
-                {% if roster_progress.total_files %}
-                    <p class="text-sm text-gray-500 mt-1">
-                        {% if roster_progress.all_files_completed %}
-                            Tất cả danh sách lớp của môn này đã được cấp đủ tài khoản.
-                        {% else %}
-                            Còn {{ roster_progress.pending_files }} danh sách lớp và {{ roster_progress.pending_accounts }} sinh viên chưa được cấp đủ tài khoản.
-                        {% endif %}
-                    </p>
-                {% else %}
-                    <p class="text-sm text-gray-500 mt-1">Chưa có file danh sách lớp nào được tải lên cho môn này.</p>
-                {% endif %}
-            </div>
-            <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}"
-               class="inline-flex items-center justify-center bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">
-                <i class="fas fa-file-import mr-2"></i>Xem danh sách lớp
-            </a>
-        </div>
-
-        {% if roster_progress.total_files %}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-                    <p class="text-sm font-semibold text-indigo-700">Danh sách lớp đã hoàn tất</p>
-                    <p class="text-2xl font-bold text-indigo-900 mt-2">{{ roster_progress.completed_files }}/{{ roster_progress.total_files }}</p>
-                    <p class="text-sm text-indigo-700 mt-2">Số file danh sách đã có đủ tài khoản cho toàn bộ sinh viên.</p>
-                </div>
-
-                <div class="rounded-xl border border-green-100 bg-green-50 p-4">
-                    <p class="text-sm font-semibold text-green-700">Sinh viên đã sẵn sàng đăng nhập</p>
-                    <p class="text-2xl font-bold text-green-900 mt-2">{{ roster_progress.total_created_accounts }}/{{ roster_progress.total_students }}</p>
-                    <p class="text-sm text-green-700 mt-2">Bao gồm tài khoản mới và tài khoản cũ đã được liên kết.</p>
-                </div>
-
-                <div class="rounded-xl border {% if roster_progress.pending_accounts %}border-orange-100 bg-orange-50{% else %}border-emerald-100 bg-emerald-50{% endif %} p-4">
-                    <p class="text-sm font-semibold {% if roster_progress.pending_accounts %}text-orange-700{% else %}text-emerald-700{% endif %}">Trạng thái hiện tại</p>
-                    <p class="text-2xl font-bold {% if roster_progress.pending_accounts %}text-orange-900{% else %}text-emerald-900{% endif %} mt-2">
-                        {% if roster_progress.pending_accounts %}
-                            Chưa hoàn tất
-                        {% else %}
-                            Đã hoàn tất
-                        {% endif %}
-                    </p>
-                    <p class="text-sm {% if roster_progress.pending_accounts %}text-orange-700{% else %}text-emerald-700{% endif %} mt-2">
-                        {% if roster_progress.pending_accounts %}
-                            Còn {{ roster_progress.pending_accounts }} sinh viên chưa được cấp tài khoản trong môn này.
-                        {% else %}
-                            Trạng thái "Đã tạo" trong danh sách lớp là dấu hiệu để giảng viên nhận biết file đã xong.
-                        {% endif %}
-                    </p>
-                </div>
-            </div>
-
-            {% if recent_completed_rosters %}
-                <div class="mt-5">
-                    <p class="text-sm font-semibold text-gray-700 mb-3">Danh sách lớp hoàn tất gần đây</p>
-                    <div class="space-y-3">
-                        {% for roster in recent_completed_rosters %}
-                            <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}"
-                               class="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
-                                <div>
-                                    <p class="font-semibold text-gray-900">{{ roster.original_file_name }}</p>
-                                    <p class="text-sm text-gray-500">{{ roster.total_students }} sinh viên</p>
-                                </div>
-                                <span class="text-sm font-semibold text-indigo-700">
-                                    {% if roster.account_created_at %}Hoàn tất lúc {{ roster.account_created_at|date:"H:i d/m/Y" }}{% endif %}
-                                </span>
-                            </a>
-                        {% endfor %}
-                    </div>
-                </div>
-            {% endif %}
-        {% else %}
-            <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
-                Tải danh sách lớp lên trước, sau đó hệ thống sẽ hiển thị file nào đã được tạo tất cả tài khoản.
-            </div>
-        {% endif %}
-    </div>
-    {% endcomment %}
-    {% comment %}
-    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-            <div>
-                <h3 class="text-xl font-bold text-gray-800">Tiến độ tạo tài khoản sinh viên</h3>
-                {% if roster_progress.total_files %}
-                    <p class="text-sm text-gray-500 mt-1">
-                        {% if roster_progress.all_files_completed %}
-                            Tất cả danh sách lớp của môn này đã được cấp đủ tài khoản.
-                        {% else %}
-                            Còn {{ roster_progress.pending_files }} danh sách lớp và {{ roster_progress.pending_accounts }} sinh viên chưa được cấp đủ tài khoản.
-                        {% endif %}
-                    </p>
-                {% else %}
-                    <p class="text-sm text-gray-500 mt-1">Chưa có file danh sách lớp nào được tải lên cho môn này.</p>
-                {% endif %}
-            </div>
-            <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}"
-               class="inline-flex items-center justify-center bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">
-                <i class="fas fa-file-import mr-2"></i>Xem danh sách lớp
-            </a>
-        </div>
-
-        {% if roster_progress.total_files %}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-                    <p class="text-sm font-semibold text-indigo-700">Danh sách lớp đã hoàn tất</p>
-                    <p class="text-2xl font-bold text-indigo-900 mt-2">{{ roster_progress.completed_files }}/{{ roster_progress.total_files }}</p>
-                    <p class="text-sm text-indigo-700 mt-2">Số file danh sách đã có đủ tài khoản cho toàn bộ sinh viên.</p>
-                </div>
-
-                <div class="rounded-xl border border-green-100 bg-green-50 p-4">
-                    <p class="text-sm font-semibold text-green-700">Sinh viên đã sẵn sàng đăng nhập</p>
-                    <p class="text-2xl font-bold text-green-900 mt-2">{{ roster_progress.total_created_accounts }}/{{ roster_progress.total_students }}</p>
-                    <p class="text-sm text-green-700 mt-2">Bao gồm tài khoản mới và tài khoản cũ đã được liên kết.</p>
-                </div>
-
-                <div class="rounded-xl border {% if roster_progress.pending_accounts %}border-orange-100 bg-orange-50{% else %}border-emerald-100 bg-emerald-50{% endif %} p-4">
-                    <p class="text-sm font-semibold {% if roster_progress.pending_accounts %}text-orange-700{% else %}text-emerald-700{% endif %}">Trạng thái hiện tại</p>
-                    <p class="text-2xl font-bold {% if roster_progress.pending_accounts %}text-orange-900{% else %}text-emerald-900{% endif %} mt-2">
-                        {% if roster_progress.pending_accounts %}
-                            Chưa hoàn tất
-                        {% else %}
-                            Đã hoàn tất
-                        {% endif %}
-                    </p>
-                    <p class="text-sm {% if roster_progress.pending_accounts %}text-orange-700{% else %}text-emerald-700{% endif %} mt-2">
-                        {% if roster_progress.pending_accounts %}
-                            Còn {{ roster_progress.pending_accounts }} sinh viên chưa được cấp tài khoản trong môn này.
-                        {% else %}
-                            Trạng thái "Đã tạo" trong danh sách lớp là dấu hiệu để giảng viên nhận biết file đã xong.
-                        {% endif %}
-                    </p>
-                </div>
-            </div>
-
-            {% if recent_completed_rosters %}
-                <div class="mt-5">
-                    <p class="text-sm font-semibold text-gray-700 mb-3">Danh sách lớp hoàn tất gần đây</p>
-                    <div class="space-y-3">
-                        {% for roster in recent_completed_rosters %}
-                            <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}"
-                               class="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
-                                <div>
-                                    <p class="font-semibold text-gray-900">{{ roster.original_file_name }}</p>
-                                    <p class="text-sm text-gray-500">{{ roster.total_students }} sinh viên</p>
-                                </div>
-                                <span class="text-sm font-semibold text-indigo-700">
-                                    {% if roster.account_created_at %}Hoàn tất lúc {{ roster.account_created_at|date:"H:i d/m/Y" }}{% endif %}
-                                </span>
-                            </a>
-                        {% endfor %}
-                    </div>
-                </div>
-            {% endif %}
-        {% else %}
-            <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
-                Tải danh sách lớp lên trước, sau đó hệ thống sẽ hiển thị file nào đã được tạo tất cả tài khoản.
-            </div>
-        {% endif %}
-    </div>
-
-    <!-- Ca thi sắp tới -->
-    {% endcomment %}
     {% if upcoming_groups %}
     <div class="bg-white rounded-xl shadow-md p-6">
         <div class="flex justify-between items-center mb-4">
@@ -268,6 +100,7 @@
                 Xem tất cả <i class="fas fa-arrow-right ml-1"></i>
             </a>
         </div>
+
         <div class="space-y-3">
             {% for group in upcoming_groups %}
             <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
@@ -294,6 +127,27 @@
             </div>
             {% endfor %}
         </div>
+
+        {% if upcoming_groups_page_obj and upcoming_groups_page_obj.paginator.num_pages > 1 %}
+        <div class="mt-4 flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+                Trang {{ upcoming_groups_page_obj.number }} / {{ upcoming_groups_page_obj.paginator.num_pages }}
+            </div>
+            <div class="flex items-center gap-2">
+                {% if upcoming_groups_page_obj.has_previous %}
+                    <a href="?upcoming_page=1" class="px-3 py-1 rounded border bg-white hover:bg-gray-100">Đầu</a>
+                    <a href="?upcoming_page={{ upcoming_groups_page_obj.previous_page_number }}" class="px-3 py-1 rounded border bg-white hover:bg-gray-100">Trước</a>
+                {% endif %}
+
+                <span class="px-3 py-1 rounded bg-blue-600 text-white">{{ upcoming_groups_page_obj.number }}</span>
+
+                {% if upcoming_groups_page_obj.has_next %}
+                    <a href="?upcoming_page={{ upcoming_groups_page_obj.next_page_number }}" class="px-3 py-1 rounded border bg-white hover:bg-gray-100">Sau</a>
+                    <a href="?upcoming_page={{ upcoming_groups_page_obj.paginator.num_pages }}" class="px-3 py-1 rounded border bg-white hover:bg-gray-100">Cuối</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 </div>

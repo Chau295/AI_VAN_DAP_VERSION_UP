@@ -230,33 +230,6 @@
     color: var(--common-muted);
   }
 
-  .pagination {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .pagination a,
-  .pagination span {
-    width: 38px;
-    height: 38px;
-    border: 1px solid #d8e0eb;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: #fff;
-    color: #5b6574;
-    text-decoration: none;
-    font-weight: 700;
-  }
-
-  .pagination .active {
-    background: var(--common-blue);
-    border-color: var(--common-blue);
-    color: #fff;
-  }
-
   .common-export-wrap {
     display: flex;
     justify-content: flex-end;
@@ -275,6 +248,51 @@
     background: #f8fbff;
     color: var(--common-blue-dark);
   }
+
+  .qm2-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border, #e6ebf2);
+    font-size: 13px;
+    color: var(--muted, #7a8699);
+    background: #fff;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .qm2-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .qm2-page-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .qm2-page-btn:hover { background: #f1f5f9; }
+  .qm2-page-btn.active { background: var(--blue, #1f6feb); color: #fff; }
+  .qm2-page-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    transform: none;
+  }
+
+
 
   @media (max-width: 1100px) {
     .common-page { margin: -1.5rem; }
@@ -399,44 +417,35 @@
         {% endif %}
       </div>
 
-      <div class="common-footer" style="margin-top: 1rem;">
+      <div class="qm2-pagination" style="margin-top: 1rem;">
         <div>
           Hiển thị
           {% if page_obj.paginator.count %}
-            <strong>{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+            <strong style="color: var(--common-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
           {% else %}
-            <strong>0</strong>
+            <strong style="color: var(--common-text);">0</strong>
           {% endif %}
-          của <strong>{{ page_obj.paginator.count }}</strong> sinh viên
+          trong số <strong style="color: var(--common-text);">{{ page_obj.paginator.count }}</strong> sinh viên
         </div>
+        <div class="qm2-page-controls">
+          {% if page_obj.has_previous %}
+            <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.previous_page_number }}">
+              <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
+            </a>
+          {% else %}
+            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+          {% endif %}
 
-        {% if page_obj.paginator.num_pages > 1 %}
-          <div class="pagination">
-            {% if page_obj.has_previous %}
-              <a href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.previous_page_number }}">
-                <i class="fas fa-chevron-left"></i>
-              </a>
-            {% else %}
-              <span><i class="fas fa-chevron-left"></i></span>
-            {% endif %}
+          <span class="qm2-page-btn active">{{ page_obj.number }}</span>
 
-            {% for page_number in page_obj.paginator.page_range %}
-              {% if page_number == page_obj.number %}
-                <span class="active">{{ page_number }}</span>
-              {% elif page_number >= page_obj.number|add:-1 and page_number <= page_obj.number|add:1 %}
-                <a href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_number }}">{{ page_number }}</a>
-              {% endif %}
-            {% endfor %}
-
-            {% if page_obj.has_next %}
-              <a href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.next_page_number }}">
-                <i class="fas fa-chevron-right"></i>
-              </a>
-            {% else %}
-              <span><i class="fas fa-chevron-right"></i></span>
-            {% endif %}
-          </div>
-        {% endif %}
+          {% if page_obj.has_next %}
+            <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.next_page_number }}">
+              <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
+            </a>
+          {% else %}
+            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
+          {% endif %}
+        </div>
       </div>
 
       <div class="common-export-wrap">

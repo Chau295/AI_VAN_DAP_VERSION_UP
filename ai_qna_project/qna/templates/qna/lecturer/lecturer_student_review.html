@@ -73,10 +73,53 @@
   .action-cell { text-align: center; }
   .detail-flag-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
   .detail-flag-link:hover .warning-icon { color: #b91c1c; }
-  .table-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 18px 8px 18px 6px; color: #64748b; font-size: 0.98rem; }
-  .table-footer strong { color: #334155; }
-  .empty-state { padding: 50px 18px 56px; text-align: center; color: #64748b; }
+    .empty-state { padding: 50px 18px 56px; text-align: center; color: #64748b; }
   .empty-state i { font-size: 2.5rem; color: #cbd5e1; margin-bottom: 14px; }
+
+  .qm2-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border, #e6ebf2);
+    font-size: 13px;
+    color: var(--muted, #7a8699);
+    background: #fff;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .qm2-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .qm2-page-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .qm2-page-btn:hover { background: #f1f5f9; }
+  .qm2-page-btn.active { background: var(--blue, #1f6feb); color: #fff; }
+  .qm2-page-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    transform: none;
+  }
+
+
 
   @media (max-width: 991px) {
     .stats-grid { grid-template-columns: 1fr; }
@@ -131,7 +174,7 @@
       </div>
       <div class="stat-card stat-card-absent">
         <div class="stat-meta">
-          <span class="stat-label">Váº¯ng thi</span>
+          <span class="stat-label">Vắng thi</span>
           <span class="stat-value">{{ absent_count }}</span>
         </div>
         <span class="stat-icon"><i class="fas fa-times"></i></span>
@@ -161,10 +204,10 @@
             <thead>
               <tr>
                 <th>Sinh viên</th>
-                <th>Lá»›p</th>
-                <th>Ká»³ thi</th>
+                <th>Lớp</th>
+                <th>Kỳ thi</th>
                 <th>Ngày thi</th>
-                <th>Thá»i gian</th>
+                <th>Thời gian</th>
                 <th>Trạng thái</th>
                 <th>Điểm</th>
                 <th></th>
@@ -201,14 +244,44 @@
                         <i class="fas fa-exclamation-triangle warning-icon"></i>
                       </span>
                     {% endif %}
+
                   </td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-        <div class="table-footer">
-          <div>HIỆN THỊ <strong>1-{{ sessions|length }}</strong> TRONG Sá» <strong>{{ sessions|length }} SINH VIÊN</strong></div>
+        <div class="qm2-pagination">
+          <div>
+            Hiển thị
+            {% if page_obj and page_obj.paginator.count %}
+              <strong style="color: var(--review-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+            {% else %}
+              <strong style="color: var(--review-text);">{{ sessions|length }}</strong>
+            {% endif %}
+            trong số
+            <strong style="color: var(--review-text);">{% if page_obj %}{{ page_obj.paginator.count }}{% else %}{{ sessions|length }}{% endif %}</strong>
+            sinh viên
+          </div>
+          <div class="qm2-page-controls">
+            {% if page_obj and page_obj.has_previous %}
+              <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
+                <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
+              </a>
+            {% else %}
+              <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+            {% endif %}
+
+            <span class="qm2-page-btn active">{% if page_obj %}{{ page_obj.number }}{% else %}1{% endif %}</span>
+
+            {% if page_obj and page_obj.has_next %}
+              <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
+                <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
+              </a>
+            {% else %}
+              <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
+            {% endif %}
+          </div>
         </div>
       {% else %}
         <div class="empty-state">
