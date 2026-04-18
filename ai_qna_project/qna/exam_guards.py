@@ -8,7 +8,7 @@ from .models import ExamSessionGroup, Subject
 
 
 def is_exam_group_active(exam_group: ExamSessionGroup | None, now=None) -> bool:
-    if not exam_group or exam_group.status == "CANCELLED":
+    if not exam_group or exam_group.status in {"CANCELLED", "DRAFT"}:
         return False
 
     current_time = now or timezone.now()
@@ -26,7 +26,7 @@ def subject_has_active_exam_group(subject: Subject, now=None) -> bool:
     groups = (
         ExamSessionGroup.objects
         .filter(subject_id=subject)
-        .exclude(status="CANCELLED")
+        .exclude(status__in=["CANCELLED", "DRAFT"])
         .only("exam_date", "duration_minutes", "status")
     )
 

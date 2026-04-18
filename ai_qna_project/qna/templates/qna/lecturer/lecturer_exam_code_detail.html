@@ -690,7 +690,7 @@
 
         {% if exam_set_is_linked %}
           <div class="locked-note" style="margin-top: 0;">
-            Bộ đề này đã được sử dụng trong ca thi. Hệ thống chỉ cho phép xem, không cho phép sửa, duyệt lại hoặc xóa.
+            Bộ đề này đã có mã đề được sử dụng trong ca thi. Các mã đề đã dùng sẽ bị khóa sửa hoặc xóa, nhưng các mã đề chưa dùng vẫn có thể xóa.
           </div>
         {% endif %}
       </div>
@@ -722,10 +722,10 @@
 
     <div class="selection-tools">
       <label class="card-select" {% if exam_set_is_linked %}style="opacity: 0.65;"{% endif %}>
-        <input type="checkbox" id="selectAllCodes" {% if exam_set_is_linked %}disabled{% endif %}>
+        <input type="checkbox" id="selectAllCodes">
         <span>Chọn tất cả mã đề</span>
       </label>
-      <span id="selectedCodesMeta" class="selection-helper">Chọn các mã đề để duyệt hoặc xóa hàng loạt.</span>
+      <span id="selectedCodesMeta" class="selection-helper">Chọn các mã đề chưa dùng để duyệt hoặc xóa hàng loạt.</span>
     </div>
 
     <div class="grid" id="cardGrid"></div>
@@ -848,7 +848,7 @@
 
   function statusBadge(code) {
     return code.is_approved
-      ? '<span class="pill pill-approved">ĐÃ DUYỆT</span>'
+      ? '<span class="pill pill-approved">Đã duyệt</span>'
       : '<span class="pill pill-draft">CHƯA DUYỆT</span>';
   }
 
@@ -900,12 +900,12 @@
     selectedCodeIds = new Set(Array.from(selectedCodeIds).filter((id) => selectableIds.includes(id)));
     const count = selectedCodeIds.size;
     if (selectedCount) selectedCount.textContent = count;
-    if (bulkBar) bulkBar.classList.toggle('hidden', examSetIsLinked || count === 0);
+    if (bulkBar) bulkBar.classList.toggle('hidden', count === 0);
     if (selectAll) {
       const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedCodeIds.has(id));
       selectAll.checked = allSelected;
       selectAll.indeterminate = count > 0 && !allSelected;
-      selectAll.disabled = examSetIsLinked || !selectableIds.length;
+      selectAll.disabled = !selectableIds.length;
     }
   }
 
@@ -926,13 +926,13 @@
         <div class="card-head">
           <div class="card-head-main">
             <label class="card-select" data-ignore-card-click>
-              <input type="checkbox" data-select-code="${code.id}" ${selectedCodeIds.has(code.id) ? 'checked' : ''} ${examSetIsLinked || code.is_linked ? 'disabled' : ''}>
+              <input type="checkbox" data-select-code="${code.id}" ${selectedCodeIds.has(code.id) ? 'checked' : ''} ${code.is_linked ? 'disabled' : ''}>
               <span>Chọn</span>
             </label>
             <div><div class="card-sub">Mã đề</div><div class="card-title">${escapeHtml(code.code_name)}</div></div>
           </div>
           <div class="card-actions">
-            <button type="button" class="icon-btn" data-ignore-card-click data-delete-code="${code.id}" title="Xóa" ${code.is_linked ? 'disabled' : ''}>
+            <button type="button" class="icon-btn" data-ignore-card-click data-delete-code="${code.id}" title="${code.is_linked ? 'Mã đề đã dùng trong ca thi nên không thể xóa' : 'Xóa'}" ${code.is_linked ? 'disabled' : ''}>
               <i class="fas fa-trash"></i>
             </button>
           </div>
@@ -1055,8 +1055,28 @@
 
   function closeDrawer() { document.getElementById('drawer').classList.remove('show'); currentCodeId = null; isCreatingNewCode = false; }
   function clearCodeSelection() { selectedCodeIds.clear(); renderCards(); }
-  function openDeleteCodeModal(id) { currentCodeId = id; pendingAction = deleteCurrentCode; document.getElementById('confirmModal').classList.add('show'); }
-  function confirmBulkDeleteSelectedCodes() { pendingAction = deleteSelectedCodes; document.getElementById('confirmModal').classList.add('show'); }
+  function openDeleteCodeModal(id) {
+    const code = getCodeById(id);
+    if (isLockedCode(code)) {
+      showToast('Mã đề đã được sử dụng trong ca thi nên không thể xóa.', true);
+      return;
+    }
+    currentCodeId = id;
+    pendingAction = deleteCurrentCode;
+    document.getElementById('confirmTitle').textContent = 'Bạn có chắc chắn muốn xóa mã đề này?';
+    document.getElementById('confirmMessage').textContent = 'Mã đề được xóa sẽ không thể khôi phục lại.';
+    document.getElementById('confirmModal').classList.add('show');
+  }
+  function confirmBulkDeleteSelectedCodes() {
+    if (!selectedCodeIds.size) {
+      showToast('Vui lòng chọn ít nhất 1 mã đề chưa dùng để xóa.', true);
+      return;
+    }
+    pendingAction = deleteSelectedCodes;
+    document.getElementById('confirmTitle').textContent = 'Xác nhận xóa các mã đề đã chọn';
+    document.getElementById('confirmMessage').textContent = 'Chỉ các mã đề chưa dùng mới được xóa. Các mã đề đã dùng sẽ bị bỏ qua.';
+    document.getElementById('confirmModal').classList.add('show');
+  }
   function closeConfirmModal() { document.getElementById('confirmModal').classList.remove('show'); }
   function confirmDeleteCode() { if (currentCodeId) openDeleteCodeModal(currentCodeId); }
 
@@ -1116,7 +1136,7 @@
             closeDrawer();
 
             if (data.exam_set_published) {
-                showToast("Tất cả mã đề đã duyệt, bộ đề tự động chuyển sang ĐÃ DUYỆT.");
+                showToast("Tất cả mã đề đã duyệt, bộ đề tự động chuyển sang Đã duyệt.");
                 setTimeout(() => location.reload(), 1500);
             }
         } else {
@@ -1136,12 +1156,42 @@
 
   async function deleteCurrentCode() {
     const res = await fetch(`/lecturer/api/exam-code/${currentCodeId}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
-    if (res.ok) { examCodes = examCodes.filter(c => c.id !== currentCodeId); renderCards(); closeDrawer(); }
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'SUCCESS') {
+      examCodes = examCodes.filter(c => c.id !== currentCodeId);
+      selectedCodeIds.delete(currentCodeId);
+      renderCards();
+      closeDrawer();
+      showToast(data.message || 'Đã xóa mã đề thành công.');
+      return;
+    }
+    showToast(data.message || 'Không thể xóa mã đề.', true);
   }
 
   async function deleteSelectedCodes() {
-    for (let id of selectedCodeIds) await fetch(`/lecturer/api/exam-code/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
-    location.reload();
+    const deletedIds = [];
+    const failedMessages = [];
+
+    for (const id of Array.from(selectedCodeIds)) {
+      const res = await fetch(`/lecturer/api/exam-code/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.status === 'SUCCESS') {
+        deletedIds.push(id);
+      } else if (data.message) {
+        failedMessages.push(data.message);
+      }
+    }
+
+    if (deletedIds.length) {
+      examCodes = examCodes.filter((code) => !deletedIds.includes(code.id));
+      deletedIds.forEach((id) => selectedCodeIds.delete(id));
+      renderCards();
+      showToast(`Đã xóa ${deletedIds.length} mã đề chưa dùng.`);
+    }
+
+    if (failedMessages.length) {
+      showToast(failedMessages[0], true);
+    }
   }
 
   async function publishExamSet() {

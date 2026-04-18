@@ -375,6 +375,8 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
     duration_minutes = 0
     if start_at and end_at:
+        if end_at <= start_at:
+            end_at = end_at + timedelta(days=1)
         duration_minutes = int((end_at - start_at).total_seconds() // 60)
         if duration_minutes <= 0:
             errors.append("Thời gian kết thúc phải sau thời gian bắt đầu.")
@@ -633,6 +635,157 @@ def _get_exam_group_room_configs(exam_group):
     if not isinstance(room_configs, list):
         return []
     return sorted(room_configs, key=lambda item: _session_safe_int(item.get("display_order"), 0) or 0)
+
+
+def _find_room_config_index(room_configs, session_room):
+    target_order = _session_safe_int(getattr(session_room, "display_order", 0), 0)
+    target_name = (getattr(session_room, "display_room_name", "") or "").strip().lower()
+
+    for index, room_cfg in enumerate(room_configs):
+        room_order = _session_safe_int(room_cfg.get("display_order"), 0)
+        room_name = (room_cfg.get("room_name") or "").strip().lower()
+        if room_order and room_order == target_order:
+            return index
+        if target_name and room_name and room_name == target_name:
+            return index
+
+    return None
+
+
+def _get_exam_group_roster_row_maps(exam_group):
+    config = exam_group.configuration_data or {}
+    roster_ids = [
+        _session_safe_int(item.get("id"))
+        for item in (config.get("rosters") or [])
+        if _session_safe_int(item.get("id"))
+    ]
+
+    roster_rows = StudentRosterStudent.objects.select_related("linked_user_id", "linked_user_id__userprofile")
+    roster_rows = roster_rows.filter(student_roster_upload_id__subject_id=exam_group.subject_id)
+    if roster_ids:
+        roster_rows = roster_rows.filter(student_roster_upload_id__in=roster_ids)
+
+    by_code = {}
+    by_user_id = {}
+    for row in roster_rows.order_by("row_number", "pk"):
+        normalized_code = normalize_student_code(row.student_code)
+        if normalized_code and normalized_code not in by_code:
+            by_code[normalized_code] = row
+        if row.linked_user_id_id and row.linked_user_id_id not in by_user_id:
+            by_user_id[row.linked_user_id_id] = row
+    return by_code, by_user_id
+
+
+def _room_exam_code_lookup(exam_group, room_cfg):
+    exam_code_ids = [
+        _session_safe_int(item)
+        for item in (room_cfg.get("exam_code_ids") or [])
+        if _session_safe_int(item)
+    ]
+    codes = list(
+        ExamCode.objects.filter(pk__in=exam_code_ids, subject_id=exam_group.subject_id).order_by("code_number", "pk")
+    )
+    return exam_code_ids, {code.pk: code.code_name for code in codes}
+
+
+def _build_room_assignment_from_user(exam_group, room_cfg, user, assignment_order, roster_by_code, roster_by_user_id):
+    profile = getattr(user, "userprofile", None)
+    normalized_profile_code = normalize_student_code(
+        getattr(profile, "student_id", "") or user.username
+    )
+    roster_row = roster_by_user_id.get(user.pk) or roster_by_code.get(normalized_profile_code)
+    exam_code_ids, exam_code_name_map = _room_exam_code_lookup(exam_group, room_cfg)
+    selected_exam_code_id = exam_code_ids[(assignment_order - 1) % len(exam_code_ids)] if exam_code_ids else None
+
+    return {
+        "roster_student_id": getattr(roster_row, "pk", None),
+        "student_code": (
+            getattr(roster_row, "student_code", "")
+            or getattr(profile, "student_id", "")
+            or user.username
+        ),
+        "full_name": (
+            getattr(roster_row, "full_name", "")
+            or getattr(profile, "full_name", "")
+            or user.username
+        ),
+        "linked_user_id": user.pk,
+        "exam_code_id": selected_exam_code_id,
+        "exam_code_name": exam_code_name_map.get(selected_exam_code_id, ""),
+        "display_order": assignment_order,
+    }
+
+
+def _normalize_room_assignments_for_room(exam_group, room_cfg, assignments):
+    exam_code_ids, exam_code_name_map = _room_exam_code_lookup(exam_group, room_cfg)
+    normalized = []
+    for index, assignment in enumerate(assignments, start=1):
+        selected_exam_code_id = exam_code_ids[(index - 1) % len(exam_code_ids)] if exam_code_ids else None
+        row = dict(assignment)
+        row["exam_code_id"] = selected_exam_code_id
+        row["exam_code_name"] = exam_code_name_map.get(selected_exam_code_id, "")
+        row["display_order"] = index
+        normalized.append(row)
+    return normalized
+
+
+def _sync_exam_group_room_mirror(exam_group):
+    room_configs = _get_exam_group_room_configs(exam_group)
+    session_rooms = list(exam_group.session_rooms.all().order_by("display_order", "pk"))
+
+    for session_room in session_rooms:
+        room_index = _find_room_config_index(room_configs, session_room)
+        if room_index is None:
+            session_room.students.clear()
+            session_room.exam_codes.clear()
+            continue
+
+        room_cfg = room_configs[room_index]
+        assignments = room_cfg.get("assignments") or []
+        student_count = max(_session_safe_int(room_cfg.get("student_count"), 0), len(assignments))
+        exam_set_id = _session_safe_int(room_cfg.get("exam_set_id")) or None
+        update_fields = []
+
+        if session_room.room_name != (room_cfg.get("room_name") or ""):
+            session_room.room_name = room_cfg.get("room_name") or ""
+            update_fields.append("room_name")
+        if session_room.expected_students != student_count:
+            session_room.expected_students = student_count
+            update_fields.append("expected_students")
+        if session_room.room_password != (room_cfg.get("password") or ""):
+            session_room.room_password = room_cfg.get("password") or ""
+            update_fields.append("room_password")
+        if session_room.exam_set_id_id != exam_set_id:
+            session_room.exam_set_id_id = exam_set_id
+            update_fields.append("exam_set_id")
+
+        if update_fields:
+            session_room.save(update_fields=update_fields)
+
+        exam_code_ids = [
+            _session_safe_int(item)
+            for item in (room_cfg.get("exam_code_ids") or [])
+            if _session_safe_int(item)
+        ]
+        session_room.exam_codes.set(
+            ExamCode.objects.filter(pk__in=exam_code_ids, subject_id=exam_group.subject_id)
+        )
+
+        linked_user_ids = [
+            _session_safe_int(item.get("linked_user_id"))
+            for item in assignments
+            if _session_safe_int(item.get("linked_user_id"))
+        ]
+        session_room.students.set(User.objects.filter(pk__in=linked_user_ids))
+
+
+def _save_room_configs_as_source_of_truth(exam_group, room_configs):
+    config = dict(exam_group.configuration_data or {})
+    config["rooms"] = room_configs
+    exam_group.configuration_data = config
+    exam_group.save(update_fields=["configuration_data", "updated_at"])
+    _sync_exam_group_room_mirror(exam_group)
+    return room_configs
 
 
 def _build_exam_group_student_rows(exam_group):
@@ -1168,8 +1321,30 @@ def lecturer_import_students_to_room(request, session_room_id):
     try:
         decoded = file_obj.read().decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(decoded))
-        imported_users = []
+        room_configs = _get_exam_group_room_configs(session_room.exam_group)
+        room_index = _find_room_config_index(room_configs, session_room)
+        if room_index is None:
+            return JsonResponse({"success": False, "error": "Không tìm thấy cấu hình phòng thi."}, status=400)
+
+        room_cfg = dict(room_configs[room_index])
+        roster_by_code, roster_by_user_id = _get_exam_group_roster_row_maps(session_room.exam_group)
+        current_assignments = list(room_cfg.get("assignments") or [])
+        current_user_ids = {
+            _session_safe_int(item.get("linked_user_id"))
+            for item in current_assignments
+            if _session_safe_int(item.get("linked_user_id"))
+        }
+        other_room_user_ids = set()
+        for idx, other_room in enumerate(room_configs):
+            if idx == room_index:
+                continue
+            for assignment in other_room.get("assignments") or []:
+                linked_user_id = _session_safe_int(assignment.get("linked_user_id"))
+                if linked_user_id:
+                    other_room_user_ids.add(linked_user_id)
+
         imported_count = 0
+        skipped_count = 0
 
         for row in reader:
             username = (row.get("username") or row.get("student_code") or row.get("mssv") or "").strip()
@@ -1181,14 +1356,40 @@ def lecturer_import_students_to_room(request, session_room_id):
             if not user:
                 continue
 
-            imported_users.append(user)
+            if user.pk in current_user_ids or user.pk in other_room_user_ids:
+                skipped_count += 1
+                continue
+
+            current_assignments.append(
+                _build_room_assignment_from_user(
+                    session_room.exam_group,
+                    room_cfg,
+                    user,
+                    len(current_assignments) + 1,
+                    roster_by_code,
+                    roster_by_user_id,
+                )
+            )
+            current_user_ids.add(user.pk)
             imported_count += 1
 
-        if imported_users:
-            session_room.students.add(*imported_users)
+        room_cfg["assignments"] = _normalize_room_assignments_for_room(
+            session_room.exam_group,
+            room_cfg,
+            current_assignments,
+        )
+        room_cfg["student_count"] = max(
+            _session_safe_int(room_cfg.get("student_count"), 0),
+            len(room_cfg["assignments"]),
+        )
+        room_configs[room_index] = room_cfg
+        _save_room_configs_as_source_of_truth(session_room.exam_group, room_configs)
 
-        messages.success(request, f"Đã import {imported_count} sinh viên thành công.")
-        return JsonResponse({"success": True, "imported_count": imported_count})
+        success_message = f"Đã import {imported_count} sinh viên thành công."
+        if skipped_count:
+            success_message += f" Bỏ qua {skipped_count} sinh viên đã được phân phòng trước đó."
+        messages.success(request, success_message)
+        return JsonResponse({"success": True, "imported_count": imported_count, "skipped_count": skipped_count})
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
@@ -1206,21 +1407,35 @@ def lecturer_random_assign_students(request, exam_group_id):
     if not exam_group.can_modify:
         return _locked_exam_group_mutation_response(exam_group)
 
-    session_rooms = list(exam_group.session_rooms.all().order_by("display_order", "pk"))
-    if not session_rooms:
+    room_configs = _get_exam_group_room_configs(exam_group)
+    if not room_configs:
         return JsonResponse({"success": False, "error": "Ca thi chưa có phòng để random."}, status=400)
 
-    all_students = []
-    for sr in session_rooms:
-        all_students.extend(list(sr.students.all()))
-        sr.students.clear()
+    all_assignments = []
+    for room_cfg in room_configs:
+        all_assignments.extend(room_cfg.get("assignments") or [])
 
-    if not all_students:
+    if not all_assignments:
         return JsonResponse({"success": False, "error": "Không có sinh viên nào để random."}, status=400)
 
-    random.shuffle(all_students)
-    for index, student in enumerate(all_students):
-        session_rooms[index % len(session_rooms)].students.add(student)
+    random.shuffle(all_assignments)
+    reassigned_rooms = []
+    cursor = 0
+    total_assignments = len(all_assignments)
+
+    for room_index, room_cfg in enumerate(room_configs):
+        room_copy = dict(room_cfg)
+        capacity = max(_session_safe_int(room_copy.get("student_count"), 0), len(room_copy.get("assignments") or []))
+        if room_index == len(room_configs) - 1:
+            selected_assignments = all_assignments[cursor:]
+            cursor = total_assignments
+        else:
+            selected_assignments = all_assignments[cursor:cursor + capacity]
+            cursor += capacity
+        room_copy["assignments"] = _normalize_room_assignments_for_room(exam_group, room_copy, selected_assignments)
+        reassigned_rooms.append(room_copy)
+
+    _save_room_configs_as_source_of_truth(exam_group, reassigned_rooms)
 
     messages.success(request, "Đã random sinh viên vào các phòng thi thành công.")
     return JsonResponse({"success": True})

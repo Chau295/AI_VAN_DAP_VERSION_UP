@@ -37,6 +37,7 @@
   .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 20px; border-radius:12px; border:1px solid transparent; font-size: 14px; font-weight:600; cursor:pointer; text-decoration:none; transition: all 0.2s ease; }
   .btn-primary { background:var(--blue); color:#fff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
   .btn-primary:hover { background:var(--blue-dark); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
   .btn-secondary { background:#fff; color:#475569; border-color: #cbd5e1; box-shadow: var(--shadow-sm); }
   .btn-secondary:hover { background:#f8fafc; color: var(--text); }
 
@@ -58,8 +59,16 @@
 
   .matrix-toolbar { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:20px; flex-wrap:wrap; }
   .matrix-summary { display:flex; justify-content:flex-end; margin-left:auto; }
+  .matrix-summary-wrapper { display:grid; gap:10px; }
   .summary-box { min-width: 340px; background:#f8fafc; border: 1px solid var(--border); border-radius:16px; padding:14px 22px; font-weight:600; color:#334155; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); }
   .summary-box strong { font-size: 18px; color: var(--blue); }
+  .summary-box[data-state="success"] { border-color: #86efac; background: #f0fdf4; }
+  .summary-box[data-state="warning"] { border-color: #fcd34d; background: #fffbeb; }
+  .summary-box[data-state="error"] { border-color: #fca5a5; background: #fef2f2; }
+  .summary-message { min-height: 22px; font-size: 14px; font-weight: 700; }
+  .summary-message.success { color: var(--green); }
+  .summary-message.warning { color: var(--amber); }
+  .summary-message.error { color: var(--red); }
 
   table { width:100%; border-collapse: collapse; overflow:hidden; }
   .matrix-table { border:1px solid var(--border); border-radius:18px; overflow-x:auto; }
@@ -249,10 +258,13 @@
         <div class="matrix-toolbar">
           <div class="section-title" style="margin:0"><span class="step">2</span> Thiết lập ma trận đề</div>
           <div class="matrix-summary">
-            <div class="summary-box">
-              <span>Tổng số câu: <strong id="totalQuestions">30</strong></span>
+            <div class="matrix-summary-wrapper">
+            <div class="summary-box" id="summaryBox" data-state="success">
+              <span>Tổng số câu: <strong id="totalQuestions">3</strong></span>
               <span style="color: #cbd5e1;">|</span>
-              <span>Tổng điểm: <strong id="totalScore">67.5</strong></span>
+              <span>Tổng điểm: <strong id="totalScore">10.00</strong></span>
+            </div>
+              <div class="summary-message success" id="summaryMessage" aria-live="polite">Tạo bộ đề thành công.</div>
             </div>
           </div>
         </div>
@@ -276,12 +288,12 @@
                 <td><div class="matrix-level-cell"><span class="matrix-pill pill-easy"><i class="fas fa-circle" style="font-size: 8px;"></i> Dễ</span></div></td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-count-field"><input id="easyCount" type="number" min="0" step="1" value="10" inputmode="numeric"></div>
+                    <div class="field matrix-count-field"><input id="easyCount" type="number" min="0" step="1" value="1" inputmode="numeric"></div>
                   </div>
                 </td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-score-field"><input id="easyScore" type="number" step="0.5" value="2.0"></div>
+                    <div class="field matrix-score-field"><input id="easyScore" type="number" min="0" step="0.5" value="2.0"></div>
                   </div>
                 </td>
               </tr>
@@ -289,12 +301,12 @@
                 <td><div class="matrix-level-cell"><span class="matrix-pill pill-medium"><i class="fas fa-circle" style="font-size: 8px;"></i> Trung bình</span></div></td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-count-field"><input id="mediumCount" type="number" min="0" step="1" value="15" inputmode="numeric"></div>
+                    <div class="field matrix-count-field"><input id="mediumCount" type="number" min="0" step="1" value="1" inputmode="numeric"></div>
                   </div>
                 </td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-score-field"><input id="mediumScore" type="number" step="0.5" value="2.5"></div>
+                    <div class="field matrix-score-field"><input id="mediumScore" type="number" min="0" step="0.5" value="3.0"></div>
                   </div>
                 </td>
               </tr>
@@ -302,12 +314,12 @@
                 <td><div class="matrix-level-cell"><span class="matrix-pill pill-hard"><i class="fas fa-circle" style="font-size: 8px;"></i> Khó</span></div></td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-count-field"><input id="hardCount" type="number" min="0" step="1" value="5" inputmode="numeric"></div>
+                    <div class="field matrix-count-field"><input id="hardCount" type="number" min="0" step="1" value="1" inputmode="numeric"></div>
                   </div>
                 </td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-score-field"><input id="hardScore" type="number" step="0.5" value="3.0"></div>
+                    <div class="field matrix-score-field"><input id="hardScore" type="number" min="0" step="0.5" value="5.0"></div>
                   </div>
                 </td>
               </tr>
@@ -409,6 +421,76 @@
     document.getElementById('semester').value = button.dataset.value;
   }
 
+  const EXAM_SET_MESSAGES = {
+    success: 'Tạo bộ đề thành công.',
+    totalOver: 'Tổng điểm hiện tại đang vượt quá 10 điểm.',
+    totalUnder: 'Tổng điểm hiện tại chưa đủ 10 điểm.',
+    noQuestions: 'Mỗi mã đề phải có ít nhất 1 câu hỏi.',
+    invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm lớn hơn 0.',
+    invalidVersionCount: 'Số lượng mã đề phải lớn hơn 0.',
+  };
+
+  function parseSafeInt(value) {
+    const parsed = parseInt(String(value ?? '').trim(), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function parseSafeFloat(value) {
+    const parsed = parseFloat(String(value ?? '').trim());
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function formatScore(value) {
+    return parseSafeFloat(value).toFixed(2);
+  }
+
+  function getMatrixConfig() {
+    const easyCount = parseSafeInt(document.getElementById('easyCount').value);
+    const mediumCount = parseSafeInt(document.getElementById('mediumCount').value);
+    const hardCount = parseSafeInt(document.getElementById('hardCount').value);
+    const easyScore = parseSafeFloat(document.getElementById('easyScore').value);
+    const mediumScore = parseSafeFloat(document.getElementById('mediumScore').value);
+    const hardScore = parseSafeFloat(document.getElementById('hardScore').value);
+    const totalQuestions = easyCount + mediumCount + hardCount;
+    const totalScore = (easyCount * easyScore) + (mediumCount * mediumScore) + (hardCount * hardScore);
+
+    return {
+      easyCount,
+      mediumCount,
+      hardCount,
+      easyScore,
+      mediumScore,
+      hardScore,
+      totalQuestions,
+      totalScore,
+    };
+  }
+
+  function getConfigValidation(config) {
+    if (config.totalQuestions <= 0) {
+      return { valid: false, state: 'error', message: EXAM_SET_MESSAGES.noQuestions };
+    }
+
+    const hasInvalidScore = (
+      (config.easyCount > 0 && config.easyScore <= 0)
+      || (config.mediumCount > 0 && config.mediumScore <= 0)
+      || (config.hardCount > 0 && config.hardScore <= 0)
+    );
+    if (hasInvalidScore) {
+      return { valid: false, state: 'error', message: EXAM_SET_MESSAGES.invalidQuestionScore };
+    }
+
+    if (config.totalScore > 10) {
+      return { valid: false, state: 'warning', message: EXAM_SET_MESSAGES.totalOver };
+    }
+
+    if (config.totalScore < 10) {
+      return { valid: false, state: 'warning', message: EXAM_SET_MESSAGES.totalUnder };
+    }
+
+    return { valid: true, state: 'success', message: EXAM_SET_MESSAGES.success };
+  }
+
   function normalizeCountInput(id, forceNormalize=false) {
     const input = document.getElementById(id);
     const raw = (input.value || '').trim();
@@ -425,21 +507,55 @@
     updateSummary();
   }
 
-  function updateSummary() {
-    const easyCount = parseInt(document.getElementById('easyCount').value || '0', 10);
-    const mediumCount = parseInt(document.getElementById('mediumCount').value || '0', 10);
-    const hardCount = parseInt(document.getElementById('hardCount').value || '0', 10);
-    const easyScore = parseFloat(document.getElementById('easyScore').value || '0');
-    const mediumScore = parseFloat(document.getElementById('mediumScore').value || '0');
-    const hardScore = parseFloat(document.getElementById('hardScore').value || '0');
+  function normalizeScoreInput(id, forceNormalize=false) {
+    const input = document.getElementById(id);
+    const raw = (input.value || '').trim();
 
-    document.getElementById('totalQuestions').textContent = easyCount + mediumCount + hardCount;
-    document.getElementById('totalScore').textContent = ((easyCount * easyScore) + (mediumCount * mediumScore) + (hardCount * hardScore)).toFixed(2);
+    if (!raw) {
+      if (forceNormalize) input.value = '0';
+      updateSummary();
+      return;
+    }
+
+    let value = parseFloat(raw);
+    if (!Number.isFinite(value) || value < 0) value = 0;
+    input.value = String(value);
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const config = getMatrixConfig();
+    const validation = getConfigValidation(config);
+    const summaryBox = document.getElementById('summaryBox');
+    const summaryMessage = document.getElementById('summaryMessage');
+    const btn = document.getElementById('btnSubmit');
+
+    document.getElementById('totalQuestions').textContent = config.totalQuestions;
+    document.getElementById('totalScore').textContent = formatScore(config.totalScore);
+
+    if (summaryBox) {
+      summaryBox.dataset.state = validation.state;
+    }
+
+    if (summaryMessage) {
+      summaryMessage.textContent = validation.message;
+      summaryMessage.className = `summary-message ${validation.state}`;
+    }
+
+    if (btn) {
+      btn.disabled = !validation.valid;
+      btn.title = validation.valid ? '' : validation.message;
+    }
+
+    return { config, validation };
   }
 
   document.getElementById('easyScore').addEventListener('input', updateSummary);
   document.getElementById('mediumScore').addEventListener('input', updateSummary);
   document.getElementById('hardScore').addEventListener('input', updateSummary);
+  ['easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
+    document.getElementById(id).addEventListener('blur', () => normalizeScoreInput(id, true));
+  });
   ['easyCount', 'mediumCount', 'hardCount'].forEach((id) => {
     document.getElementById(id).addEventListener('input', () => normalizeCountInput(id));
     document.getElementById(id).addEventListener('blur', () => normalizeCountInput(id, true));
@@ -449,6 +565,8 @@
   async function submitCreateExamSet() {
     const sourceBanks = $('#sourceBanks').val() || [];
     const btn = document.getElementById('btnSubmit');
+    const versionCount = parseSafeInt(document.getElementById('numberOfVersions').value);
+    const { config, validation } = updateSummary();
 
     if (sourceBanks.length === 0) {
       showToast("Vui lòng chọn hoặc nhập ít nhất một nguồn câu hỏi!");
@@ -460,18 +578,28 @@
       return;
     }
 
+    if (versionCount <= 0) {
+      showToast(EXAM_SET_MESSAGES.invalidVersionCount);
+      return;
+    }
+
+    if (!validation.valid) {
+      showToast(validation.message);
+      return;
+    }
+
     const payload = {
       subject_id: document.getElementById('subjectId').value,
       academic_year: document.getElementById('academicYear').value.trim(),
       semester: document.getElementById('semester').value,
       source_bank_ids: sourceBanks,
-      easy_count: document.getElementById('easyCount').value,
-      medium_count: document.getElementById('mediumCount').value,
-      hard_count: document.getElementById('hardCount').value,
-      easy_score: document.getElementById('easyScore').value,
-      medium_score: document.getElementById('mediumScore').value,
-      hard_score: document.getElementById('hardScore').value,
-      number_of_versions: document.getElementById('numberOfVersions').value,
+      easy_count: config.easyCount,
+      medium_count: config.mediumCount,
+      hard_count: config.hardCount,
+      easy_score: config.easyScore,
+      medium_score: config.mediumScore,
+      hard_score: config.hardScore,
+      number_of_versions: versionCount,
       allow_duplicate_questions: document.getElementById('allowDuplicateQuestions').checked,
     };
 
@@ -493,7 +621,7 @@
       if (!response.ok || data.status !== 'SUCCESS') {
         showToast(data.message || 'Tạo đề thi thất bại');
         btn.innerHTML = originalText;
-        btn.disabled = false;
+        updateSummary();
         return;
       }
 
@@ -504,7 +632,7 @@
     } catch (error) {
       showToast('Lỗi kết nối máy chủ!');
       btn.innerHTML = originalText;
-      btn.disabled = false;
+      updateSummary();
     }
   }
 </script>

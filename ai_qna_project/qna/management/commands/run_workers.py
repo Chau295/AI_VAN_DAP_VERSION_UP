@@ -30,7 +30,14 @@ from django.conf import settings
 from channels.layers import get_channel_layer
 from channels.db import database_sync_to_async
 from asgiref.sync import sync_to_async
-from qna.exam_runtime import is_exam_group_open, is_exam_group_submission_window_open
+from qna.exam_runtime import (
+    EXAM_GRADING_STATUS_ERROR,
+    EXAM_GRADING_STATUS_PROGRESS,
+    EXAM_GRADING_STATUS_RESULT,
+    is_exam_group_open,
+    is_exam_group_submission_window_open,
+    store_exam_grading_state,
+)
 from qna.models import (
     Question,
     ExamSession,
@@ -148,35 +155,35 @@ async def rephrase_text_with_chatgpt(text, question_text, client):
     if not text or client is None:
         return text
 
-    # Prompt cải tiến với rÃ ng buộc chặt chẽ hơn
-    system_prompt = """Bạn lÃ  một trợ lý sửa lỗi văn bản tiếng Việt.
+    # Prompt cải tiến với ràng buộc chặt chẽ hơn
+    system_prompt = """Bạn là một trợ lý sửa lỗi văn bản tiếng Việt.
 
-NGUYÃŠN TẮC QUAN TRá»ŒNG:
-1. CHá»ˆ sửa lỗi chính tả, lỗi đÃ¡nh máy, lỗi nhận dạng giọng nói
-2. KHÃ”NG ĐƯỢC thêm từ mới nÃ o
-3. KHÃ”NG ĐƯỢC xóa từ nÃ o (trừ từ lặp thừa)
-4. KHÃ”NG ĐƯỢC thay đá»•i cấu trúc câu
-5. KHÃ”NG ĐƯỢC thay đá»•i ý nghĩa của câu
-6. KHÃ”NG ĐƯỢC diễn giải lại ná»™i dung
+Nguyên tắc quan trọng:
+1. CHỈ sửa lỗi chính tả, lỗi đánh máy, lỗi nhận dạng giọng nói
+2. KHÔNG ĐƯỢC thêm từ mới nào
+3. KHÔNG ĐƯỢC xóa từ nào, trừ từ lặp thừa
+4. KHÔNG ĐƯỢC thay đổi cấu trúc câu
+5. KHÔNG ĐƯỢC thay đổi ý nghĩa của câu
+6. KHÔNG ĐƯỢC diễn giải lại nội dung
 
-VÍ DỤ:
-- "chủng nÄƒng" â†’ "chuẩn nÄƒng" (đÃºng)
-- "tôi lÃ  sinh viên" â†’ "tôi lÃ  một sinh viên" (SAI - đÃ£ thêm từ)
-- "tôi nói nói về" â†’ "tôi nói về" (đÃºng - xóa lặp)
-- "data" â†’ "dữ liệu" (SAI - đÃ£ thay đá»•i từ)
+Ví dụ:
+- "chủng năng" → "chức năng" (đúng)
+- "tôi là sinh viên" → "tôi là một sinh viên" (SAI - đã thêm từ)
+- "tôi nói nói về" → "tôi nói về" (đúng - xóa lặp)
+- "data" → "dữ liệu" (SAI - đã thay đổi từ)
 
-Chá»‰ trả về văn bản đÃ£ sửa, KHÃ”NG thêm giải thích."""
+Chỉ trả về văn bản đã sửa, KHÔNG thêm giải thích."""
 
-    user_prompt = f"""Câu trả lời sau đưá»£c nhận dạng từ giọng nói, cần sửa lỗi:
+    user_prompt = f"""Câu trả lời sau được nhận dạng từ giọng nói, cần sửa lỗi:
 
---- CÃ‚U Há»ŽI ---
+--- Câu hỏi ---
 {question_text}
 
---- CÃ‚U TRẢ Lá»œI GỐC ---
+--- Câu trả lời gốc ---
 {text}
 
---- YÃŠU CẦU ---
-Chá»‰ sửa lỗi chính táº£/đÃ¡nh máy. Giữ nguyên mọi thứ khác.
+--- Yêu cầu ---
+Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
 """
 
     try:
@@ -191,14 +198,14 @@ Chá»‰ sửa lỗi chính táº£/đÃ¡nh máy. Giữ nguyên mọi thứ kh
         )
         rephrased = resp.choices[0].message.content.strip()
 
-        # Validation: Kiá»ƒm tra đá»™ tương đá»“ng
+        # Validation: Kiểm tra độ tương đồng
         if text and rephrased and text != rephrased:
-            # Tính đá»™ tương đá»“ng đơn giản dựa trên đá»™ dÃ i
+            # Tính độ tương đồng đơn giản dựa trên độ dài
             len_original = len(text.split())
             len_rephrased = len(rephrased.split())
             ratio = len_rephrased / len_original if len_original > 0 else 1
 
-            # Nếu đá»™ dÃ i thay đá»•i quá nhiều (> 30%), dùng bản gá»‘c
+            # Nếu độ dài thay đổi quá nhiều (> 30%), dùng bản gốc
             if ratio < 0.7 or ratio > 1.3:
                 logger.warning(
                     "Rephrasing thay đổi độ dài quá nhiều: %s -> %s (ratio=%.2f). Sử dụng bản gốc.",
@@ -215,33 +222,33 @@ Chá»‰ sửa lỗi chính táº£/đÃ¡nh máy. Giữ nguyên mọi thứ kh
 
 
 async def score_student_answer_with_openai(student_answer_raw, question_text, openai_client, model_name="gpt-4o-mini"):
-    if openai_client is None: return 0.0, "OpenAI client chưa đưá»£c khá»Ÿi tạo."
+    if openai_client is None: return 0.0, "OpenAI client chưa được khởi tạo."
 
     max_score = 10.0
 
     system_prompt = (
-        "Bạn lÃ  một chuyên gia chấm điá»ƒm câu trả lời vấn đÃ¡p về khoa học dữ liệu.\n\n"
-        "NGUYÃŠN TẮC CHẤM ĐIá»‚M:\n"
-        f"1. Chấm điá»ƒm trực tiếp theo chất lượng ná»™i dung. Điá»ƒm tá»‘i đa: {max_score:.2f}\n"
-        "2. Đánh giá đá»™ chính xác, đá»™ đáº§y đá»§, mức đá»™ giải thích và sự liên quan với câu hỏi.\n"
-        "3. ẢO GIÁC DETECTION: Nếu câu trả lời có vẻ đưá»£c AI tạo ra (ví dụ: quá hoÃ n hảo, "
-        "cấu trúc không tự nhiên, từ vựng không phù hợp với sinh viên), giảm 30-50% điá»ƒm.\n"
-        "4. Câu trả lời quá ngắn hoặc không liên quan: 0 điá»ƒm.\n"
-        "5. Câu trả lời chá»‰ đá»c lại câu hỏi: 0 điá»ƒm.\n"
-        "6. Phải có ná»™i dung thực sự từ sinh viên mới có điá»ƒm.\n\n"
-        "ĐẦU RA BẮT BUá»˜C: JSON format:\n"
+        "Bạn là một chuyên gia chấm điểm câu trả lời vấn đáp về khoa học dữ liệu.\n\n"
+        "Nguyên tắc chấm điểm:\n"
+        f"1. Chấm điểm trực tiếp theo chất lượng nội dung. Điểm tối đa: {max_score:.2f}\n"
+        "2. Đánh giá độ chính xác, độ đầy đủ, mức độ giải thích và sự liên quan với câu hỏi.\n"
+        "3. ẢO GIÁC DETECTION: Nếu câu trả lời có vẻ được AI tạo ra (ví dụ: quá hoàn hảo, "
+        "cấu trúc không tự nhiên, từ vựng không phù hợp với sinh viên), giảm 30-50% điểm.\n"
+        "4. Câu trả lời quá ngắn hoặc không liên quan: 0 điểm.\n"
+        "5. Câu trả lời chỉ đọc lại câu hỏi: 0 điểm.\n"
+        "6. Phải có nội dung thực sự từ sinh viên mới có điểm.\n\n"
+        "Đầu ra bắt buộc: JSON format:\n"
         '{"diem_so": float, "phan_hoi": "string"}\n'
-        "KHÃ”NG thêm văn bản nÃ o khác ngoÃ i JSON."
+        "KHÔNG thêm văn bản nào khác ngoài JSON."
     )
 
     user_prompt = (
-        f"--- CÃ‚U Há»ŽI ---\n{question_text}\n\n"
-        f"--- CÃ‚U TRẢ Lá»œI SINH VIÃŠN (đÃ£ transcribe từ giọng nói) ---\n{student_answer_raw}\n\n"
-        f"--- CHẤM ĐIá»‚M ---\n"
-        f"1. Đánh giá: Câu trả lời có đưá»£c sinh viên thực sự nói không?\n"
-        f"2. Chấm điá»ƒm dựa trên đá»™ đÃºng, đá»™ đáº§y đá»§ và chiều sâu giải thích.\n"
-        f"3. Nếu có ảo giác AI, ghi rõ trong phản hồi và giảm điá»ƒm.\n\n"
-        f"Trả về JSON duy nhất, KHÃ”NG thêm chữ nÃ o khác."
+        f"--- Câu hỏi ---\n{question_text}\n\n"
+        f"--- Câu trả lời sinh viên (đã transcribe từ giọng nói) ---\n{student_answer_raw}\n\n"
+        f"--- Chấm điểm ---\n"
+        f"1. Đánh giá: Câu trả lời có được sinh viên thực sự nói không?\n"
+        f"2. Chấm điểm dựa trên độ đúng, độ đầy đủ và chiều sâu giải thích.\n"
+        f"3. Nếu có ảo giác AI, ghi rõ trong phản hồi và giảm điểm.\n\n"
+        f"Trả về JSON duy nhất, KHÔNG thêm chữ nào khác."
     )
 
     try:
@@ -344,9 +351,49 @@ class Command(BaseCommand):
             self.openai_client = None
             self.stderr.write(f"Lỗi cấu hình OpenAI: {e} - đặt OPENAI_API_KEY trước.")
 
+    async def _persist_grading_state(
+        self,
+        session_id,
+        question_id,
+        *,
+        status,
+        progress=None,
+        result=None,
+        error_message="",
+    ):
+        if not session_id or not question_id:
+            return None
+        return await sync_to_async(store_exam_grading_state)(
+            session_id,
+            question_id,
+            status=status,
+            progress=progress,
+            result=result,
+            error_message=error_message,
+        )
+
+    async def _emit_exam_event(self, *, reply_channel=None, reply_group=None, event_type, message):
+        event = {"type": event_type, "message": message}
+        try:
+            if reply_group:
+                await self.channel_layer.group_send(reply_group, event)
+                return True
+            if reply_channel:
+                await self.channel_layer.send(reply_channel, event)
+                return True
+        except Exception:
+            logger.exception(
+                "[EVENT] Không thể gửi %s: reply_group=%s reply_channel=%s",
+                event_type,
+                reply_group,
+                reply_channel,
+            )
+        return False
+
     async def _send_exam_progress(
         self,
         reply_channel,
+        reply_group=None,
         *,
         stage,
         session_id=None,
@@ -375,6 +422,13 @@ class Command(BaseCommand):
         if result_id is not None:
             payload["result_id"] = result_id
 
+        await self._persist_grading_state(
+            session_id,
+            question_id,
+            status=EXAM_GRADING_STATUS_PROGRESS,
+            progress=payload,
+        )
+
         logger.info(
             "[PROGRESS] session_id=%s question_id=%s stage=%s detail=%s",
             session_id,
@@ -383,26 +437,63 @@ class Command(BaseCommand):
             detail,
         )
 
-        try:
-            await self.channel_layer.send(
-                reply_channel,
-                {
-                    "type": "exam.progress",
-                    "message": payload,
-                },
-            )
-        except Exception:
-            logger.exception(
-                "[PROGRESS] Không thể gửi exam.progress: session_id=%s question_id=%s stage=%s reply_channel=%s",
-                session_id,
-                question_id,
-                stage,
-                reply_channel,
-            )
+        await self._emit_exam_event(
+            reply_channel=reply_channel,
+            reply_group=reply_group,
+            event_type="exam.progress",
+            message=payload,
+        )
+
+    async def _send_exam_error(
+        self,
+        reply_channel,
+        reply_group=None,
+        *,
+        session_id=None,
+        question_id=None,
+        message="",
+    ):
+        error_message = str(message or "Có lỗi xảy ra trong quá trình chấm điểm.")
+        await self._persist_grading_state(
+            session_id,
+            question_id,
+            status=EXAM_GRADING_STATUS_ERROR,
+            error_message=error_message,
+        )
+        await self._emit_exam_event(
+            reply_channel=reply_channel,
+            reply_group=reply_group,
+            event_type="exam.error",
+            message=error_message,
+        )
+
+    async def _send_exam_result(
+        self,
+        reply_channel,
+        reply_group=None,
+        *,
+        session_id=None,
+        question_id=None,
+        payload=None,
+    ):
+        message = payload or {}
+        await self._persist_grading_state(
+            session_id,
+            question_id,
+            status=EXAM_GRADING_STATUS_RESULT,
+            result=message,
+        )
+        await self._emit_exam_event(
+            reply_channel=reply_channel,
+            reply_group=reply_group,
+            event_type="exam.result",
+            message=message,
+        )
 
     async def process_audio_and_transcribe(
         self,
         reply_channel,
+        reply_group,
         chunks,
         whisper_prompt: Optional[str] = None,
         session_id=None,
@@ -423,9 +514,17 @@ class Command(BaseCommand):
                 question_id,
                 reply_channel,
             )
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message="Không nhận được dữ liệu âm thanh để chấm điểm.",
+            )
             return None
         await self._send_exam_progress(
             reply_channel,
+            reply_group,
             stage="received_audio",
             session_id=session_id,
             question_id=question_id,
@@ -441,8 +540,13 @@ class Command(BaseCommand):
                 reply_channel,
                 len(chunks),
             )
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error',
-                                                          'message': 'Dữ liệu audio không hợp lệ (thiếu header).'})
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message='Dữ liệu audio không hợp lệ (thiếu header).',
+            )
             return None
         unique_id = re.sub(r'[^a-zA-Z0-9]', '_', reply_channel)
         source_path = os.path.join(settings.BASE_DIR, f'temp_audio_{unique_id}_{uuid4().hex[:8]}{source_extension}')
@@ -467,8 +571,13 @@ class Command(BaseCommand):
                 e,
                 exc_info=True,
             )
-            await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.error', 'message': 'Lỗi hệ thống khi ghi file âm thanh.'})
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message='Lỗi hệ thống khi ghi file âm thanh.',
+            )
             return None
         logger.info(
             "[ASR] Đang convert audio sang WAV: session_id=%s question_id=%s reply_channel=%s source_path=%s",
@@ -479,6 +588,7 @@ class Command(BaseCommand):
         )
         await self._send_exam_progress(
             reply_channel,
+            reply_group,
             stage="converting_audio",
             session_id=session_id,
             question_id=question_id,
@@ -494,7 +604,13 @@ class Command(BaseCommand):
                 reply_channel,
                 source_path,
             )
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': 'Lỗi xử lý file âm thanh.'})
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message='Lỗi xử lý file âm thanh.',
+            )
             return None
         logger.info(
             "[ASR] Đã convert xong WAV: session_id=%s question_id=%s reply_channel=%s wav_path=%s",
@@ -513,14 +629,15 @@ class Command(BaseCommand):
         )
         await self._send_exam_progress(
             reply_channel,
+            reply_group,
             stage="wav_ready",
             session_id=session_id,
             question_id=question_id,
             detail=f"Đã tạo WAV thành công ({duration:.2f}s, RMS={rms:.1f}).",
         )
 
-        # Kiá»ƒm tra RMS đá»ƒ phát hiá»‡n silence (không có âm thanh thực)
-        # Ngưỡng RMS < 50.0 thường lÃ  silence hoặc nhiá»…u nền
+        # Kiểm tra RMS để phát hiện silence, tức là không có âm thanh thực.
+        # Ngưỡng RMS < 50.0 thường là silence hoặc nhiễu nền.
         RMS_THRESHOLD = 50.0
         if rms < RMS_THRESHOLD:
             logger.info(
@@ -530,13 +647,18 @@ class Command(BaseCommand):
                 rms,
                 RMS_THRESHOLD,
             )
-            await self.channel_layer.send(reply_channel,
-                                          {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message='Không có âm thanh được phát hiện.',
+            )
             return None
 
         # Removed duration check - users can now submit audio of any length
         try:
-            # Sử dụng prompt context đá»ƒ giúp Whisper hiá»ƒu bá»‘i cảnh tá»‘t hơn
+            # Sử dụng prompt context để giúp Whisper hiểu bối cảnh tốt hơn.
             context_prompt = whisper_prompt or ""
             if context_prompt:
                 context_prompt = f"Bối cảnh: {context_prompt}. "
@@ -550,6 +672,7 @@ class Command(BaseCommand):
             )
             await self._send_exam_progress(
                 reply_channel,
+                reply_group,
                 stage="transcribing",
                 session_id=session_id,
                 question_id=question_id,
@@ -576,13 +699,14 @@ class Command(BaseCommand):
             if raw:
                 await self._send_exam_progress(
                     reply_channel,
+                    reply_group,
                     stage="transcript_ready",
                     session_id=session_id,
                     question_id=question_id,
                     detail="Đã nhận transcript từ Whisper.",
                     transcript=raw,
                 )
-                # Kiá»ƒm tra nếu transcript quá ngắn
+                # Kiểm tra nếu transcript quá ngắn.
                 words = raw.split()
                 if len(words) < 3 and len(chunks) > 0:
                     logger.warning(
@@ -592,15 +716,20 @@ class Command(BaseCommand):
                         len(words),
                     )
 
-            # Nếu Whisper trả về chuá»—i rá»—ng, coi như không có âm thanh
+            # Nếu Whisper trả về chuỗi rỗng, coi như không có âm thanh.
             if not raw:
                 logger.info(
                     "[ASR] Whisper trả chuỗi rỗng: session_id=%s question_id=%s",
                     session_id,
                     question_id,
                 )
-                await self.channel_layer.send(reply_channel,
-                                              {'type': 'exam.error', 'message': 'Không có âm thanh được phát hiện.'})
+                await self._send_exam_error(
+                    reply_channel,
+                    reply_group,
+                    session_id=session_id,
+                    question_id=question_id,
+                    message='Không có âm thanh được phát hiện.',
+                )
                 return None
 
             return raw
@@ -613,12 +742,20 @@ class Command(BaseCommand):
                 e,
                 exc_info=True,
             )
-            return ""
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message='Không thể nhận diện giọng nói từ file âm thanh.',
+            )
+            return None
         finally:
             if os.path.exists(wav_path): os.remove(wav_path)
 
     async def process_main_question(self, message):
         reply_channel = message['reply_channel']
+        reply_group = message.get('reply_group')
         question_id = message.get('question_id')
         session_id = message.get('session_id')
         chunks = message.get('__chunks', [])
@@ -636,6 +773,13 @@ class Command(BaseCommand):
                 question_id,
                 reply_channel,
                 len(chunks),
+            )
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message='Thiếu dữ liệu audio hoặc thông tin câu hỏi để chấm điểm.',
             )
             return
         current_step = "load_question_context"
@@ -673,10 +817,13 @@ class Command(BaseCommand):
                     question_context["exam_is_open"],
                     question_context["submission_window_open"],
                 )
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Phiên thi không còn hợp lệ để nộp câu trả lời.'
-                })
+                await self._send_exam_error(
+                    reply_channel,
+                    reply_group,
+                    session_id=session_id,
+                    question_id=question_id_int,
+                    message='Phiên thi không còn hợp lệ để nộp câu trả lời.',
+                )
                 return
 
             if not question_context["submission_window_open"]:
@@ -685,10 +832,13 @@ class Command(BaseCommand):
                     session_id,
                     question_id_int,
                 )
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Thời gian thi đã kết thúc. Không thể gửi câu trả lời.'
-                })
+                await self._send_exam_error(
+                    reply_channel,
+                    reply_group,
+                    session_id=session_id,
+                    question_id=question_id_int,
+                    message='Thời gian thi đã kết thúc. Không thể gửi câu trả lời.',
+                )
                 return
 
             if question_context["already_answered"]:
@@ -697,10 +847,13 @@ class Command(BaseCommand):
                     session_id,
                     question_id_int,
                 )
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Câu hỏi này đã được nộp trước đó.'
-                })
+                await self._send_exam_error(
+                    reply_channel,
+                    reply_group,
+                    session_id=session_id,
+                    question_id=question_id_int,
+                    message='Câu hỏi này đã được nộp trước đó.',
+                )
                 return
 
             ordered_question_ids = question_context["ordered_question_ids"]
@@ -715,6 +868,7 @@ class Command(BaseCommand):
             current_step = "process_audio_and_transcribe"
             raw_transcript = await self.process_audio_and_transcribe(
                 reply_channel,
+                reply_group,
                 chunks,
                 whisper_prompt=question_context["question_text"],
                 session_id=session_id,
@@ -742,6 +896,7 @@ class Command(BaseCommand):
             current_step = "rephrase_text_with_chatgpt"
             await self._send_exam_progress(
                 reply_channel,
+                reply_group,
                 stage="rephrasing",
                 session_id=session_id,
                 question_id=question_id_int,
@@ -765,6 +920,7 @@ class Command(BaseCommand):
                 )
             await self._send_exam_progress(
                 reply_channel,
+                reply_group,
                 stage="rephrase_ready",
                 session_id=session_id,
                 question_id=question_id_int,
@@ -780,6 +936,7 @@ class Command(BaseCommand):
             current_step = "score_student_answer_with_openai"
             await self._send_exam_progress(
                 reply_channel,
+                reply_group,
                 stage="scoring",
                 session_id=session_id,
                 question_id=question_id_int,
@@ -798,6 +955,7 @@ class Command(BaseCommand):
             )
             await self._send_exam_progress(
                 reply_channel,
+                reply_group,
                 stage="score_ready",
                 session_id=session_id,
                 question_id=question_id_int,
@@ -834,13 +992,17 @@ class Command(BaseCommand):
                     question_id_int,
                     exam_result["id"],
                 )
-                await self.channel_layer.send(reply_channel, {
-                    'type': 'exam.error',
-                    'message': 'Câu hỏi này đã được nộp trước đó.'
-                })
+                await self._send_exam_error(
+                    reply_channel,
+                    reply_group,
+                    session_id=session_id,
+                    question_id=question_id_int,
+                    message='Câu hỏi này đã được nộp trước đó.',
+                )
                 return
             await self._send_exam_progress(
                 reply_channel,
+                reply_group,
                 stage="result_saved",
                 session_id=session_id,
                 question_id=question_id_int,
@@ -868,7 +1030,13 @@ class Command(BaseCommand):
                 reply_channel,
             )
             current_step = "channel_layer.send exam.result"
-            await self.channel_layer.send(reply_channel, {'type': 'exam.result', 'message': result_payload})
+            await self._send_exam_result(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id_int,
+                payload=result_payload,
+            )
             logger.info(
                 "[MAIN] Đã gửi exam.result: session_id=%s question_id=%s result_id=%s reply_channel=%s",
                 session_id,
@@ -886,7 +1054,13 @@ class Command(BaseCommand):
                 e,
                 exc_info=True,
             )
-            await self.channel_layer.send(reply_channel, {'type': 'exam.error', 'message': f'Lỗi worker: {str(e)}'})
+            await self._send_exam_error(
+                reply_channel,
+                reply_group,
+                session_id=session_id,
+                question_id=question_id,
+                message=f'Lỗi worker: {str(e)}',
+            )
 
     async def process_generate_questions(self, message):
         job_id = message["job_id"]
@@ -914,7 +1088,7 @@ class Command(BaseCommand):
             doc_text_parts = []
             for m in materials:
                 text = await sync_to_async(extract_material_text)(m)
-                doc_text_parts.append(f"--- Nguá»“n: {m.title} ---\n{text[:5000]}")
+                doc_text_parts.append(f"--- Nguồn: {m.title} ---\n{text[:5000]}")
 
             doc_text = "\n\n".join(doc_text_parts)
 
@@ -923,24 +1097,24 @@ class Command(BaseCommand):
             hard = int(level_config.get("hard", 0))
 
             system_prompt = (
-                "Bạn lÃ  một chuyên gia học thuật ra đá» thi vấn đÃ¡p đáº¡i học.\n"
-                "Nhiá»‡m vụ: Dựa vào ná»™i dung tÃ i liệu đưá»£c cung cấp, tạo câu hỏi đÃºng với sá»‘ lượng và mức đá»™ đưá»£c yêu cầu.\n"
-                "ĐẦU RA BẮT BUá»˜C: JSON object theo format "
-                '{"questions": [{"content": "...", "difficulty": "EASY|MEDIUM|HARD", "source": "tên tÃ i liệu"}]}'
+                "Bạn là một chuyên gia học thuật ra đề thi vấn đáp đại học.\n"
+                "Nhiệm vụ: Dựa vào nội dung tài liệu được cung cấp, tạo câu hỏi đúng với số lượng và mức độ được yêu cầu.\n"
+                "Đầu ra bắt buộc: JSON object theo format "
+                '{"questions": [{"content": "...", "difficulty": "EASY|MEDIUM|HARD", "source": "tên tài liệu"}]}'
             )
 
             user_prompt = f"""
-                Tạo tá»•ng cá»™ng {total_count} câu hỏi:
+                Tạo tổng cộng {total_count} câu hỏi:
                 - EASY: {easy}
                 - MEDIUM: {medium}
                 - HARD: {hard}
 
-                Dựa trên tÃ i liệu sau:
+                Dựa trên tài liệu sau:
                 {doc_text}
                 """
 
             if self.openai_client is None:
-                raise RuntimeError("OpenAI client chưa đưá»£c khá»Ÿi tạo.")
+                raise RuntimeError("OpenAI client chưa được khởi tạo.")
 
             resp = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
@@ -964,12 +1138,12 @@ class Command(BaseCommand):
 
                 content = (q.get("content") or "").strip()
 
-                # ==== BẮT BUá»˜C LƯU VÃ€O DATABASE Vá»šI TIá»€N TỐ DRAFT_ ====
+                # ==== Bắt buộc lưu vào database với tiền tố DRAFT_ ====
                 new_q = await sync_to_async(Question.objects.create)(
                     subject=subject,
                     question_text=content,
                     difficulty=diff,
-                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}"  # Lưu dưá»›i dạng nháp
+                    question_id_in_barem=f"DRAFT_AI_{uuid4().hex[:8]}"  # Lưu dưới dạng nháp
                 )
 
                 formatted_questions.append({
@@ -1013,13 +1187,15 @@ class Command(BaseCommand):
             message = await self.channel_layer.receive(ASR_TASK_CHANNEL)
             task_type = message.get('type')
             reply_channel = message.get('reply_channel')
+            reply_group = message.get('reply_group')
             session_id = message.get('session_id')
             question_id = message.get('question_id')
 
             logger.info(
-                "[RUN] Đã nhận message: task_type=%s reply_channel=%s session_id=%s question_id=%s",
+                "[RUN] Đã nhận message: task_type=%s reply_channel=%s reply_group=%s session_id=%s question_id=%s",
                 task_type,
                 reply_channel,
+                reply_group,
                 session_id,
                 question_id,
             )
@@ -1029,9 +1205,9 @@ class Command(BaseCommand):
                 asyncio.create_task(self.process_generate_questions(message))
                 continue
 
-            if not reply_channel:
+            if not reply_channel and not reply_group:
                 logger.warning(
-                    "[RUN] Bỏ qua message không có reply_channel: task_type=%s session_id=%s question_id=%s",
+                    "[RUN] Bỏ qua message không có target reply: task_type=%s session_id=%s question_id=%s",
                     task_type,
                     session_id,
                     question_id,
@@ -1050,6 +1226,8 @@ class Command(BaseCommand):
                     'session_id': session_id,
                     'question_id': question_id,
                     'audio_mime_type': message.get('audio_mime_type') or '',
+                    'allow_after_expiry': bool(message.get('allow_after_expiry')),
+                    'reply_group': reply_group,
                     'stream_start_received': True,
                 }
             elif task_type == 'asr.chunk':
@@ -1063,6 +1241,8 @@ class Command(BaseCommand):
                         stream_meta['question_id'] = question_id
                     if message.get('audio_mime_type'):
                         stream_meta['audio_mime_type'] = message.get('audio_mime_type')
+                    if message.get('reply_group'):
+                        stream_meta['reply_group'] = message.get('reply_group')
                     chunk_count = len(self.audio_chunks[reply_channel])
                     if chunk_count == 1 or chunk_count % CHUNK_LOG_INTERVAL == 0:
                         logger.info(
@@ -1090,6 +1270,8 @@ class Command(BaseCommand):
                 session_id = session_id or stream_meta.get('session_id')
                 question_id = question_id or stream_meta.get('question_id')
                 audio_mime_type = message.get('audio_mime_type') or stream_meta.get('audio_mime_type') or ''
+                allow_after_expiry = bool(message.get('allow_after_expiry') or stream_meta.get('allow_after_expiry'))
+                reply_group = reply_group or stream_meta.get('reply_group')
                 logger.info(
                     "[RUN] END stream: reply_channel=%s session_id=%s question_id=%s mode=%s stream_start_received=%s chunk_count=%s stream_end_received=True audio_mime_type=%s",
                     reply_channel,
@@ -1109,11 +1291,20 @@ class Command(BaseCommand):
                         mode,
                         stream_started,
                     )
+                    await self._send_exam_error(
+                        reply_channel,
+                        reply_group,
+                        session_id=session_id,
+                        question_id=question_id,
+                        message='Không nhận được dữ liệu âm thanh để chấm điểm.',
+                    )
                     continue
 
                 message['session_id'] = session_id
                 message['question_id'] = question_id
                 message['audio_mime_type'] = audio_mime_type
+                message['allow_after_expiry'] = allow_after_expiry
+                message['reply_group'] = reply_group
                 message['__chunks'] = chunks
                 asyncio.create_task(self.process_main_question(message))
             else:

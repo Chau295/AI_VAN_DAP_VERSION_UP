@@ -783,7 +783,7 @@
         <div class="qm2-meta-row">
           <span><i class="far fa-file-alt"></i> File nguồn: <span class="file">{{ roster.original_file_name }}</span></span>
           {% if roster.status == 'CREATED' %}
-            <span class="qm2-pill qm2-pill-created">ĐÃ TẠO</span>
+            <span class="qm2-pill qm2-pill-created">Đã tạo</span>
           {% else %}
             <span class="qm2-pill qm2-pill-pending">CHƯA TẠO</span>
           {% endif %}
@@ -803,21 +803,6 @@
           {% endif %}
         </button>
       </div>
-    </div>
-
-    <div class="qm2-status-note">
-      {% if pending_accounts_count == 0 %}
-        Danh sách này đã hoàn tất tạo hoặc liên kết tài khoản cho {{ created_accounts_count }}/{{ roster.total_students }} sinh viên.
-        {% if roster.account_created_at %}Thời điểm hoàn tất: {{ roster.account_created_at|date:"H:i d/m/Y" }}.{% endif %}
-      {% else %}
-        Hiện đã có {{ created_accounts_count }}/{{ roster.total_students }} sinh viên có tài khoản, gồm {{ existing_accounts_count }} tài khoản có sẵn và {{ new_accounts_count }} tài khoản mới tạo. Còn {{ pending_accounts_count }} sinh viên chưa được tạo hoặc liên kết tài khoản.
-      {% endif %}
-    </div>
-
-    <div class="qm2-account-breakdown">
-      <span class="qm2-account-pill is-existing">Đã có sẵn: {{ existing_accounts_count }}</span>
-      <span class="qm2-account-pill is-created">Mới tạo: {{ new_accounts_count }}</span>
-      <span class="qm2-account-pill is-pending">Chưa có: {{ uncreated_accounts_count }}</span>
     </div>
 
     <div class="qm2-card">
@@ -842,7 +827,7 @@
               <th>Giới tính</th>
               <th>Ngày sinh</th>
               <th>Lớp</th>
-              <th>Trạng thái tài khoản</th>
+              <th>Trạng thái</th>
             </tr>
           </thead>
           <tbody>
@@ -857,15 +842,15 @@
                 <td>
                   <div class="qm2-account-cell">
                     {% if student.account_status == 'EXISTING' %}
-                      <span class="qm2-pill qm2-pill-existing">ĐÃ CÓ SẴN</span>
+                      <span class="qm2-pill qm2-pill-existing">Đã có tài khoản</span>
                       <div class="qm2-status-meta-inline">
                         {% if student.linked_user %}Tài khoản liên kết: {{ student.linked_user.username }}{% else %}Đã có tài khoản từ trước{% endif %}
                       </div>
                     {% elif student.account_status == 'CREATED' %}
-                      <span class="qm2-pill qm2-pill-created">MỚI TẠO</span>
+                      <span class="qm2-pill qm2-pill-created">Mới tạo tài khoản</span>
                       <div class="qm2-status-meta-inline">Đăng nhập bằng MSSV và mật khẩu vừa cấp</div>
                     {% else %}
-                      <span class="qm2-pill qm2-pill-pending">CHƯA CÓ</span>
+                      <span class="qm2-pill qm2-pill-pending">Chưa có tài khoản</span>
                       <div class="qm2-status-meta-inline">Chưa được tạo hoặc liên kết tài khoản</div>
                     {% endif %}
                   </div>

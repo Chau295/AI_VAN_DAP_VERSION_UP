@@ -51,19 +51,31 @@
               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
                 Vắng thi
               </span>
+            {% else %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                Đang thực hiện
+              </span>
             {% endif %}
           </td>
           <td class="px-6 py-4 text-sm">
+            {% if session.history_status == "COMPLETED" %}
             <div class="font-bold text-blue-600">
               {{ session.final_display_score|default:0|floatformat:-2 }}{{ session.score_scale_suffix }}
             </div>
             {% if session.show_non_ten_scale_warning %}
               <div class="mt-1 text-xs text-amber-700">{{ session.score_scale_warning }}</div>
             {% endif %}
+            {% else %}
+            <span class="text-gray-400">-</span>
+            {% endif %}
           </td>
           <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-center">
             {% if session.history_status == "ABSENT" %}
               <span class="text-gray-400">-</span>
+            {% elif session.history_status == "IN_PROGRESS" %}
+              <a href="{% url 'qna:exam_page' session.subject.subject_code %}" class="inline-flex items-center px-3 py-1.5 rounded-md bg-amber-500 text-white hover:bg-amber-600">
+                Tiếp tục làm bài
+              </a>
             {% else %}
               <a href="{% url 'qna:history_detail' session.id %}" class="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700">
                 Xem chi tiết

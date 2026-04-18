@@ -226,6 +226,8 @@
 </div>
 
 {{ session.id|json_script:"session_id_data" }}
+{{ existing_results|json_script:"existing_results_data" }}
+{{ question_score_map|json_script:"question_score_map_data" }}
 {% csrf_token %}
 
 <style>
@@ -293,9 +295,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const SERVER_CLIENT_OFFSET_MS = SERVER_NOW_MS ? (SERVER_NOW_MS - CLIENT_NOW_MS) : 0;
   const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
   const SESSION_ID = JSON.parse(document.getElementById('session_id_data').textContent);
+  const EXISTING_RESULTS = JSON.parse(document.getElementById('existing_results_data').textContent || '[]');
+  const QUESTION_SCORE_MAP = JSON.parse(document.getElementById('question_score_map_data').textContent || '{}');
+  const GRADING_POLL_INTERVAL_MS = 2000;
+  const GRADING_REQUEST_TIMEOUT_MS = 90000;
 
   const API_ENDPOINTS = {
-    FINALIZE: "{% url 'qna:finalize_session' session.id %}"
+    FINALIZE: "{% url 'qna:finalize_session' session.id %}",
+    GRADING_STATUS_TEMPLATE: "{% url 'qna:exam_grading_status' session.id 999999 %}"
   };
 
   let scoreScaleSuffix = SCORE_SCALE_SUFFIX;
@@ -306,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const PROGRESS_STAGE_LABELS = {
     received_audio: 'Đã nhận âm thanh',
     converting_audio: 'Đang chuyển đổi âm thanh...',
-    wav_ready: 'Âm thanh WAV đã sẵn sàng',
+    wav_ready: 'File WAV đã sẵn sàng',
     transcribing: 'Đang nhận diện giọng nói...',
     transcript_ready: 'Đã nhận transcript từ Whisper',
     rephrasing: 'Đang chuẩn hóa câu trả lời...',
@@ -355,7 +362,11 @@ document.addEventListener('DOMContentLoaded', () => {
       stage: '',
       detail: '',
       score: null,
-    }
+    },
+    pendingGradingQuestionId: null,
+    gradingPollTimer: null,
+    lastGradingUpdateMs: 0,
+    handledResultKeys: new Set(),
   };
 
   document.querySelectorAll('.question-choice-btn').forEach(btn => {
@@ -364,6 +375,37 @@ document.addEventListener('DOMContentLoaded', () => {
       order: Number(btn.dataset.questionOrder),
       question_text: btn.dataset.questionText
     });
+  });
+
+  EXISTING_RESULTS.forEach((result) => {
+    const questionId = Number(result.question_id || 0);
+    if (!questionId) return;
+
+    state.mainResults.push({
+      question_id: questionId,
+      score: Number(result.display_score || 0),
+      rawScore: Number(result.score || 0),
+      maxScore: Number(result.question_max_score || getQuestionMaxScore(questionId)),
+      feedback: result.feedback || '',
+      transcript: result.transcript || '',
+      analysis: result.analysis || [],
+      result_id: Number(result.result_id || 0),
+      text: state.questions.find(q => q.id === questionId)?.question_text || '',
+      audioUrl: result.audio_url || ''
+    });
+
+    if (result.result_id) {
+      state.handledResultKeys.add(`${questionId}:${Number(result.result_id || 0)}`);
+    }
+
+    const btn = document.querySelector(`.question-choice-btn[data-question-id="${questionId}"]`);
+    if (!btn) return;
+    btn.classList.add('opacity-60', 'pointer-events-none');
+    const statusEl = btn.querySelector('.q-status');
+    if (statusEl) {
+      statusEl.textContent = 'Đã trả lời';
+      statusEl.className = 'q-status inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700';
+    }
   });
 
   const modal = {
@@ -420,6 +462,31 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${String(m).padStart(2, '0')}:${String(rs).padStart(2, '0')}`;
   };
 
+  function getQuestionMaxScore(questionId) {
+    const key = String(questionId || '');
+    const value = QUESTION_SCORE_MAP[key] ?? QUESTION_SCORE_MAP[Number(questionId || 0)] ?? 10;
+    const parsed = Number(value || 0);
+    return parsed > 0 ? parsed : 10;
+  }
+
+  function scaleQuestionScore(rawScore, questionId) {
+    const normalized = Math.min(Math.max(Number(rawScore || 0), 0), 10);
+    const maxScore = getQuestionMaxScore(questionId);
+    return {
+      maxScore,
+      displayScore: Math.min((normalized / 10) * maxScore, maxScore)
+    };
+  }
+
+  function buildHandledResultKey(payload) {
+    const data = payload?.data || {};
+    return `${Number(data.question_id || 0)}:${Number(data.result_id || 0)}`;
+  }
+
+  function getGradingStatusUrl(questionId) {
+    return API_ENDPOINTS.GRADING_STATUS_TEMPLATE.replace('999999', String(questionId));
+  }
+
   const isExamTimeExpired = () => Boolean(state.mainTimerEnd && nowMs() >= state.mainTimerEnd);
 
   const showAlert = (message) => {
@@ -436,6 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
       detail,
       score: null,
     };
+    state.lastGradingUpdateMs = Date.now();
     pushGradingLog(detail);
     renderGradingProgress();
   }
@@ -480,44 +548,10 @@ document.addEventListener('DOMContentLoaded', () => {
       detail,
       score: payload.score ?? state.gradingProgress.score,
     };
+    state.lastGradingUpdateMs = Date.now();
 
     pushGradingLog(detail);
-  }
-
-  function finalizeSessionInBackground(reason = 'pagehide') {
-    if (state.exitFinalizeSent || state.examFinished || state.isFinalizingExam) {
-      return;
-    }
-
-    state.exitFinalizeSent = true;
-
-    try {
-      const formData = new FormData();
-      formData.append('csrfmiddlewaretoken', csrfToken);
-      formData.append('reason', reason);
-      if (navigator.sendBeacon) {
-        const sent = navigator.sendBeacon(API_ENDPOINTS.FINALIZE, formData);
-        console.log('Background finalize beacon:', { reason, sent });
-        if (sent) {
-          return;
-        }
-      }
-    } catch (error) {
-      console.error('Finalize beacon error:', error);
-    }
-
-    fetch(API_ENDPOINTS.FINALIZE, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': csrfToken
-      },
-      body: JSON.stringify({ reason }),
-      credentials: 'same-origin',
-      keepalive: true
-    }).catch((error) => {
-      console.error('Finalize keepalive error:', error);
-    });
+    renderGradingProgress();
   }
 
   function syncFinishExamButtonState() {
@@ -574,6 +608,69 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     return res.json();
+  }
+
+  function stopGradingStatusPolling() {
+    if (state.gradingPollTimer) {
+      window.clearTimeout(state.gradingPollTimer);
+      state.gradingPollTimer = null;
+    }
+  }
+
+  async function pollGradingStatus(questionId) {
+    if (!questionId || state.examFinished) {
+      stopGradingStatusPolling();
+      return;
+    }
+
+    try {
+      const response = await fetch(getGradingStatusUrl(questionId), {
+        method: 'GET',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      const data = await response.json().catch(() => ({}));
+      const gradingState = data.grading_state || null;
+
+      if (gradingState?.status === 'PROGRESS' && gradingState.progress) {
+        await handleExamProgress(gradingState.progress);
+      } else if (gradingState?.status === 'RESULT' && gradingState.result) {
+        await handleExamResult(gradingState.result);
+        return;
+      } else if (gradingState?.status === 'ERROR') {
+        await handleExamError(gradingState.error_message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
+        return;
+      }
+    } catch (error) {
+      console.warn('Polling grading status failed:', error);
+    }
+
+    if (!state.isSubmittingAnswer || state.pendingGradingQuestionId !== questionId) {
+      stopGradingStatusPolling();
+      return;
+    }
+
+    if (state.lastGradingUpdateMs && (Date.now() - state.lastGradingUpdateMs) >= GRADING_REQUEST_TIMEOUT_MS) {
+      await handleExamError('Hệ thống chấm điểm không phản hồi kịp thời. Vui lòng thử lại câu này.');
+      return;
+    }
+
+    state.gradingPollTimer = window.setTimeout(() => {
+      pollGradingStatus(questionId).catch((error) => {
+        console.error('Polling loop error:', error);
+      });
+    }, GRADING_POLL_INTERVAL_MS);
+  }
+
+  function startGradingStatusPolling(questionId) {
+    stopGradingStatusPolling();
+    state.pendingGradingQuestionId = questionId;
+    state.lastGradingUpdateMs = Date.now();
+    state.gradingPollTimer = window.setTimeout(() => {
+      pollGradingStatus(questionId).catch((error) => {
+        console.error('Initial grading poll error:', error);
+      });
+    }, GRADING_POLL_INTERVAL_MS);
   }
 
   let mainTimerInterval = null;
@@ -866,6 +963,8 @@ document.addEventListener('DOMContentLoaded', () => {
       audio_mime_type: audioMimeType,
       allow_after_expiry: allowLateAnswerFlush
     }));
+
+    startGradingStatusPolling(id);
   }
 
   function blobToAudioFile(blob, fileBaseName) {
@@ -918,6 +1017,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function handleExamError(message) {
+    stopGradingStatusPolling();
+    state.pendingGradingQuestionId = null;
     pushGradingLog(message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
     setSubmittingAnswer(false);
     state.currentQuestion = null;
@@ -939,6 +1040,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = payload.data || {};
 
     if (payload.type === 'main_question_complete') {
+      const handledResultKey = buildHandledResultKey(payload);
+      if (state.handledResultKeys.has(handledResultKey)) {
+        stopGradingStatusPolling();
+        state.pendingGradingQuestionId = null;
+        setSubmittingAnswer(false);
+        return;
+      }
+      state.handledResultKeys.add(handledResultKey);
+      stopGradingStatusPolling();
+      state.pendingGradingQuestionId = null;
       logTranscriptDebug('exam.result.transcript', data.transcript, data.question_id);
       applyProgressPayload({
         stage: 'score_ready',
@@ -956,9 +1067,12 @@ document.addEventListener('DOMContentLoaded', () => {
       let localResult = state.mainResults.find(r => r.question_id === data.question_id);
 
       if (!localResult) {
+        const scaledScore = scaleQuestionScore(data.score, data.question_id);
         localResult = {
           question_id: data.question_id,
-          score: data.score,
+          score: scaledScore.displayScore,
+          rawScore: Number(data.score || 0),
+          maxScore: scaledScore.maxScore,
           feedback: data.feedback,
           analysis: data.analysis || [],
           result_id: data.result_id,
@@ -966,6 +1080,14 @@ document.addEventListener('DOMContentLoaded', () => {
           audioUrl: ''
         };
         state.mainResults.push(localResult);
+      } else {
+        const scaledScore = scaleQuestionScore(data.score, data.question_id);
+        localResult.score = scaledScore.displayScore;
+        localResult.rawScore = Number(data.score || 0);
+        localResult.maxScore = scaledScore.maxScore;
+        localResult.feedback = data.feedback;
+        localResult.analysis = data.analysis || [];
+        localResult.result_id = data.result_id;
       }
 
       try {
@@ -1142,7 +1264,7 @@ document.addEventListener('DOMContentLoaded', () => {
         feedback: result?.feedback || 'Chưa có nhận xét',
         analysis: result?.analysis || [],
         score: result?.score || 0,
-        max: 10.0,
+        max: result?.maxScore || getQuestionMaxScore(qid),
         audioUrl: result?.audioUrl || ''
       });
     });
@@ -1203,10 +1325,6 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         event.returnValue = '';
       }
-    });
-
-    window.addEventListener('pagehide', () => {
-      finalizeSessionInBackground('pagehide');
     });
   }
 
@@ -1556,6 +1674,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('beforeunload', () => {
     window.clearTimeout(window.__wsReconnectTimer);
+    stopGradingStatusPolling();
     stopMonitoring();
   });
 

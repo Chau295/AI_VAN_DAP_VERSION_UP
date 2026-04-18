@@ -5,13 +5,22 @@ import logging
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from .exam_runtime import is_exam_group_open, should_mark_lecturer_cheating_flag
+from .exam_runtime import (
+    EXAM_GRADING_STATUS_PENDING,
+    is_exam_group_open,
+    should_mark_lecturer_cheating_flag,
+    store_exam_grading_state,
+)
 from .models import ExamSession, ViolationImage
 
 logger = logging.getLogger(__name__)
 
 ASR_TASK_CHANNEL = "asr-tasks"
 CHUNK_LOG_INTERVAL = 25
+
+
+def _is_truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 def _session_is_valid_for_exam(session):
     if not session:
@@ -72,6 +81,10 @@ class ExamConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     @sync_to_async
+    def _store_grading_state(self, session_id, question_id, **kwargs):
+        return store_exam_grading_state(session_id, question_id, **kwargs)
+
+    @sync_to_async
     def get_session_by_id(self, session_id):
         try:
             return (
@@ -103,16 +116,31 @@ class ExamConsumer(AsyncWebsocketConsumer):
             if normalized_action == "start_stream":
                 question_id = data.get("question_id")
                 audio_mime_type = data.get("audio_mime_type") or ""
+                allow_after_expiry = _is_truthy(data.get("allow_after_expiry"))
                 self.audio_stream_started = True
                 self.audio_chunk_count = 0
                 self.current_audio_question_id = question_id
+                if question_id:
+                    await self._store_grading_state(
+                        self.session_id,
+                        question_id,
+                        status=EXAM_GRADING_STATUS_PENDING,
+                        progress={
+                            "stage": "queued",
+                            "session_id": int(self.session_id),
+                            "question_id": int(question_id),
+                            "detail": "Đã gửi âm thanh tới hàng đợi chấm điểm.",
+                        },
+                    )
                 logger.info(
-                    "[WS->Redis] Gửi asr.stream.start: target=%s reply_channel=%s session_id=%s question_id=%s audio_mime_type=%s",
+                    "[WS->Redis] Gửi asr.stream.start: target=%s reply_channel=%s reply_group=%s session_id=%s question_id=%s audio_mime_type=%s allow_after_expiry=%s",
                     ASR_TASK_CHANNEL,
                     self.channel_name,
+                    self.room_group_name,
                     self.session_id,
                     question_id,
                     audio_mime_type,
+                    allow_after_expiry,
                 )
                 await self.channel_layer.send(
                     ASR_TASK_CHANNEL,
@@ -121,7 +149,9 @@ class ExamConsumer(AsyncWebsocketConsumer):
                         "session_id": self.session_id,
                         "question_id": question_id,
                         "audio_mime_type": audio_mime_type,
+                        "allow_after_expiry": allow_after_expiry,
                         "reply_channel": self.channel_name,
+                        "reply_group": self.room_group_name,
                     },
                 )
                 return
@@ -130,16 +160,19 @@ class ExamConsumer(AsyncWebsocketConsumer):
                 question_id = data.get("question_id") or self.current_audio_question_id
                 mode = data.get("mode", "main")
                 audio_mime_type = data.get("audio_mime_type") or ""
+                allow_after_expiry = _is_truthy(data.get("allow_after_expiry"))
                 logger.info(
-                    "[WS->Redis] Gửi asr.stream.end: target=%s reply_channel=%s session_id=%s question_id=%s mode=%s chunk_count=%s stream_started=%s audio_mime_type=%s",
+                    "[WS->Redis] Gửi asr.stream.end: target=%s reply_channel=%s reply_group=%s session_id=%s question_id=%s mode=%s chunk_count=%s stream_started=%s audio_mime_type=%s allow_after_expiry=%s",
                     ASR_TASK_CHANNEL,
                     self.channel_name,
+                    self.room_group_name,
                     self.session_id,
                     question_id,
                     mode,
                     self.audio_chunk_count,
                     self.audio_stream_started,
                     audio_mime_type,
+                    allow_after_expiry,
                 )
                 await self.channel_layer.send(
                     ASR_TASK_CHANNEL,
@@ -149,7 +182,9 @@ class ExamConsumer(AsyncWebsocketConsumer):
                         "question_id": question_id,
                         "mode": mode,
                         "audio_mime_type": audio_mime_type,
+                        "allow_after_expiry": allow_after_expiry,
                         "reply_channel": self.channel_name,
+                        "reply_group": self.room_group_name,
                     },
                 )
                 self.audio_stream_started = False
@@ -198,6 +233,7 @@ class ExamConsumer(AsyncWebsocketConsumer):
                     "session_id": self.session_id,
                     "question_id": self.current_audio_question_id,
                     "reply_channel": self.channel_name,
+                    "reply_group": getattr(self, "room_group_name", ""),
                 },
             )
 

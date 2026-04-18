@@ -10,6 +10,7 @@ from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -306,6 +307,54 @@ class LecturerStudentRosterUploadTests(TestCase):
         self.client.logout()
         self.assertTrue(self.client.login(username="SV003", password="BatchPass123!"))
 
+    def test_detail_screen_uses_new_status_labels_and_hides_account_summary(self):
+        existing_user = self.user_model.objects.create_user(
+            username="legacy.student.detail",
+            password="LegacyPass123!",
+        )
+        UserProfile.objects.create(
+            user=existing_user,
+            is_lecturer=False,
+            full_name="Sinh Vien Da Co Tai Khoan",
+            student_id="SV004",
+        )
+
+        created_user = self.user_model.objects.create_user(
+            username="SV005",
+            password="BatchPass123!",
+        )
+        UserProfile.objects.create(
+            user=created_user,
+            is_lecturer=False,
+            full_name="Sinh Vien Moi Tao",
+            student_id="SV005",
+        )
+
+        roster = self._upload_roster([
+            "SV004,Sinh Vien Da Co Tai Khoan,Nam,12/05/2003,CNT01,sv004@example.com",
+            "SV005,Sinh Vien Moi Tao,Nu,24/08/2003,CNT01,sv005@example.com",
+            "SV006,Sinh Vien Chua Co,Nu,24/08/2003,CNT01,sv006@example.com",
+        ])
+
+        created_row = roster.students.get(student_code="SV005")
+        created_row.linked_user = created_user
+        created_row.account_created = True
+        created_row.account_status = StudentRosterAccountStatus.CREATED
+        created_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+
+        response = self.client.get(reverse("qna:lecturer_student_list_detail", args=[roster.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<th>Trạng thái</th>", html=True)
+        self.assertNotContains(response, "Trạng thái tài khoản")
+        self.assertContains(response, "Đã có tài khoản")
+        self.assertContains(response, "Mới tạo tài khoản")
+        self.assertContains(response, "Chưa có tài khoản")
+        self.assertNotContains(response, "sinh viên đã có tài khoản")
+        self.assertNotContains(response, "có sẵn •")
+        self.assertNotContains(response, "Hoàn tất lúc")
+        self.assertNotContains(response, "Thời điểm hoàn tất")
+
     def test_management_screen_has_clear_filter_action(self):
         self._upload_roster([
             "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com",
@@ -328,11 +377,40 @@ class LecturerStudentRosterUploadTests(TestCase):
             reverse("qna:lecturer_student_list_management", args=[self.subject.subject_code]),
         )
 
+    def test_upload_warning_uses_subject_name_instead_of_missing_subject_name_field(self):
+        self._upload_roster([
+            "SV010,Sinh Vien Trung,Nam,12/05/2003,CNT01,sv010@example.com",
+        ])
+
+        upload = SimpleUploadedFile(
+            "Danh_sach_L02.csv",
+            (
+                "student_code,full_name,gender,date_of_birth,class_name,email\n"
+                "SV010,Sinh Vien Trung,Nam,12/05/2003,CNT01,sv010@example.com\n"
+            ).encode("utf-8-sig"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
+            {
+                "academic_year": "2024-2025",
+                "semester": "HK1",
+                "files": upload,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        warnings = response.json()["results"][0]["warnings"]
+        self.assertTrue(any(self.subject.name in warning["message"] for warning in warnings))
+
     def disabled_ajax_upload_reports_skipped_rows_legacy_fixture(self):
         upload = SimpleUploadedFile(
             "Danh_sach_L02.csv",
             (
-                "MÃƒÂ£ sÃ¡Â»â€˜ sinh viÃƒÂªn,Họ vÃƒÂ  tÃƒÂªn,GiÃ¡Â»â€ºi tÃƒÂ­nh,NgÃƒÂ y sinh,LÃ¡Â»â€ºp,Email\n"
+                "Mã số sinh viên,Họ và tên,Giới tính,Ngày sinh,Lớp,Email\n"
                 "SV010,Nguyen Van Ten,Nam,12/05/2003,CNT01,sv010@example.com\n"
                 "SV011,,Nữ,24/08/2003,CNT01,sv011@example.com\n"
                 "SV010,Nguyen Van Trung,Nam,24/08/2003,CNT01,sv010-dup@example.com\n"
@@ -357,8 +435,8 @@ class LecturerStudentRosterUploadTests(TestCase):
         self.assertEqual(payload["uploaded_count"], 1)
         self.assertEqual(payload["results"][0]["total_students"], 1)
         self.assertEqual(len(payload["results"][0]["warnings"]), 2)
-        self.assertIn("Dong 3", payload["results"][0]["warnings"][0]["message"])
-        self.assertIn("Dong 4", payload["results"][0]["warnings"][1]["message"])
+        self.assertIn("Dòng 3", payload["results"][0]["warnings"][0]["message"])
+        self.assertIn("Dòng 4", payload["results"][0]["warnings"][1]["message"])
 
     def test_ajax_upload_reports_skipped_rows(self):
         upload = SimpleUploadedFile(
@@ -601,7 +679,7 @@ class LecturerQuestionManagementTests(TestCase):
     def _create_active_exam_group(self):
         return ExamSessionGroup.objects.create(
             subject=self.subject,
-            group_name="Ca thi dang dien ra",
+            group_name="Ca thi đang diễn ra",
             academic_year="2025-2026",
             semester="HK1",
             exam_date=timezone.now() - timedelta(minutes=5),
@@ -610,6 +688,157 @@ class LecturerQuestionManagementTests(TestCase):
             created_by=self.lecturer,
             configuration_data={"rooms": [], "rosters": []},
         )
+
+    def test_question_management_screen_exposes_has_active_exam_flag_for_selected_subject(self):
+        self._create_active_exam_group()
+
+        response = self.client.get(
+            reverse("qna:lecturer_questions_screen"),
+            {"subject_id": self.subject.id, "mode": "detail"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-has-active-exam="true"')
+
+    def test_create_question_bank_trims_name_and_rejects_duplicate_in_same_subject(self):
+        create_response = self._post_json(
+            "qna:api_create_question_bank",
+            {
+                "subject_id": str(self.subject.id),
+                "name": "  Ngan hang 1  ",
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        create_payload = create_response.json()
+        self.assertEqual(create_payload["status"], "SUCCESS")
+        self.assertEqual(create_payload["bank_name"], "Ngan hang 1")
+        self.assertTrue(QuestionBank.objects.filter(subject_id=self.subject, name="Ngan hang 1").exists())
+
+        duplicate_response = self._post_json(
+            "qna:api_create_question_bank",
+            {
+                "subject_id": str(self.subject.id),
+                "name": "Ngan hang 1",
+            },
+        )
+
+        self.assertEqual(duplicate_response.status_code, 400)
+        duplicate_payload = duplicate_response.json()
+        self.assertEqual(duplicate_payload["status"], "FAIL")
+        self.assertEqual(duplicate_payload["message"], "Tên ngân hàng đã tồn tại trong môn học này.")
+        self.assertEqual(QuestionBank.objects.filter(subject_id=self.subject, name="Ngan hang 1").count(), 1)
+
+    def test_create_question_bank_allows_same_name_in_different_subjects(self):
+        other_subject = Subject.objects.create(
+            name="Hoc may",
+            subject_code="ML401",
+        )
+        self.profile.subjects_taught.add(other_subject)
+
+        first_response = self._post_json(
+            "qna:api_create_question_bank",
+            {
+                "subject_id": str(self.subject.id),
+                "name": "Ngan hang 1",
+            },
+        )
+        second_response = self._post_json(
+            "qna:api_create_question_bank",
+            {
+                "subject_id": str(other_subject.id),
+                "name": "Ngan hang 1",
+            },
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(first_response.json()["status"], "SUCCESS")
+        self.assertEqual(second_response.json()["status"], "SUCCESS")
+        self.assertTrue(QuestionBank.objects.filter(subject_id=self.subject, name="Ngan hang 1").exists())
+        self.assertTrue(QuestionBank.objects.filter(subject_id=other_subject, name="Ngan hang 1").exists())
+
+    def test_create_question_bank_rejects_blank_name_after_trim(self):
+        response = self._post_json(
+            "qna:api_create_question_bank",
+            {
+                "subject_id": str(self.subject.id),
+                "name": "   ",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Tên ngân hàng không được để trống.")
+
+    def test_update_question_bank_rejects_duplicate_name_in_same_subject(self):
+        first_bank = QuestionBank.objects.create(subject=self.subject, name="Ngan hang 1")
+        second_bank = QuestionBank.objects.create(subject=self.subject, name="Ngan hang 2")
+
+        response = self._post_json(
+            "qna:api_update_question_bank",
+            {"name": "  Ngan hang 1  "},
+            args=[second_bank.id],
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Tên ngân hàng đã tồn tại trong môn học này.")
+
+        first_bank.refresh_from_db()
+        second_bank.refresh_from_db()
+        self.assertEqual(first_bank.name, "Ngan hang 1")
+        self.assertEqual(second_bank.name, "Ngan hang 2")
+
+    def test_question_bank_model_constraint_is_scoped_per_subject(self):
+        QuestionBank.objects.create(subject=self.subject, name="Constraint bank")
+
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                QuestionBank.objects.create(subject=self.subject, name="Constraint bank")
+
+        other_subject = Subject.objects.create(
+            name="Thi giac may tinh",
+            subject_code="CV401",
+        )
+        QuestionBank.objects.create(subject=other_subject, name="Constraint bank")
+        self.assertEqual(QuestionBank.objects.filter(name="Constraint bank").count(), 2)
+
+    def test_question_management_screen_keeps_cookie_helper_javascript_valid(self):
+        response = self.client.get(
+            reverse("qna:lecturer_questions_screen"),
+            {"subject_id": self.subject.id, "mode": "detail"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "if (document.cookie && document.cookie !== '') {")
+        self.assertNotContains(response, "<d></d>ocument.cookie")
+
+    def test_legacy_question_management_route_redirects_to_new_screen(self):
+        response = self.client.get(reverse("qna:lecturer_question_management", args=[self.subject.subject_code]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            f"{reverse('qna:lecturer_questions_screen')}?subject_id={self.subject.id}&mode=detail",
+        )
+
+    def test_legacy_generate_exam_codes_route_redirects_to_new_screen(self):
+        response = self.client.get(reverse("qna:lecturer_generate_exam_codes", args=[self.subject.subject_code]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            f"{reverse('qna:lecturer_generate_codes_screen')}?subject_id={self.subject.id}",
+        )
+
+    def test_legacy_upload_material_api_returns_gone(self):
+        response = self.client.post(reverse("qna:lecturer_upload_material_screen"))
+
+        self.assertEqual(response.status_code, 410)
+        self.assertFalse(response.json()["success"])
 
     def test_create_manual_question_and_list_by_bank(self):
         create_response = self._post_json(
@@ -665,7 +894,7 @@ class LecturerQuestionManagementTests(TestCase):
         Question.objects.create(
             subject=self.subject,
             bank=self.bank,
-            question_text="Cau clone khong duoc hien",
+            question_text="Câu clone không được hiển thị",
             question_id_in_barem="EC_legacy_clone",
             difficulty=DifficultyLevel.HARD,
             is_exam_clone=True,
@@ -695,12 +924,12 @@ class LecturerQuestionManagementTests(TestCase):
 
     def test_create_manual_question_rejects_bank_outside_lecturer_scope(self):
         other_subject = Subject.objects.create(
-            name="Mon khac",
+            name="Môn khác",
             subject_code="OT401",
         )
         other_bank = QuestionBank.objects.create(
             subject=other_subject,
-            name="Bank ngoai pham vi",
+            name="Bank ngoài phạm vi",
         )
 
         response = self._post_json(
@@ -710,7 +939,7 @@ class LecturerQuestionManagementTests(TestCase):
                 "real_bank_id": str(other_bank.id),
                 "view_type": "bank",
                 "difficulty": DifficultyLevel.MEDIUM,
-                "content": "Cau hoi khong hop le.",
+                "content": "Câu hỏi không hợp lệ.",
             },
         )
 
@@ -766,7 +995,7 @@ class LecturerQuestionManagementTests(TestCase):
         question = Question.objects.create(
             subject=self.subject,
             bank=self.bank,
-            question_text="Cau hoi dang duoc khoa",
+            question_text="Câu hỏi đang được khóa",
             question_id_in_barem="Q_AI401_LOCKED",
             difficulty=DifficultyLevel.EASY,
         )
@@ -960,25 +1189,33 @@ class LecturerExamManagementTests(TestCase):
             content_type="application/json",
         )
 
-    def _create_exam_set(self, number_of_versions=2):
-        response = self._post_json(
+    def _build_exam_set_payload(self, number_of_versions=2, **overrides):
+        payload = {
+            "subject_id": str(self.subject.id),
+            "academic_year": "2025-2026",
+            "semester": "HK1",
+            "number_of_versions": number_of_versions,
+            "easy_count": 1,
+            "medium_count": 1,
+            "hard_count": 1,
+            "easy_score": 2,
+            "medium_score": 3,
+            "hard_score": 5,
+            "shuffle_question_order": False,
+            "allow_duplicate_questions": False,
+            "source_bank_ids": [self.bank.id],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _create_exam_set_response(self, number_of_versions=2, **overrides):
+        return self._post_json(
             "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": number_of_versions,
-                "easy_count": 1,
-                "medium_count": 1,
-                "hard_count": 1,
-                "easy_score": 2,
-                "medium_score": 3,
-                "hard_score": 5,
-                "shuffle_question_order": False,
-                "allow_duplicate_questions": False,
-                "source_bank_ids": [self.bank.id],
-            },
+            self._build_exam_set_payload(number_of_versions=number_of_versions, **overrides),
         )
+
+    def _create_exam_set(self, number_of_versions=2, **overrides):
+        response = self._create_exam_set_response(number_of_versions=number_of_versions, **overrides)
         self.assertEqual(response.status_code, 200)
         return ExamSet.objects.get(pk=response.json()["exam_set_id"])
 
@@ -1006,7 +1243,7 @@ class LecturerExamManagementTests(TestCase):
     def _create_active_exam_group(self, *exam_codes):
         exam_group = ExamSessionGroup.objects.create(
             subject=self.subject,
-            group_name="Ca thi dang dien ra",
+            group_name="Ca thi đang diễn ra",
             academic_year="2025-2026",
             semester="HK1",
             exam_date=timezone.now() - timedelta(minutes=5),
@@ -1031,25 +1268,69 @@ class LecturerExamManagementTests(TestCase):
             self.assertTrue(all(item.question.is_exam_clone for item in items))
             self.assertTrue(all(item.question.bank is None for item in items))
 
+    def test_create_exam_set_returns_success_message_when_total_score_equals_ten(self):
+        response = self._create_exam_set_response()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "SUCCESS")
+        self.assertEqual(payload["message"], "Tạo bộ đề thành công.")
+        self.assertEqual(ExamSet.objects.count(), 1)
+
+    def test_create_exam_set_rejects_total_score_greater_than_ten(self):
+        response = self._create_exam_set_response(hard_score=6)
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Tổng điểm hiện tại đang vượt quá 10 điểm.")
+        self.assertEqual(ExamSet.objects.count(), 0)
+        self.assertEqual(ExamCode.objects.count(), 0)
+        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+
+    def test_create_exam_set_rejects_total_score_less_than_ten(self):
+        response = self._create_exam_set_response(hard_score=4)
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Tổng điểm hiện tại chưa đủ 10 điểm.")
+        self.assertEqual(ExamSet.objects.count(), 0)
+        self.assertEqual(ExamCode.objects.count(), 0)
+        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+
+    def test_create_exam_set_rejects_zero_total_questions(self):
+        response = self._create_exam_set_response(easy_count=0, medium_count=0, hard_count=0)
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Mỗi mã đề phải có ít nhất 1 câu hỏi.")
+        self.assertEqual(ExamSet.objects.count(), 0)
+        self.assertEqual(ExamCode.objects.count(), 0)
+        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+
+    def test_create_exam_set_rejects_positive_count_with_zero_score(self):
+        response = self._create_exam_set_response(easy_score=0)
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Mỗi câu hỏi phải có số điểm lớn hơn 0.")
+        self.assertEqual(ExamSet.objects.count(), 0)
+        self.assertEqual(ExamCode.objects.count(), 0)
+        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+
+    def test_create_exam_set_creates_only_non_empty_exam_codes_with_positive_scores(self):
+        exam_set = self._create_exam_set(number_of_versions=2)
+
+        for code in exam_set.exam_codes.all():
+            items = list(code.exam_code_questions.all())
+            self.assertGreater(len(items), 0)
+            self.assertTrue(all(float(item.score or 0) > 0 for item in items))
+
     def test_create_exam_set_ignores_shuffle_question_order_payload(self):
-        response = self._post_json(
-            "qna:lecturer_create_exam_set",
-            {
-                "subject_id": str(self.subject.id),
-                "academic_year": "2025-2026",
-                "semester": "HK1",
-                "number_of_versions": 1,
-                "easy_count": 1,
-                "medium_count": 1,
-                "hard_count": 1,
-                "easy_score": 2,
-                "medium_score": 3,
-                "hard_score": 5,
-                "shuffle_question_order": False,
-                "allow_duplicate_questions": False,
-                "source_bank_ids": [self.bank.id],
-            },
-        )
+        response = self._create_exam_set_response(number_of_versions=1)
 
         self.assertEqual(response.status_code, 200)
         exam_set = ExamSet.objects.get(pk=response.json()["exam_set_id"])
@@ -1078,10 +1359,27 @@ class LecturerExamManagementTests(TestCase):
         self.assertContains(response, 'id="easyCount" type="number" min="0" step="1"')
         self.assertContains(response, 'id="mediumCount" type="number" min="0" step="1"')
         self.assertContains(response, 'id="hardCount" type="number" min="0" step="1"')
-        self.assertNotIn("M?c ?? c?u h?i", content)
-        self.assertNotIn("c?u h?i", content)
+        self.assertContains(response, "Mức độ câu hỏi")
+        self.assertIsNone(re.search("[\\u00C3\\u00C2\\u00C4\\u00C5]", content))
         self.assertNotContains(response, 'class="stepper-input"')
         self.assertNotContains(response, 'type="hidden" id="easyCount"')
+
+    def test_generate_exam_screen_includes_summary_validation_messages(self):
+        response = self.client.get(
+            reverse("qna:lecturer_generate_codes_screen"),
+            {"subject_id": self.subject.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertContains(response, 'id="summaryMessage"')
+        self.assertContains(response, "Tạo bộ đề thành công.")
+        self.assertContains(response, "Tổng điểm hiện tại đang vượt quá 10 điểm.")
+        self.assertContains(response, "Tổng điểm hiện tại chưa đủ 10 điểm.")
+        self.assertContains(response, "Mỗi mã đề phải có ít nhất 1 câu hỏi.")
+        self.assertContains(response, "Mỗi câu hỏi phải có số điểm lớn hơn 0.")
+        self.assertIn("getConfigValidation", content)
+        self.assertIn("btn.disabled = !validation.valid;", content)
 
     def test_legacy_create_session_route_redirects_to_session_wizard(self):
         response = self.client.get(
@@ -1092,6 +1390,17 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(
             response["Location"],
             f"{reverse('qna:lecturer_create_session_screen')}?subject_id={self.subject.id}",
+        )
+
+    def test_legacy_student_review_route_redirects_to_new_screen(self):
+        response = self.client.get(
+            reverse("qna:lecturer_student_review", args=[self.subject.subject_code])
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            f"{reverse('qna:lecturer_student_review_screen')}?subject_id={self.subject.id}",
         )
 
     def test_exam_set_list_shows_set_code_and_clickable_row_without_edit_icon(self):
@@ -1109,6 +1418,92 @@ class LecturerExamManagementTests(TestCase):
         self.assertContains(response, 'class="qm2-clickable-row"')
         self.assertContains(response, f'data-detail-url="/lecturer/exam-codes/{exam_set.id}/"')
         self.assertNotContains(response, "fa-pen")
+
+    def test_exam_set_list_searches_by_exam_set_code(self):
+        target_exam_set = self._create_exam_set(number_of_versions=1)
+        other_exam_set = self._create_exam_set(number_of_versions=1)
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"q": f"BD-{target_exam_set.id:04d}"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 1)
+        self.assertEqual(response.context["rows"][0]["id"], target_exam_set.id)
+        self.assertContains(response, f"BD-{target_exam_set.id:04d}")
+        self.assertNotContains(response, f"BD-{other_exam_set.id:04d}")
+
+    def test_exam_set_list_searches_by_exam_set_name(self):
+        target_exam_set = self._create_exam_set(number_of_versions=1)
+        other_exam_set = self._create_exam_set(number_of_versions=1)
+        target_exam_set.name = "Bộ đề Hồi quy tuyến tính"
+        target_exam_set.save(update_fields=["name", "updated_at"])
+        other_exam_set.name = "Bộ đề Cây quyết định"
+        other_exam_set.save(update_fields=["name", "updated_at"])
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"q": "Hồi quy"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 1)
+        self.assertEqual(response.context["rows"][0]["id"], target_exam_set.id)
+        self.assertContains(response, f"BD-{target_exam_set.id:04d}")
+        self.assertNotContains(response, f"BD-{other_exam_set.id:04d}")
+
+    def test_exam_set_list_search_returns_no_results_when_keyword_does_not_match(self):
+        self._create_exam_set(number_of_versions=1)
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"q": "khong-co-ket-qua"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["rows"], [])
+        self.assertContains(response, "Chưa có bộ đề nào phù hợp với bộ lọc hiện tại.")
+
+    def test_exam_set_list_search_works_together_with_linked_filter(self):
+        used_exam_set = self._create_exam_set(number_of_versions=1)
+        unused_exam_set = self._create_exam_set(number_of_versions=1)
+        used_exam_set.name = "Bộ đề Phân cụm KMeans"
+        used_exam_set.save(update_fields=["name", "updated_at"])
+        unused_exam_set.name = "Bộ đề Phân cụm DBSCAN"
+        unused_exam_set.save(update_fields=["name", "updated_at"])
+        self._link_exam_code(used_exam_set.exam_codes.first())
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"q": "Phân cụm", "linked": "USED"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 1)
+        self.assertEqual(response.context["rows"][0]["id"], used_exam_set.id)
+        self.assertContains(response, f"BD-{used_exam_set.id:04d}")
+        self.assertNotContains(response, f"BD-{unused_exam_set.id:04d}")
+
+    def test_exam_set_list_keeps_pagination_block_after_search(self):
+        first_exam_set = self._create_exam_set(number_of_versions=1)
+        second_exam_set = self._create_exam_set(number_of_versions=1)
+        first_exam_set.name = "Bộ đề PCA"
+        first_exam_set.save(update_fields=["name", "updated_at"])
+        second_exam_set.name = "Bộ đề Naive Bayes"
+        second_exam_set.save(update_fields=["name", "updated_at"])
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"q": "PCA"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["rows"]), 1)
+        self.assertContains(response, 'class="qm2-pagination"')
+        self.assertContains(response, "1-1")
+        self.assertContains(response, f"BD-{first_exam_set.id:04d}")
+        self.assertNotContains(response, f"BD-{second_exam_set.id:04d}")
 
     def test_exam_set_detail_hides_regenerate_action_and_shows_set_code(self):
         exam_set = self._create_exam_set(number_of_versions=1)
@@ -1138,6 +1533,54 @@ class LecturerExamManagementTests(TestCase):
         self.assertNotContains(response, 'id="btnBatchApprove"')
         self.assertNotContains(response, 'class="summary-bar"')
         self.assertNotContains(response, "fa-eye")
+
+    def test_unused_unapproved_exam_code_can_be_deleted(self):
+        exam_set = self._create_exam_set(number_of_versions=1)
+        exam_code = exam_set.exam_codes.get()
+
+        response = self.client.post(
+            reverse("qna:lecturer_delete_exam_code", args=[exam_code.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "SUCCESS")
+        self.assertFalse(ExamCode.objects.filter(pk=exam_code.id).exists())
+
+    def test_unused_approved_exam_code_can_be_deleted(self):
+        exam_set = self._create_exam_set(number_of_versions=1)
+        exam_code = exam_set.exam_codes.get()
+        exam_code.is_approved = True
+        exam_code.save(update_fields=["is_approved", "updated_at"])
+
+        response = self.client.post(
+            reverse("qna:lecturer_delete_exam_code", args=[exam_code.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "SUCCESS")
+        self.assertFalse(ExamCode.objects.filter(pk=exam_code.id).exists())
+
+    def test_exam_set_detail_delete_ui_is_locked_by_is_linked_not_is_approved(self):
+        exam_set = self._create_exam_set(number_of_versions=2)
+        approved_unused_code, used_code = list(exam_set.exam_codes.order_by("code_number", "exam_code_id"))
+        approved_unused_code.is_approved = True
+        approved_unused_code.save(update_fields=["is_approved", "updated_at"])
+        self._link_exam_code(used_code)
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        codes_data = json.loads(response.context["exam_codes_json"])
+        approved_unused_payload = next(item for item in codes_data if item["id"] == approved_unused_code.id)
+        used_payload = next(item for item in codes_data if item["id"] == used_code.id)
+        self.assertTrue(approved_unused_payload["is_approved"])
+        self.assertFalse(approved_unused_payload["is_linked"])
+        self.assertTrue(used_payload["is_linked"])
+        self.assertContains(response, "selectAll.disabled = !selectableIds.length;")
+        self.assertContains(response, "${code.is_linked ? 'disabled' : ''}")
+        self.assertNotContains(response, "examSetIsLinked || code.is_linked ? 'disabled' : ''")
 
     def test_exam_set_list_filters_by_linked_usage(self):
         used_exam_set = self._create_exam_set(number_of_versions=1)
@@ -1624,8 +2067,9 @@ class StudentExamAccessTests(TestCase):
                 self.client.force_login(self.student)
                 response = self.client.get(reverse("qna:dashboard"))
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, "Chua the vao thi")
-                self.assertContains(response, "Chua den gio thi")
+                subject_card = next(item for item in response.context["subject_cards"] if item["subject"] == self.subject)
+                self.assertEqual(subject_card["entry_button_label"], "Chưa thể vào thi")
+                self.assertEqual(subject_card["status_label"], "Chưa đến giờ thi")
 
     def test_exam_password_rejects_access_outside_exam_window(self):
                 self.client.force_login(self.student)
@@ -1694,9 +2138,9 @@ class StudentExamAccessTests(TestCase):
                 response = self.client.get(reverse("qna:dashboard"))
 
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, "Dang trong ca thi")
-                self.assertContains(response, "Vao thi")
-                self.assertNotContains(response, "Thieu mat khau")
+                subject_card = next(item for item in response.context["subject_cards"] if item["subject"] == self.subject)
+                self.assertEqual(subject_card["status_label"], "Đang trong ca thi")
+                self.assertEqual(subject_card["entry_button_label"], "Vào thi")
 
     def test_exam_password_redirects_directly_to_verification_when_room_has_no_password(self):
                 self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
@@ -1715,7 +2159,7 @@ class StudentExamAccessTests(TestCase):
                 self._open_exam_window()
                 Question.objects.create(
                     subject=self.subject,
-                    question_text="Cau hoi dong bo thoi gian",
+                    question_text="Câu hỏi đồng bộ thời gian",
                     question_id_in_barem="Q_LOCK_TIME",
                     difficulty=DifficultyLevel.EASY,
                 )
@@ -1778,12 +2222,10 @@ class StudentExamAccessTests(TestCase):
         self.assertContains(response, 'id="grading-stage-text"')
         self.assertNotContains(response, 'id="grading-transcript-text"')
         self.assertNotContains(response, 'id="grading-rephrased-text"')
-        self.assertContains(response, 'id="grading-score-text"')
-        self.assertNotContains(response, 'id="grading-log"')
-        self.assertNotContains(response, 'Nhật ký tiến trình')
         self.assertContains(response, "message.type === 'exam.progress'")
-        self.assertContains(response, "navigator.sendBeacon")
-        self.assertContains(response, "window.addEventListener('pagehide'")
+        self.assertContains(response, "/api/exam-progress/")
+        self.assertNotContains(response, "navigator.sendBeacon")
+        self.assertNotContains(response, "window.addEventListener('pagehide'")
 
     def test_exam_page_js_timeout_flushes_audio_before_finalize(self):
         response = self._open_verified_exam_page()
@@ -1842,8 +2284,9 @@ class StudentExamAccessTests(TestCase):
                 response = self.client.get(reverse("qna:dashboard"))
 
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, "Ngoai thoi gian thi")
-                self.assertContains(response, "Chua the vao thi")
+                subject_card = next(item for item in response.context["subject_cards"] if item["subject"] == self.subject)
+                self.assertEqual(subject_card["status_label"], "Ngoài thời gian thi")
+                self.assertEqual(subject_card["entry_button_label"], "Chưa thể vào thi")
 
     def test_student_dashboard_renders_realtime_live_note_hook(self):
                 self.client.force_login(self.student)
@@ -1868,9 +2311,10 @@ class StudentExamAccessTests(TestCase):
 
                 response = self.client.get(reverse("qna:dashboard"))
 
-                self.assertContains(response, 'data-entry-lock-state="STARTED"')
-                self.assertContains(response, "Khong the vao lai")
-                self.assertContains(response, "Da bat dau ca thi")
+                subject_card = next(item for item in response.context["subject_cards"] if item["subject"] == self.subject)
+                self.assertEqual(subject_card["entry_lock_state"], "STARTED")
+                self.assertEqual(subject_card["entry_button_label"], "Tiếp tục thi")
+                self.assertEqual(subject_card["status_label"], "Đang thực hiện ca thi")
 
     def test_verify_face_does_not_create_exam_session_before_exam_entry(self):
                 self._open_exam_window()
@@ -1929,7 +2373,7 @@ class StudentExamAccessTests(TestCase):
 
                 self.assertEqual(response.status_code, 403)
                 self.assertEqual(response.json()["status"], "error")
-                self.assertIn("thoi gian thi", response.json()["message"].lower())
+                self.assertIn("gian thi", response.json()["message"].lower())
 
     def test_student_can_only_enter_exam_page_once(self):
                 self._open_exam_window()
@@ -1951,10 +2395,9 @@ class StudentExamAccessTests(TestCase):
                 session = ExamSession.objects.get(subject_id=self.subject, exam_session_group_id=self.exam_group)
                 session.refresh_from_db()
 
-                self.assertEqual(second_entry.status_code, 302)
-                self.assertEqual(second_entry.url, reverse("qna:history_detail", args=[session.id]))
-                self.assertEqual(session.session_status, "COMPLETED")
-                self.assertIsNotNone(session.completed_at)
+                self.assertEqual(second_entry.status_code, 200)
+                self.assertEqual(session.session_status, "STARTED")
+                self.assertIsNone(session.completed_at)
                 self.assertEqual(
                     ExamSession.objects.filter(subject_id=self.subject, exam_session_group_id=self.exam_group).count(),
                     1)
@@ -1977,11 +2420,42 @@ class StudentExamAccessTests(TestCase):
                 session = ExamSession.objects.get(subject_id=self.subject, exam_session_group_id=self.exam_group)
                 session.refresh_from_db()
 
-                self.assertEqual(reentry_response.status_code, 400)
-                self.assertEqual(reentry_response.json()["status"], "error")
-                self.assertIn("hoàn thành", reentry_response.json()["message"].lower())
-                self.assertEqual(session.session_status, "COMPLETED")
-                self.assertIsNotNone(session.completed_at)
+                self.assertEqual(reentry_response.status_code, 200)
+                self.assertEqual(reentry_response.json()["status"], "success")
+                self.assertTrue(reentry_response.json()["resume"])
+                self.assertEqual(
+                    reentry_response.json()["redirect_url"],
+                    reverse("qna:exam_page", args=[self.subject.subject_code]),
+                )
+                self.assertEqual(session.session_status, "STARTED")
+                self.assertIsNone(session.completed_at)
+
+    def test_exam_page_resume_includes_existing_results_for_answered_questions(self):
+                response = self._open_verified_exam_page()
+                self.assertEqual(response.status_code, 200)
+
+                session = ExamSession.objects.get(subject_id=self.subject, exam_session_group_id=self.exam_group)
+                question = Question.objects.create(
+                    subject=self.subject,
+                    question_text="Cau hoi da tra loi",
+                    question_id_in_barem="Q_RESUME_1",
+                    difficulty=DifficultyLevel.EASY,
+                )
+                session.questions.set([question])
+                ExamResult.objects.create(
+                    exam_session_id=session,
+                    question_id=question,
+                    transcript="Ban ghi da co",
+                    score=8.0,
+                    feedback="Nhan xet da co",
+                )
+
+                resumed_response = self.client.get(reverse("qna:exam_page", args=[self.subject.subject_code]))
+
+                self.assertEqual(resumed_response.status_code, 200)
+                self.assertEqual(len(resumed_response.context["existing_results"]), 1)
+                self.assertEqual(resumed_response.context["existing_results"][0]["question_id"], question.id)
+                self.assertEqual(resumed_response.context["existing_results"][0]["transcript"], "Ban ghi da co")
 
     def _post_json(self, route_name, payload, args=None):
                 return self.client.post(
@@ -2040,7 +2514,7 @@ class StudentExamAccessTests(TestCase):
                     "exam_date": future_start.strftime("%Y-%m-%d"),
                     "start_time": future_start.strftime("%H:%M"),
                     "end_time": future_end.strftime("%H:%M"),
-                    "description": "Ca thi duoc tao tu wizard moi",
+                    "description": "Ca thi được tạo từ wizard mới",
                     "exam_password": "EXAM123",
                     "roster_ids": [self.roster.id],
                     "submit_action": submit_action,
@@ -2119,14 +2593,13 @@ class StudentExamAccessTests(TestCase):
                 content = response.content.decode("utf-8")
                 self.assertIn('class="es-input es-room-count-input"', content)
                 self.assertIn('placeholder="Mật khẩu tự random"', content)
-                self.assertNotIn('placeholder="Nh?p 5 k? t?"', content)
+                self.assertNotIn('placeholder="Nhập 5 ký tự"', content)
                 self.assertNotIn('data-room-step="increase"', content)
                 self.assertNotIn('${assignedCount}/${room.student_count || 0} SV', content)
                 self.assertNotIn('Giảng viên tự nhập đúng 5 ký tự cho phòng thi.', content)
                 self.assertNotIn(': "Chưa gắn bộ đề";', content)
                 self.assertNotIn(': "Chưa gắn";', content)
-                self.assertNotIn('Vui lòng', content)
-                self.assertNotIn('Giáº', content)
+                self.assertIsNone(re.search("[\\u00C3\\u00C2\\u00C4\\u00C5]", content))
 
     def test_create_exam_group_screen_persists_session_configuration(self):
                 response = self._post_json(
@@ -2142,11 +2615,137 @@ class StudentExamAccessTests(TestCase):
                 self.assertEqual(exam_group.subject, self.subject)
                 self.assertEqual(exam_group.academic_year, "2025-2026")
                 self.assertEqual(exam_group.semester, "HK1")
-                self.assertEqual(exam_group.description, "Ca thi duoc tao tu wizard moi")
+                self.assertEqual(exam_group.description, "Ca thi được tạo từ wizard mới")
                 self.assertEqual(exam_group.status, "SCHEDULED")
                 self.assertEqual(exam_group.exam_codes.count(), 2)
                 self.assertEqual(exam_group.session_rooms.count(), 2)
                 self.assertEqual(exam_group.session_rooms.first().exam_set, self.exam_set)
+
+    def test_create_exam_group_screen_keeps_same_day_duration_behavior(self):
+                response = self._post_json(
+                    "qna:lecturer_create_exam_group_screen",
+                    self._build_session_payload(),
+                )
+
+                self.assertEqual(response.status_code, 200)
+                exam_group = ExamSessionGroup.objects.get(pk=response.json()["exam_group_id"])
+                self.assertEqual(exam_group.duration_minutes, 90)
+                self.assertEqual(
+                    timezone.localtime(exam_group.start_at).strftime("%Y-%m-%d %H:%M"),
+                    f"{timezone.localtime(exam_group.start_at).strftime('%Y-%m-%d')} 08:00",
+                )
+                self.assertEqual(
+                    timezone.localtime(exam_group.end_at).strftime("%Y-%m-%d %H:%M"),
+                    f"{timezone.localtime(exam_group.start_at).strftime('%Y-%m-%d')} 09:30",
+                )
+
+    def test_create_exam_group_screen_allows_overnight_session_and_computes_duration(self):
+                payload = self._build_session_payload()
+                overnight_start = timezone.localtime(timezone.now() + timedelta(days=3)).replace(
+                    hour=23,
+                    minute=30,
+                    second=0,
+                    microsecond=0,
+                )
+                payload["exam_date"] = overnight_start.strftime("%Y-%m-%d")
+                payload["start_time"] = "23:30"
+                payload["end_time"] = "01:00"
+
+                response = self._post_json(
+                    "qna:lecturer_create_exam_group_screen",
+                    payload,
+                )
+
+                self.assertEqual(response.status_code, 200)
+                payload_json = response.json()
+                self.assertTrue(payload_json["success"])
+                self.assertNotEqual(
+                    payload_json.get("message"),
+                    "Thời gian kết thúc phải sau thời gian bắt đầu.",
+                )
+
+                exam_group = ExamSessionGroup.objects.get(pk=payload_json["exam_group_id"])
+                self.assertEqual(exam_group.duration_minutes, 90)
+                self.assertEqual(timezone.localtime(exam_group.start_at).strftime("%Y-%m-%d %H:%M"), overnight_start.strftime("%Y-%m-%d 23:30"))
+                self.assertEqual(
+                    timezone.localtime(exam_group.end_at).strftime("%Y-%m-%d %H:%M"),
+                    (overnight_start + timedelta(minutes=90)).strftime("%Y-%m-%d %H:%M"),
+                )
+
+    def test_create_exam_group_screen_rejects_invalid_datetime_payload(self):
+                payload = self._build_session_payload()
+                payload["start_time"] = "khong-hop-le"
+
+                response = self._post_json(
+                    "qna:lecturer_create_exam_group_screen",
+                    payload,
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.json()["success"])
+                self.assertEqual(response.json()["status"], "FAIL")
+                self.assertEqual(response.json()["message"], "Định dạng ngày giờ không hợp lệ.")
+
+    def test_random_assign_students_updates_configuration_data_source_of_truth(self):
+                exam_group = self._create_exam_group()
+
+                response = self.client.post(
+                    reverse("qna:lecturer_random_assign_students", args=[exam_group.id])
+                )
+
+                self.assertEqual(response.status_code, 200)
+                exam_group.refresh_from_db()
+
+                room_configs = exam_group.configuration_data["rooms"]
+                self.assertEqual(len(room_configs), 2)
+                mirrored_user_ids = {
+                    room.display_order: set(room.students.values_list("id", flat=True))
+                    for room in exam_group.session_rooms.order_by("display_order")
+                }
+                for room_cfg in room_configs:
+                    room_order = room_cfg["display_order"]
+                    assignment_user_ids = {
+                        assignment["linked_user_id"]
+                        for assignment in room_cfg.get("assignments") or []
+                    }
+                    self.assertEqual(assignment_user_ids, mirrored_user_ids[room_order])
+
+                room_cfg, assignment = views._get_room_assignment_for_user(exam_group, self.student_user_1)
+                self.assertIsNotNone(room_cfg)
+                self.assertIsNotNone(assignment)
+                self.assertTrue(assignment["exam_code_id"])
+
+    def test_import_students_to_room_updates_configuration_data_source_of_truth(self):
+                exam_group = self._create_exam_group()
+                room = exam_group.session_rooms.order_by("display_order").first()
+
+                config = exam_group.configuration_data
+                config["rooms"][0]["assignments"] = []
+                exam_group.configuration_data = config
+                exam_group.save(update_fields=["configuration_data", "updated_at"])
+                room.students.clear()
+
+                upload = SimpleUploadedFile(
+                    "room_import.csv",
+                    "username\nSV9001\n".encode("utf-8-sig"),
+                    content_type="text/csv",
+                )
+
+                response = self.client.post(
+                    reverse("qna:lecturer_import_students_to_room", args=[room.id]),
+                    {"csv_file": upload},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["imported_count"], 1)
+
+                exam_group.refresh_from_db()
+                room.refresh_from_db()
+                self.assertEqual(
+                    exam_group.configuration_data["rooms"][0]["assignments"][0]["student_code"],
+                    "SV9001",
+                )
+                self.assertTrue(room.students.filter(pk=self.student_user_1.id).exists())
                 self.assertEqual(exam_group.configuration_data["rosters"][0]["id"], self.roster.id)
                 self.assertEqual(len(exam_group.configuration_data["rooms"]), 2)
                 self.assertEqual(
@@ -2556,7 +3155,7 @@ class StudentExamAccessTests(TestCase):
                 self.assertContains(response, "Đã hoàn thành")
                 self.assertNotContains(response, "Vắng thi")
 
-    def test_history_view_never_shows_in_progress_badge_for_started_session(self):
+    def test_history_view_shows_in_progress_badge_for_active_started_session(self):
                 self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
                 self.exam_group.duration_minutes = 60
                 self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
@@ -2577,8 +3176,31 @@ class StudentExamAccessTests(TestCase):
                     item for item in response.context["sessions"]
                     if item.id == session.id
                 )
-                self.assertEqual(history_session.history_status, "COMPLETED")
-                self.assertNotContains(response, "Đang thực hiện")
+                self.assertEqual(history_session.history_status, "IN_PROGRESS")
+                self.assertContains(response, "Đang thực hiện")
+
+    def test_history_detail_redirects_back_to_exam_while_session_is_in_progress(self):
+                self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
+                self.exam_group.duration_minutes = 60
+                self.exam_group.save(update_fields=["exam_date", "duration_minutes", "updated_at"])
+
+                self.client.force_login(self.student)
+                self._verify_room_password()
+                self._verify_face()
+
+                session = ExamSession.objects.create(
+                    user=self.student,
+                    subject=self.subject,
+                    exam_session_group_id=self.exam_group,
+                    started_at=timezone.now() - timedelta(minutes=1),
+                    session_status="STARTED",
+                    verification_status="ALLOW",
+                )
+
+                response = self.client.get(reverse("qna:history_detail", args=[session.id]))
+
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.url, reverse("qna:exam_page", args=[self.subject.subject_code]))
 
     def test_session_detail_renders_all_violation_items_for_expand_button(self):
                 exam_group = self._create_exam_group()
@@ -2614,7 +3236,7 @@ class StudentExamAccessTests(TestCase):
 
                 self.assertEqual(response.status_code, 200)
                 html = response.content.decode("utf-8")
-                self.assertNotIn("Không phát hiá»‡n khuôn mặt trong khung hình", html)
+                self.assertNotIn("Không phát hiện khuôn mặt trong khung hình", html)
                 self.assertEqual(html.count('class="fraud-item'), 2)
                 self.assertIn("data-fraud-toggle", html)
 
@@ -2691,7 +3313,7 @@ class StudentExamAccessTests(TestCase):
                     args=[exam_group.id],
                 )
 
-                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.status_code, 400)
                 self.assertEqual(response.json()["status"], "FAIL")
 
 @override_settings(CACHES=TEST_CACHES)
@@ -3172,6 +3794,82 @@ class SessionDetailScoreSyncTests(TestCase):
         self.assertNotIn("duration_minutes", history_template)
 
 
+class VerificationImagesPermissionTests(TestCase):
+    def setUp(self):
+        self.user_model = get_user_model()
+        self.owner = self.user_model.objects.create_user(username="student_verify_owner", password="Password123!")
+        UserProfile.objects.create(
+            user=self.owner,
+            is_lecturer=False,
+            full_name="Sinh Vien Chu Session",
+            student_id="SVVERIFY01",
+        )
+
+        self.lecturer = self.user_model.objects.create_user(username="lecturer_verify_ok", password="Password123!")
+        self.other_lecturer = self.user_model.objects.create_user(
+            username="lecturer_verify_blocked",
+            password="Password123!",
+        )
+        self.lecturer_profile = UserProfile.objects.create(user=self.lecturer, is_lecturer=True)
+        self.other_lecturer_profile = UserProfile.objects.create(user=self.other_lecturer, is_lecturer=True)
+
+        self.subject = Subject.objects.create(name="Bao mat anh xac thuc", subject_code="VERIFY401")
+        self.other_subject = Subject.objects.create(name="Mon khac", subject_code="VERIFY402")
+        self.lecturer_profile.subjects_taught.add(self.subject)
+        self.other_lecturer_profile.subjects_taught.add(self.other_subject)
+
+        self.exam_group = ExamSessionGroup.objects.create(
+            subject=self.subject,
+            group_name="Ca xac thuc",
+            academic_year="2025-2026",
+            semester="HK1",
+            exam_date=timezone.now() - timedelta(hours=1),
+            duration_minutes=30,
+            status="SCHEDULED",
+            created_by=self.lecturer,
+        )
+        self.session = ExamSession.objects.create(
+            user=self.owner,
+            subject=self.subject,
+            exam_session_group_id=self.exam_group,
+            session_status="COMPLETED",
+            face_image_blob=b"face-bytes",
+            face_image_mime="image/jpeg",
+            id_card_image_blob=b"card-bytes",
+            id_card_image_mime="image/png",
+            verification_status="ALLOW",
+        )
+
+    def test_owner_student_can_view_verification_images(self):
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse("qna:verification_images", args=[self.session.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertIn("data:image/jpeg;base64", payload["face_image"])
+        self.assertIn("data:image/png;base64", payload["id_card_image"])
+
+    def test_lecturer_of_same_subject_can_view_verification_images(self):
+        self.client.force_login(self.lecturer)
+
+        response = self.client.get(reverse("qna:verification_images", args=[self.session.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+
+    def test_lecturer_of_other_subject_is_forbidden_from_verification_images(self):
+        self.client.force_login(self.other_lecturer)
+
+        response = self.client.get(reverse("qna:verification_images", args=[self.session.id]))
+
+        self.assertEqual(response.status_code, 403)
+        payload = response.json()
+        self.assertEqual(payload["status"], "error")
+        self.assertNotIn("face_image", payload)
+
+
 @override_settings(CACHES=TEST_CACHES)
 class ExamWindowBoundaryTests(TestCase):
     def setUp(self):
@@ -3246,6 +3944,18 @@ class ExamWindowBoundaryTests(TestCase):
                     self.assertEqual(response.status_code, 302)
                     self.assertEqual(response.url,
                                      reverse("qna:pre_exam_verification", args=[self.subject.subject_code]))
+
+    def test_draft_exam_group_is_not_treated_as_open(self):
+                from .exam_guards import subject_has_active_exam_group
+                from .exam_runtime import is_exam_group_open
+
+                self.exam_group.exam_date = timezone.now() - timedelta(minutes=5)
+                self.exam_group.duration_minutes = 30
+                self.exam_group.status = "DRAFT"
+                self.exam_group.save(update_fields=["exam_date", "duration_minutes", "status", "updated_at"])
+
+                self.assertFalse(is_exam_group_open(self.exam_group))
+                self.assertFalse(subject_has_active_exam_group(self.subject))
 
     def test_exam_sessions_list_renders_realtime_schedule_dataset(self):
                     self.client.force_login(self.lecturer)
@@ -3363,8 +4073,9 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
                         reverse("qna:lecturer_delete_exam_code", args=[exam_code.id])
                     )
 
-                    self.assertEqual(response.status_code, 403)
+                    self.assertEqual(response.status_code, 400)
                     self.assertEqual(response.json()["status"], "FAIL")
+                    self.assertEqual(response.json()["message"], "Mã đề đã được sử dụng trong ca thi nên không thể xóa.")
                     self.assertTrue(ExamCode.objects.filter(pk=exam_code.id).exists())
 
     def test_used_exam_code_cannot_be_edited_via_legacy_update_endpoint(self):
@@ -3377,7 +4088,7 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
                         {"difficulty": "EASY"},
                     )
 
-                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.status_code, 410)
                     self.assertFalse(response.json()["success"])
 
     def test_used_exam_code_cannot_be_edited_via_legacy_text_endpoint(self):
@@ -3390,7 +4101,7 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
                         {"difficulty": "EASY", "new_text": "Noi dung moi"},
                     )
 
-                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.status_code, 410)
                     self.assertFalse(response.json()["success"])
 
     def test_used_exam_set_cannot_be_published(self):
@@ -3420,9 +4131,9 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
                             "easy_count": 0,
                             "medium_count": 2,
                             "hard_count": 0,
-                            "easy_score": 2,
-                            "medium_score": 3,
-                            "hard_score": 5,
+                            "easy_score": 0,
+                            "medium_score": 5,
+                            "hard_score": 0,
                             "shuffle_question_order": False,
                             "allow_duplicate_questions": False,
                             "source_bank_ids": [self.bank.id],
@@ -4028,7 +4739,7 @@ class ExamSubmissionRegressionTests(TestCase):
                     self._start_session()
 
                     self.session.refresh_from_db()
-                    self.assertEqual(self.session.display_status, "COMPLETED")
+                    self.assertEqual(self.session.display_status, "IN_PROGRESS")
 
     def test_save_exam_result_rejects_after_finalize(self):
                     ExamResult.objects.create(
@@ -4118,6 +4829,107 @@ class ExamSubmissionRegressionTests(TestCase):
         sent_payload = json.loads(consumer.send.await_args.kwargs["text_data"])
         self.assertEqual(sent_payload["type"], "exam.progress")
         self.assertEqual(sent_payload["message"], payload)
+
+    def test_exam_consumer_forwards_allow_after_expiry_and_group_metadata_to_worker(self):
+        from types import SimpleNamespace
+
+        from .consumers import ExamConsumer
+
+        consumer = ExamConsumer()
+        consumer.scope = {"user": self.student}
+        consumer.channel_name = "test-reply-channel"
+        consumer.channel_layer = SimpleNamespace(send=AsyncMock())
+        consumer.session_id = self.session.id
+        consumer.room_group_name = f"exam_{self.session.id}"
+        consumer.audio_stream_started = False
+        consumer.audio_chunk_count = 0
+        consumer.current_audio_question_id = None
+
+        async_to_sync(consumer.receive)(
+            text_data=json.dumps(
+                {
+                    "action": "start_stream",
+                    "session_id": self.session.id,
+                    "question_id": self.question.id,
+                    "audio_mime_type": "audio/webm",
+                    "allow_after_expiry": True,
+                }
+            )
+        )
+        async_to_sync(consumer.receive)(
+            text_data=json.dumps(
+                {
+                    "action": "end_stream",
+                    "session_id": self.session.id,
+                    "question_id": self.question.id,
+                    "audio_mime_type": "audio/webm",
+                    "allow_after_expiry": True,
+                }
+            )
+        )
+
+        start_payload = consumer.channel_layer.send.await_args_list[0].args[1]
+        end_payload = consumer.channel_layer.send.await_args_list[1].args[1]
+        self.assertTrue(start_payload["allow_after_expiry"])
+        self.assertTrue(end_payload["allow_after_expiry"])
+        self.assertEqual(start_payload["reply_group"], f"exam_{self.session.id}")
+        self.assertEqual(end_payload["reply_group"], f"exam_{self.session.id}")
+
+    def test_exam_grading_status_returns_cached_result_for_reconnect_flow(self):
+        from .exam_runtime import EXAM_GRADING_STATUS_RESULT, clear_exam_grading_state, store_exam_grading_state
+
+        self._start_session()
+        clear_exam_grading_state(self.session.id, self.question.id)
+        result_payload = {
+            "type": "main_question_complete",
+            "data": {
+                "result_id": 123,
+                "score": 8.5,
+                "question_id": self.question.id,
+                "transcript": "Ban ghi reconnect",
+                "feedback": "Nhan xet reconnect",
+            },
+        }
+        store_exam_grading_state(
+            self.session.id,
+            self.question.id,
+            status=EXAM_GRADING_STATUS_RESULT,
+            result=result_payload,
+        )
+
+        response = self.client.get(
+            reverse("qna:exam_grading_status", args=[self.session.id, self.question.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["grading_state"]["status"], "RESULT")
+        self.assertEqual(payload["grading_state"]["result"], result_payload)
+
+    def test_worker_no_chunk_path_persists_error_state(self):
+        from types import SimpleNamespace
+
+        from .exam_runtime import clear_exam_grading_state, get_exam_grading_state
+        from .management.commands import run_workers
+
+        command = run_workers.Command.__new__(run_workers.Command)
+        command.channel_layer = SimpleNamespace(group_send=AsyncMock(), send=AsyncMock())
+        clear_exam_grading_state(self.session.id, self.question.id)
+
+        result = async_to_sync(command.process_audio_and_transcribe)(
+            "test-reply-channel",
+            f"exam_{self.session.id}",
+            [],
+            session_id=self.session.id,
+            question_id=self.question.id,
+            audio_mime_type="audio/webm",
+        )
+
+        self.assertIsNone(result)
+        grading_state = get_exam_grading_state(self.session.id, self.question.id)
+        self.assertEqual(grading_state["status"], "ERROR")
+        self.assertIn("Không nhận được dữ liệu âm thanh", grading_state["error_message"])
 
 @override_settings(CACHES=TEST_CACHES, CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class LecturerGenerateQuestionsTests(TestCase):
@@ -4239,7 +5051,7 @@ class LecturerGenerateQuestionsTests(TestCase):
                     self.assertEqual(response.status_code, 400)
                     payload = response.json()
                     self.assertEqual(payload["status"], "FAIL")
-                    self.assertIn("OpenAI API key không hợp lá»‡", payload["message"])
+                    self.assertIn("OpenAI API key không hợp lệ", payload["message"])
                     self.assertNotIn("Incorrect API key", payload["message"])
                     self.assertEqual(Question.objects.filter(subject_id=self.subject).count(), 0)
 

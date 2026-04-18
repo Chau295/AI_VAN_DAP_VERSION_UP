@@ -27,6 +27,11 @@ urlpatterns = [
     path("api/save_exam_result/", views.save_exam_result, name="save_exam_result"),
     path("api/save_violation_image/", views.save_violation_image, name="save_violation_image"),
     path("api/finalize_session/<int:session_id>/", views.finalize_session_view, name="finalize_session"),
+    path(
+        "api/exam-progress/<int:session_id>/<int:question_id>/",
+        views.exam_grading_status_view,
+        name="exam_grading_status",
+    ),
 
     # Face Verification APIs
     path("api/verify-face/", views.verify_student_face, name="verify_face"),
@@ -90,6 +95,8 @@ urlpatterns = [
     path("api/lecturer/subjects/", views.api_get_lecturer_subjects, name="api_get_lecturer_subjects"),
     path("api/lecturer/question-banks/", views.api_get_question_banks, name="api_get_question_banks"),
     path("api/lecturer/question-banks/create/", views.api_create_question_bank, name="api_create_question_bank"),
+    path("api/lecturer/question-banks/<int:bank_id>/update/", views.api_update_question_bank,
+         name="api_update_question_bank"),
     path("api/lecturer/question-banks/<int:bank_id>/save/", views.api_save_question_bank_questions,
          name="api_save_question_bank_questions"),
     path("api/lecturer/question-banks/<int:bank_id>/delete/", views.api_delete_question_bank,

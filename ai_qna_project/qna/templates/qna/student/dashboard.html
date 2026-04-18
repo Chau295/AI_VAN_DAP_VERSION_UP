@@ -167,13 +167,13 @@
             buttonDisabled: true,
         },
         LOCKED_STARTED: {
-            label: "Đã bắt đầu ca thi",
+            label: "Đang thực hiện ca thi",
             badgeClass: "bg-amber-100 text-amber-700",
-            icon: "fa-lock",
-            buttonLabel: "Không thể vào lại",
-            buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
-            buttonIcon: "fa-ban",
-            buttonDisabled: true,
+            icon: "fa-circle-play",
+            buttonLabel: "Tiếp tục thi",
+            buttonClass: "bg-orange-500 text-white hover:bg-orange-600",
+            buttonIcon: "fa-unlock-alt",
+            buttonDisabled: false,
         },
         LOCKED_COMPLETED: {
             label: "Đã hoàn thành ca thi",
@@ -241,7 +241,7 @@
         const nowTs = (Date.now() / 1000) + SERVER_OFFSET_TS;
 
         if (status === "LOCKED_STARTED") {
-            return "Bạn đã bắt đầu ca thi, không thể vào lại.";
+            return "Phiên thi đang được giữ và có thể tiếp tục trên thiết bị này.";
         }
         if (status === "LOCKED_COMPLETED") {
             return "Bạn đã hoàn thành ca thi này.";

@@ -174,6 +174,12 @@ class QuestionBank(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Ngân hàng câu hỏi"
         verbose_name_plural = "Ngân hàng câu hỏi"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subject_id", "name"],
+                name="uq_question_bank_subject_name",
+            )
+        ]
 
     def __str__(self):
         return f"{self.name} - {self.subject_id.name}"
@@ -440,7 +446,7 @@ class ExamCode(models.Model):
 
     @property
     def is_linked(self):
-        return self.exam_session_groups.exists()
+        return self.session_rooms.exists()
 
     @property
     def id(self):
@@ -1011,7 +1017,7 @@ class ExamSession(models.Model):
 
     @property
     def display_status(self):
-        return self.resolve_display_status(allow_in_progress=False)
+        return self.resolve_display_status(allow_in_progress=True)
 
     @property
     def calculated_final_score(self):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import random
 import re
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Sequence
 from uuid import uuid4
 
@@ -67,11 +67,85 @@ def _validate_exam_set_total_score(exam_set: ExamSet) -> None:
         raise ValueError("Tổng điểm bộ đề phải bằng 10.")
 
 
+EXAM_SET_SUCCESS_MESSAGE = "Tạo bộ đề thành công."
+EXAM_SET_TOTAL_OVER_MESSAGE = "Tổng điểm hiện tại đang vượt quá 10 điểm."
+EXAM_SET_TOTAL_UNDER_MESSAGE = "Tổng điểm hiện tại chưa đủ 10 điểm."
+EXAM_SET_NO_QUESTIONS_MESSAGE = "Mỗi mã đề phải có ít nhất 1 câu hỏi."
+EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE = "Mỗi câu hỏi phải có số điểm lớn hơn 0."
+EXAM_SET_TARGET_TOTAL_SCORE = Decimal("10")
+
+
 def _parse_int_field(raw_value, field_label: str) -> int:
     try:
         return int(raw_value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field_label} không hợp lệ.") from exc
+
+
+def _parse_decimal_field(raw_value, field_label: str) -> Decimal:
+    try:
+        return Decimal(str(raw_value).strip())
+    except (InvalidOperation, AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(f"{field_label} không hợp lệ.") from exc
+
+
+def _parse_exam_set_code_keyword(keyword: str) -> int | None:
+    match = re.match(r"^BD-(\d+)$", (keyword or "").strip(), flags=re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _validate_exam_set_creation_rules(
+        *,
+        number_of_versions: int,
+        easy_count: int,
+        medium_count: int,
+        hard_count: int,
+        easy_score: Decimal,
+        medium_score: Decimal,
+        hard_score: Decimal,
+) -> Decimal:
+    if number_of_versions <= 0:
+        raise ValueError("Số lượng mã đề phải lớn hơn 0.")
+
+    if any(count < 0 for count in (easy_count, medium_count, hard_count)):
+        raise ValueError("Số lượng câu hỏi không hợp lệ.")
+
+    total_questions = easy_count + medium_count + hard_count
+    if total_questions <= 0:
+        raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
+
+    score_pairs = (
+        (easy_count, easy_score),
+        (medium_count, medium_score),
+        (hard_count, hard_score),
+    )
+    if any(count > 0 and score <= 0 for count, score in score_pairs):
+        raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
+
+    total_score = (
+        Decimal(easy_count) * easy_score
+        + Decimal(medium_count) * medium_score
+        + Decimal(hard_count) * hard_score
+    )
+    if total_score > EXAM_SET_TARGET_TOTAL_SCORE:
+        raise ValueError(EXAM_SET_TOTAL_OVER_MESSAGE)
+    if total_score < EXAM_SET_TARGET_TOTAL_SCORE:
+        raise ValueError(EXAM_SET_TOTAL_UNDER_MESSAGE)
+
+    return total_score
+
+
+def _validate_exam_code_items(items: Sequence[ExamCodeQuestion]) -> None:
+    if not items:
+        raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
+
+    if any(Decimal(str(item.score or 0)) <= 0 for item in items):
+        raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
 
 
 def _question_exists_in_subject(subject: Subject, question_text: str, exclude_question_id: int | None = None) -> bool:
@@ -196,7 +270,7 @@ def _serialize_exam_code(code: ExamCode) -> dict:
         "code_name": code.code_name,
         "code_number": code.code_number,
         "is_approved": code.is_approved,
-        "is_linked": code.session_rooms.exists(),
+        "is_linked": code.is_linked,
         "items": items,
         "preview": [
             {
@@ -573,9 +647,14 @@ def lecturer_exam_codes_screen(request):
     if status_filter:
         exam_sets = exam_sets.filter(status=status_filter)
     if keyword:
-        exam_sets = exam_sets.filter(
-            Q(subject_id__name__icontains=keyword) | Q(name__icontains=keyword)
+        search_filter = Q(name__icontains=keyword) | Q(
+            Q(name="") | Q(name__isnull=True),
+            subject_id__name__icontains=keyword,
         )
+        exam_set_code_id = _parse_exam_set_code_keyword(keyword)
+        if exam_set_code_id is not None:
+            search_filter |= Q(exam_set_id=exam_set_code_id)
+        exam_sets = exam_sets.filter(search_filter)
 
     exam_sets = _prefetch_exam_sets(exam_sets)
 
@@ -689,6 +768,19 @@ def lecturer_create_exam_set(request):
         easy_c = _parse_int_field(payload.get("easy_count"), "Câu dễ")
         medium_c = _parse_int_field(payload.get("medium_count"), "Câu trung bình")
         hard_c = _parse_int_field(payload.get("hard_count"), "Câu khó")
+        easy_s = _parse_decimal_field(payload.get("easy_score"), "Điểm câu dễ")
+        medium_s = _parse_decimal_field(payload.get("medium_score"), "Điểm câu trung bình")
+        hard_s = _parse_decimal_field(payload.get("hard_score"), "Điểm câu khó")
+
+        _validate_exam_set_creation_rules(
+            number_of_versions=num_v,
+            easy_count=easy_c,
+            medium_count=medium_c,
+            hard_count=hard_c,
+            easy_score=easy_s,
+            medium_score=medium_s,
+            hard_score=hard_s,
+        )
 
         bank_ids = [int(i) for i in payload.get("source_bank_ids", [])]
         pools = _build_question_pools(subject, bank_ids, easy_c, medium_c, hard_c)
@@ -709,9 +801,9 @@ def lecturer_create_exam_set(request):
             easy_pool_size=easy_c,
             medium_pool_size=medium_c,
             hard_pool_size=hard_c,
-            easy_score=payload.get("easy_score", 2.0),
-            medium_score=payload.get("medium_score", 3.0),
-            hard_score=payload.get("hard_score", 5.0),
+            easy_score=easy_s,
+            medium_score=medium_s,
+            hard_score=hard_s,
             created_by_user_id=request.user,
             status=ExamSetStatus.DRAFT
         )
@@ -727,11 +819,12 @@ def lecturer_create_exam_set(request):
                 is_approved=False
             )
             items = _build_exam_code_items(code, blueprints[i])
+            _validate_exam_code_items(items)
             ExamCodeQuestion.objects.bulk_create(items)
 
     return JsonResponse({
         "status": "SUCCESS",
-        "message": "T?o b? ?? th?nh c?ng.",
+        "message": EXAM_SET_SUCCESS_MESSAGE,
         "exam_set_id": es.exam_set_id,
         "detail_url": reverse("qna:lecturer_exam_set_detail_screen", kwargs={"exam_set_id": es.exam_set_id}),
     })
@@ -941,11 +1034,17 @@ def lecturer_regenerate_exam_code(request, exam_code_id: int):
 def lecturer_delete_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
+    if code.is_linked:
+        return JsonResponse(
+            {
+                "status": "FAIL",
+                "message": "Mã đề đã được sử dụng trong ca thi nên không thể xóa.",
+            },
+            status=400,
+        )
+
     if _subject_has_ongoing_exam_group(code.subject_id):
         return _locked_subject_mutation_response()
-
-    if code.session_rooms.exists():
-        return JsonResponse({"status": "FAIL", "message": "Mã đề đang được sử dụng, không thể xóa."}, status=400)
 
     exam_set = code.exam_set_id
     with transaction.atomic():
