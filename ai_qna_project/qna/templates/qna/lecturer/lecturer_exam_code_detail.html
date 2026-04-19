@@ -6,32 +6,31 @@
 {% block content %}
 <style>
   :root {
-    --page-bg: #f5f7fb;
-    --panel: #ffffff;
-    --border: #e5ebf3;
-    --text: #132238;
-    --muted: #7b8798;
-    --blue: #1f6feb;
-    --blue-dark: #1558c0;
-    --green: #16a34a;
-    --green-bg: #dcfce7;
-    --amber: #b45309;
-    --amber-bg: #fef3c7;
-    --red: #dc2626;
-    --red-bg: #fee2e2;
-    --navy: #07142b;
-    --shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+    --page-bg: var(--color-bg);
+    --panel: var(--color-panel);
+    --border: var(--color-border);
+    --text: var(--color-text);
+    --muted: var(--color-text-muted);
+    --blue: var(--color-primary);
+    --blue-dark: var(--color-primary-dark);
+    --green: var(--color-success);
+    --green-bg: var(--color-success-bg);
+    --amber: var(--color-warning);
+    --amber-bg: var(--color-warning-bg);
+    --red: var(--color-danger);
+    --red-bg: var(--color-danger-bg);
+    --shadow: var(--shadow-card);
   }
 
   .detail-page {
     background: var(--page-bg);
     min-height: calc(100vh - 80px);
-    padding: 22px;
+    padding: var(--spacing-page);
     padding-bottom: 100px;
   }
 
   .detail-shell {
-    max-width: 1360px;
+    max-width: 1280px;
     margin: 0 auto;
   }
 
@@ -40,17 +39,17 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 24px;
     align-items: start;
-    margin-bottom: 18px;
-    background: #fff;
-    padding: 24px 28px;
-    border-radius: 18px;
+    margin-bottom: var(--spacing-section);
+    background: var(--panel);
+    padding: var(--spacing-card);
+    border-radius: var(--radius-card);
     box-shadow: var(--shadow);
     border: 1px solid var(--border);
   }
 
   .detail-head h1 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--font-size-title);
     font-weight: 800;
     color: var(--text);
   }
@@ -60,7 +59,8 @@
     gap: 16px;
     flex-wrap: wrap;
     margin-top: 8px;
-    color: #64748b;
+    color: var(--muted);
+    font-size: var(--font-size-body);
   }
 
   .btn {
@@ -68,14 +68,15 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    height: 42px;
+    height: var(--control-height);
     padding: 0 16px;
-    border-radius: 12px;
+    border-radius: var(--radius-control);
     border: 1px solid transparent;
     font-weight: 700;
     cursor: pointer;
     text-decoration: none;
     transition: all 0.2s ease;
+    font-size: var(--font-size-body);
   }
 
   .btn:active { transform: scale(0.98); }
@@ -92,10 +93,10 @@
 
   .btn-secondary { background: #6b7280; color: #fff; }
   .btn-secondary:hover { background: #4b5563; }
-  .btn-success { background: #16a34a; color: #fff; }
+  .btn-success { background: var(--color-success); color: #fff; }
   .btn-success:hover { background: #15803d; }
-  .btn-danger { background: #ef4444; color: #fff; }
-  .btn-danger:hover { background: #dc2626; }
+  .btn-danger { background: var(--color-danger); color: #fff; }
+  .btn-danger:hover { background: #b91c1c; }
 
   .pill {
     display: inline-flex;
@@ -103,21 +104,53 @@
     justify-content: center;
     padding: 6px 12px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--font-size-small);
     font-weight: 800;
   }
 
-  .pill-approved { background: var(--green-bg); color: var(--green); }
-  .pill-draft { background: var(--amber-bg); color: var(--amber); }
+  .pill-approved { background: var(--color-success-bg); color: var(--color-success); }
+  .pill-draft { background: var(--color-warning-bg); color: var(--color-warning); }
 
   .head-main {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--spacing-card);
     min-width: 0;
   }
 
   .top-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .top-actions .btn { min-width: 140px; }
+
+  .head-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .head-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: #f8fbff;
+    border: 1px solid #d9e4f2;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .head-stat strong {
+    color: var(--blue);
+  }
     display: flex;
     gap: 12px;
     align-items: center;
@@ -688,11 +721,7 @@
           <span class="head-stat"><i class="fas fa-link"></i> Đã dùng <strong id="summaryUsedCodes">{{ used_codes_count }}</strong></span>
         </div>
 
-        {% if exam_set_is_linked %}
-          <div class="locked-note" style="margin-top: 0;">
-            Bộ đề này đã có mã đề được sử dụng trong ca thi. Các mã đề đã dùng sẽ bị khóa sửa hoặc xóa, nhưng các mã đề chưa dùng vẫn có thể xóa.
-          </div>
-        {% endif %}
+
       </div>
 
       <div class="top-actions">
@@ -808,6 +837,26 @@
     medium: {{ exam_set.medium_pool_size|default:0 }},
     hard: {{ exam_set.hard_pool_size|default:0 }}
   };
+  const examSetScores = {
+    easy: {{ easy_score|default:0 }},
+    medium: {{ medium_score|default:0 }},
+    hard: {{ hard_score|default:0 }}
+  };
+
+  function getScoreForDifficulty(difficulty) {
+    const diff = difficulty.toLowerCase();
+    const count = examSetBarem[diff] || 0;
+    if (count === 0) return null;
+    const totalScore = examSetScores[diff] || 0;
+    return (totalScore / count).toFixed(1);
+  }
+
+  function renderScoreTag(difficulty) {
+    const score = getScoreForDifficulty(difficulty);
+    if (!score) return '';
+    const label = (difficulty.toLowerCase() === 'easy' ? 'Dễ' : (difficulty.toLowerCase() === 'medium' ? 'Trung bình' : 'Khó'));
+    return `<span class="score-tag">${score} điểm</span>`;
+  }
 
   let examSetStatus = "{{ exam_set.status }}";
   let examCodes = {{ exam_codes_json|safe }};
@@ -994,7 +1043,7 @@
             const label = (diff === 'easy' ? 'Dễ' : (diff === 'medium' ? 'Trung bình' : 'Khó'));
             for(let i=0; i<count; i++) {
                 const block = document.createElement('div'); block.className = 'question-block';
-                block.innerHTML = `<label><span>Câu hỏi ${String(index).padStart(2, '0')}</span><span class="question-meta"><span class="level-tag level-${diff}">${label}</span></span></label>
+                block.innerHTML = `<label><span>Câu hỏi ${String(index).padStart(2, '0')}</span><span class="question-meta"><span class="level-tag level-${diff}">${label}</span>${renderScoreTag(diff)}</span></label>
                 <textarea class="question-editor-textarea" data-difficulty="${diff.toUpperCase()}" data-display-order="${index}" placeholder="Nhập nội dung câu hỏi..."></textarea>`;
                 container.appendChild(block); index++;
             }
@@ -1005,7 +1054,7 @@
         syncDrawerActions(code);
         sortExamItems(code.items).forEach((item, index) => {
             const block = document.createElement('div'); block.className = 'question-block';
-            block.innerHTML = `<label><span>Câu hỏi ${index+1}</span><span class="level-tag ${levelClass(item.slug)}">${item.label}</span></label>
+            block.innerHTML = `<label><span>Câu hỏi ${index+1}</span><span class="question-meta"><span class="level-tag ${levelClass(item.slug)}">${item.label}</span>${renderScoreTag(item.difficulty)}</span></label>
             <textarea class="question-editor-textarea" data-item-id="${item.id}" data-difficulty="${item.difficulty}" data-display-order="${index + 1}" ${code.is_linked ? 'readonly' : ''}>${escapeHtml(item.content)}</textarea>`;
             container.appendChild(block);
         });

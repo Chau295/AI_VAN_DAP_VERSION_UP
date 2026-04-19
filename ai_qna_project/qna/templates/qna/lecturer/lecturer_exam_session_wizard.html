@@ -2018,10 +2018,8 @@
       if (!wizardState.groupName.trim()) {
         errors.push("Vui lòng nhập tên kỳ thi");
       }
-      if (!wizardState.academicYear.trim()) {
-        errors.push("Vui lòng chọn năm học");
-      } else if (!/^\d{4}-\d{4}$/.test(wizardState.academicYear.trim())) {
-        errors.push("Năm học phải theo định dạng YYYY-YYYY");
+      if (!wizardState.academicYear || !/^\d{4}-\d{4}$/.test(wizardState.academicYear)) {
+        errors.push("Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.");
       }
       if (!wizardState.examDate) {
         errors.push("Vui lòng chọn ngày thi");
@@ -2145,7 +2143,7 @@
     return {
       subject_id: sessionCatalog.subject.id,
       group_name: wizardState.groupName.trim(),
-      academic_year: wizardState.academicYear.trim(),
+      academic_year: wizardState.academicYear,
       semester: wizardState.semester,
       exam_date: wizardState.examDate,
       start_time: wizardState.startTime,

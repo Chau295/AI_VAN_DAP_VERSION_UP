@@ -1,5 +1,7 @@
 /* static/css/style.css */
-body {
+
+/* Legacy chat component styles */
+body.chat-layout {
     font-family: Arial, sans-serif;
     background-color: #f4f7f6;
     margin: 0;
@@ -10,7 +12,7 @@ body {
     height: 100vh;
 }
 
-.container {
+.chat-container {
     width: 600px;
     height: 80vh;
     background-color: #fff;
@@ -101,4 +103,12 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* Keep legacy layout from breaking */
+.container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 16px;
 }

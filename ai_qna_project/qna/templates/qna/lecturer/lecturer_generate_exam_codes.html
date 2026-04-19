@@ -5,55 +5,52 @@
 
 {% block content %}
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
   :root {
-    --page-bg: #f4f7fb;
-    --panel: #ffffff;
-    --border: #e2e8f0;
-    --text: #0f172a;
-    --muted: #64748b;
-    --blue: #2563eb;
-    --blue-dark: #1d4ed8;
-    --green: #16a34a;
-    --green-bg: #dcfce7;
-    --amber: #d97706;
-    --amber-bg: #fef3c7;
-    --red: #dc2626;
-    --red-bg: #fee2e2;
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow: 0 10px 25px -3px rgba(15, 23, 42, 0.06);
+    --page-bg: var(--color-bg);
+    --panel: var(--color-panel);
+    --border: var(--color-border);
+    --text: var(--color-text);
+    --muted: var(--color-text-muted);
+    --blue: var(--color-primary);
+    --blue-dark: var(--color-primary-dark);
+    --green: var(--color-success);
+    --green-bg: var(--color-success-bg);
+    --amber: var(--color-warning);
+    --amber-bg: var(--color-warning-bg);
+    --red: var(--color-danger);
+    --red-bg: var(--color-danger-bg);
+    --shadow: var(--shadow-card);
   }
 
-  body { font-family: 'Inter', sans-serif; }
+  body { font-family: inherit; }
 
-  .builder-page { background: var(--page-bg); min-height: calc(100vh - 80px); padding: 32px 22px; }
+  .builder-page { background: var(--page-bg); min-height: calc(100vh - 80px); padding: var(--spacing-section) var(--spacing-page); }
   .builder-shell { max-width: 1120px; margin: 0 auto; }
 
   .builder-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:24px; }
-  .builder-head h1 { margin:0; font-size:26px; font-weight:800; color:var(--text); letter-spacing: -0.5px; }
-  .builder-head p { margin:8px 0 0; color:var(--muted); font-size: 15px; }
+  .builder-head h1 { margin:0; font-size: var(--font-size-title); font-weight:800; color:var(--text); letter-spacing: -0.5px; }
+  .builder-head p { margin:8px 0 0; color:var(--muted); font-size: 14px; }
 
-  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 20px; border-radius:12px; border:1px solid transparent; font-size: 14px; font-weight:600; cursor:pointer; text-decoration:none; transition: all 0.2s ease; }
-  .btn-primary { background:var(--blue); color:#fff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
-  .btn-primary:hover { background:var(--blue-dark); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:var(--control-height); padding:0 20px; border-radius:var(--radius-control); border:1px solid transparent; font-size: var(--font-size-body); font-weight:var(--font-weight-bold); cursor:pointer; text-decoration:none; transition: all 0.2s ease; }
+  .btn-primary { background:var(--blue); color:#fff; box-shadow: 0 4px 12px rgba(31, 111, 235, 0.2); }
+  .btn-primary:hover { background:var(--blue-dark); transform: translateY(-1px); }
   .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
-  .btn-secondary { background:#fff; color:#475569; border-color: #cbd5e1; box-shadow: var(--shadow-sm); }
+  .btn-secondary { background:#fff; color:#475569; border-color: var(--color-border); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
   .btn-secondary:hover { background:#f8fafc; color: var(--text); }
 
-  .panel { background:#fff; border:1px solid var(--border); border-radius:20px; box-shadow:var(--shadow); margin-bottom:24px; overflow: hidden; }
-  .panel-body { padding: 28px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-card); box-shadow:var(--shadow); margin-bottom:var(--spacing-card); overflow: hidden; }
+  .panel-body { padding: var(--spacing-card); }
 
-  .section-title { display:flex; align-items:center; gap:12px; font-size:18px; font-weight:700; color:var(--text); margin-bottom:20px; }
+  .section-title { display:flex; align-items:center; gap:12px; font-size:var(--font-size-section); font-weight:600; color:var(--text); margin-bottom:var(--spacing-card); }
   .step { width:28px; height:28px; border-radius:999px; background:var(--blue); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:14px; font-weight: 700; }
 
   .grid-3 { display:grid; grid-template-columns: 1.2fr .8fr 1fr; gap:24px; }
-  .field label { display:block; font-size:13px; font-weight:600; color:#334155; margin-bottom:8px; }
-  .field input, .field select { width:100%; height:46px; border:1px solid #cbd5e1; border-radius:12px; padding:0 16px; outline:none; font-family: inherit; font-size: 14px; color: var(--text); transition: all 0.2s; }
-  .field input:focus, .field select:focus { border-color:var(--blue); box-shadow:0 0 0 4px rgba(37, 99, 235, 0.1); }
+  .field label { display:block; font-size:var(--font-size-body); font-weight:var(--font-weight-bold); color:var(--text); margin-bottom:8px; }
+  .field input, .field select { width:100%; height:var(--control-height); border:1px solid var(--color-border); border-radius:var(--radius-control); padding:0 16px; outline:none; font-family: inherit; font-size: var(--font-size-body); color: var(--text); transition: all 0.2s; }
+  .field input:focus, .field select:focus { border-color:var(--blue); box-shadow:0 0 0 4px rgba(31, 111, 235, 0.1); }
 
-  .semester-switch { display:flex; background:#f1f5f9; border-radius:12px; padding:4px; }
-  .semester-switch button { flex:1; height:38px; border:0; background:transparent; border-radius:10px; font-weight:600; color:#64748b; cursor:pointer; font-size: 13px; transition: 0.2s; }
+  .semester-switch { display:flex; background:#f1f5f9; border-radius:var(--radius-control); padding:4px; }
+  .semester-switch button { flex:1; height:38px; border:0; background:transparent; border-radius:10px; font-weight:600; color:var(--muted); cursor:pointer; font-size: 13px; transition: 0.2s; }
   .semester-switch button:hover { color: var(--text); }
   .semester-switch button.active { background:#fff; color:var(--blue); box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
 
@@ -62,26 +59,22 @@
   .matrix-summary-wrapper { display:grid; gap:10px; }
   .summary-box { min-width: 340px; background:#f8fafc; border: 1px solid var(--border); border-radius:16px; padding:14px 22px; font-weight:600; color:#334155; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); }
   .summary-box strong { font-size: 18px; color: var(--blue); }
-  .summary-box[data-state="success"] { border-color: #86efac; background: #f0fdf4; }
-  .summary-box[data-state="warning"] { border-color: #fcd34d; background: #fffbeb; }
-  .summary-box[data-state="error"] { border-color: #fca5a5; background: #fef2f2; }
-  .summary-message { min-height: 22px; font-size: 14px; font-weight: 700; }
-  .summary-message.success { color: var(--green); }
-  .summary-message.warning { color: var(--amber); }
-  .summary-message.error { color: var(--red); }
+  .summary-box[data-state="success"] { border-color: var(--color-success); background: var(--color-success-bg); }
+  .summary-box[data-state="warning"] { border-color: var(--color-warning); background: var(--color-warning-bg); }
+  .summary-box[data-state="error"] { border-color: var(--color-danger); background: var(--color-danger-bg); }
 
   table { width:100%; border-collapse: collapse; overflow:hidden; }
   .matrix-table { border:1px solid var(--border); border-radius:18px; overflow-x:auto; }
   .matrix-table table { table-layout: fixed; min-width: 760px; }
-  .matrix-table th { padding:16px 22px; font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; background: #f8fafc; border-bottom: 1px solid var(--border); text-align:left; }
+  .matrix-table th { padding:12px 16px; font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; background: #f8fafc; border-bottom: 1px solid var(--border); text-align:left; }
   .matrix-table th:nth-child(2), .matrix-table th:nth-child(3), .matrix-table td.matrix-cell-center { text-align:center; }
-  .matrix-table td { padding:18px 22px; border-bottom:1px solid var(--border); text-align:left; vertical-align: middle; }
+  .matrix-table td { padding:12px 16px; border-bottom:1px solid var(--border); text-align:left; vertical-align: middle; }
   .matrix-table tr:last-child td { border-bottom:0; }
   .matrix-table tr:hover td { background: #fbfcfd; }
 
   .matrix-level-cell { display:flex; align-items:center; }
   .matrix-cell-center { text-align:center; }
-  .matrix-pill { display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:999px; font-size:13px; font-weight:700; }
+  .matrix-pill { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; font-size:12px; font-weight:700; }
   .pill-easy { background:var(--green-bg); color:var(--green); }
   .pill-medium { background:var(--amber-bg); color:var(--amber); }
   .pill-hard { background:var(--red-bg); color:var(--red); }
@@ -89,37 +82,28 @@
   .matrix-input-wrap { display:flex; justify-content:center; }
   .matrix-count-field { max-width: 220px; width: 100%; margin: 0; }
   .matrix-score-field { max-width: 170px; width: 100%; margin: 0; }
-  .matrix-count-field input, .matrix-score-field input { height: 52px; border-radius:16px; font-size: 17px; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); }
+  .matrix-count-field input, .matrix-score-field input { height: var(--control-height); border-radius:var(--radius-control); font-size: var(--font-size-body); box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); }
   .matrix-count-field input { text-align:center; font-weight:800; }
   .matrix-score-field input { text-align:center; font-weight:700; }
 
-  .options { display:grid; grid-template-columns: 1.2fr .8fr; gap:32px; align-items:start; }
+  .options { display:grid; grid-template-columns: 1.2fr .8fr; gap:24px; align-items:start; }
   .check-list { display:flex; flex-direction:column; gap:14px; }
-  .check-item { display:flex; align-items:center; gap:12px; color:#334155; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .check-item { display:flex; align-items:center; gap:12px; color:var(--text); font-size: var(--font-size-body); font-weight: 500; cursor: pointer; }
   .check-item input { width:18px; height:18px; accent-color: var(--blue); cursor: pointer; }
 
-  .helper { color:#94a3b8; font-size:13px; margin-top:8px; line-height: 1.5; }
+  .helper { color:var(--muted); font-size:var(--font-size-small); margin-top:8px; line-height: 1.5; }
   .foot-bar { display:flex; justify-content:space-between; align-items:center; padding-top:16px; margin-bottom: 40px; }
   .foot-note { color:var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
   .foot-note i { color: var(--amber); }
 
   .toast-stack { position:fixed; top:24px; right:28px; z-index:90; display:flex; flex-direction:column; gap:10px; }
-  .toast { min-width:280px; max-width:420px; background:#fff; border-left:4px solid #ef4444; border-radius:12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); padding:16px; display:flex; justify-content:space-between; gap:16px; align-items: center; font-weight: 500; font-size: 14px; animation: slideIn 0.3s ease forwards; }
+  .toast { min-width:280px; max-width:420px; background:#fff; border-left:4px solid var(--red); border-radius:12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); padding:16px; display:flex; justify-content:space-between; gap:16px; align-items: center; font-weight: 500; font-size: 14px; animation: slideIn 0.3s ease forwards; }
   .toast.success { border-left-color:var(--green); }
   .toast button { border:0; background:transparent; color:#94a3b8; cursor:pointer; font-size: 16px; padding: 4px; border-radius: 6px; transition: 0.2s; }
   .toast button:hover { background: #f1f5f9; color: var(--text); }
 
   @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-  .select2-container--default .select2-selection--multiple {
-    min-height: 48px;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 12px !important;
-    padding: 4px 12px;
-    outline: none;
-    background-color: #fff;
-    transition: all 0.2s ease;
-  }
   .select2-container--default.select2-container--focus .select2-selection--multiple {
     border-color: var(--blue) !important;
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
@@ -162,15 +146,15 @@
     color: var(--text) !important;
   }
   .select2-container .select2-search--inline .select2-search__field::placeholder {
-    color: #94a3b8;
+    color: var(--muted);
   }
   .select2-dropdown {
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid var(--color-border) !important;
     border-radius: 12px !important;
     box-shadow: 0 10px 25px -3px rgba(0,0,0,0.1) !important;
     overflow: hidden;
     margin-top: 6px;
-    font-family: 'Inter', sans-serif;
+    font-family: inherit;
   }
   .select2-container--default .select2-results__option {
     padding: 10px 16px;
@@ -184,6 +168,83 @@
   .select2-container--default .select2-results__option[aria-selected=true] {
     background-color: #f8fafc;
     color: #94a3b8;
+  }
+
+  /* Confirm create modal */
+  .confirm-create-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 120;
+  }
+
+  .confirm-create-modal.show {
+    display: flex;
+  }
+
+  .confirm-create-dialog {
+    width: min(520px, 100%);
+    background: #fff;
+    border-radius: 22px;
+    box-shadow: 0 30px 60px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+  }
+
+  .confirm-create-body {
+    padding: 30px 28px 18px;
+    text-align: center;
+  }
+
+  .confirm-create-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff7ed;
+    color: var(--amber);
+    font-size: 28px;
+    box-shadow: inset 0 0 0 1px #fed7aa;
+  }
+
+  .confirm-create-title {
+    margin: 0 0 10px;
+    font-size: 22px;
+    line-height: 1.35;
+    font-weight: 800;
+    color: var(--text);
+  }
+
+  .confirm-create-message {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  .confirm-create-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 0 28px 28px;
+    flex-wrap: wrap;
+  }
+
+  .confirm-create-actions .btn {
+    min-width: 150px;
+  }
+
+  .confirm-create-warning {
+    color: var(--amber);
+    font-weight: 700;
   }
 
   @media (max-width: 980px) {
@@ -222,8 +283,12 @@
             </select>
           </div>
           <div class="field">
+            <label>Mã bộ đề <span style="color:var(--red)">*</span></label>
+            <input id="examSetName" type="text" placeholder="Nhập mã bộ đề" maxlength="50" required>
+          </div>
+          <div class="field">
             <label>Năm học <span style="color:var(--red)">*</span></label>
-            <input id="academicYear" type="text" value="{{ default_year }}" placeholder="VD: 2024-2025">
+            <input id="academicYear" type="text" value="{{ default_year }}" placeholder="VD: 2024-2025" pattern="\d{4}-\d{4}" title="Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.">
           </div>
           <div class="field">
             <label>Kì học <span style="color:var(--red)">*</span></label>
@@ -259,12 +324,11 @@
           <div class="section-title" style="margin:0"><span class="step">2</span> Thiết lập ma trận đề</div>
           <div class="matrix-summary">
             <div class="matrix-summary-wrapper">
-            <div class="summary-box" id="summaryBox" data-state="success">
-              <span>Tổng số câu: <strong id="totalQuestions">3</strong></span>
-              <span style="color: #cbd5e1;">|</span>
-              <span>Tổng điểm: <strong id="totalScore">10.00</strong></span>
-            </div>
-              <div class="summary-message success" id="summaryMessage" aria-live="polite">Tạo bộ đề thành công.</div>
+              <div class="summary-box" id="summaryBox" data-state="error">
+                <span>Tổng số câu: <strong id="totalQuestions">0</strong></span>
+                <span style="color: #cbd5e1;">|</span>
+                <span>Tổng điểm: <strong id="totalScore">0.00</strong></span>
+              </div>
             </div>
           </div>
         </div>
@@ -288,12 +352,12 @@
                 <td><div class="matrix-level-cell"><span class="matrix-pill pill-easy"><i class="fas fa-circle" style="font-size: 8px;"></i> Dễ</span></div></td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-count-field"><input id="easyCount" type="number" min="0" step="1" value="1" inputmode="numeric"></div>
+                    <div class="field matrix-count-field"><input id="easyCount" type="number" min="0" step="1" value="0" inputmode="numeric"></div>
                   </div>
                 </td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-score-field"><input id="easyScore" type="number" min="0" step="0.5" value="2.0"></div>
+                    <div class="field matrix-score-field"><input id="easyScore" type="number" min="0" step="0.5" value="0"></div>
                   </div>
                 </td>
               </tr>
@@ -301,12 +365,12 @@
                 <td><div class="matrix-level-cell"><span class="matrix-pill pill-medium"><i class="fas fa-circle" style="font-size: 8px;"></i> Trung bình</span></div></td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-count-field"><input id="mediumCount" type="number" min="0" step="1" value="1" inputmode="numeric"></div>
+                    <div class="field matrix-count-field"><input id="mediumCount" type="number" min="0" step="1" value="0" inputmode="numeric"></div>
                   </div>
                 </td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-score-field"><input id="mediumScore" type="number" min="0" step="0.5" value="3.0"></div>
+                    <div class="field matrix-score-field"><input id="mediumScore" type="number" min="0" step="0.5" value="0"></div>
                   </div>
                 </td>
               </tr>
@@ -314,12 +378,12 @@
                 <td><div class="matrix-level-cell"><span class="matrix-pill pill-hard"><i class="fas fa-circle" style="font-size: 8px;"></i> Khó</span></div></td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-count-field"><input id="hardCount" type="number" min="0" step="1" value="1" inputmode="numeric"></div>
+                    <div class="field matrix-count-field"><input id="hardCount" type="number" min="0" step="1" value="0" inputmode="numeric"></div>
                   </div>
                 </td>
                 <td class="matrix-cell-center">
                   <div class="matrix-input-wrap">
-                    <div class="field matrix-score-field"><input id="hardScore" type="number" min="0" step="0.5" value="5.0"></div>
+                    <div class="field matrix-score-field"><input id="hardScore" type="number" min="0" step="0.5" value="0"></div>
                   </div>
                 </td>
               </tr>
@@ -349,13 +413,35 @@
     </div>
 
     <div class="foot-bar">
-      <div class="foot-note"><i class="fas fa-exclamation-triangle"></i> Vui lòng kiểm tra kỹ ma trận đề trước khi sinh.</div>
+      <div class="foot-note"><i class="fas fa-exclamation-triangle"></i><span style="font-style: italic;">Vui lòng kiểm tra kỹ ma trận đề trước khi sinh đề. Quá trình này có thể mất 10-30 giây</span></div>
       <button type="button" id="btnSubmit" class="btn btn-primary" onclick="submitCreateExamSet()">
         <i class="fas fa-bolt"></i> Tiến hành tạo đề thi
       </button>
     </div>
   </div>
 </div>
+
+<div class="confirm-create-modal" id="confirmCreateModal">
+  <div class="confirm-create-dialog">
+    <div class="confirm-create-body">
+      <div class="confirm-create-icon">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <h3 class="confirm-create-title">Xác nhận tạo bộ đề</h3>
+      <p class="confirm-create-message" id="confirmCreateMessage">
+        Tổng điểm hiện tại chưa đủ 10 điểm.<br>
+        Bạn có chắc chắn muốn tiếp tục tạo bộ đề không?
+      </p>
+    </div>
+    <div class="confirm-create-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeConfirmCreateModal()">Hủy</button>
+      <button type="button" class="btn btn-primary" id="confirmCreateBtn">
+        <i class="fas fa-check"></i> Xác nhận
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-stack" id="toastStack"></div>
 {% endblock %}
 
@@ -371,9 +457,13 @@
           placeholder: "Gõ để tìm kiếm nguồn có sẵn hoặc nhấn Enter để tạo mới...",
           allowClear: true,
           width: '100%',
+          maximumSelectionLength: 10,
           language: {
               noResults: function () {
                   return "Không tìm thấy. Bấm Enter để thêm mới.";
+              },
+              maximumSelected: function (e) {
+                  return "Chỉ được chọn tối đa 10 ngân hàng câu hỏi.";
               }
           }
       });
@@ -428,7 +518,13 @@
     noQuestions: 'Mỗi mã đề phải có ít nhất 1 câu hỏi.',
     invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm lớn hơn 0.',
     invalidVersionCount: 'Số lượng mã đề phải lớn hơn 0.',
+    invalidAcademicYear: 'Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.',
+    examCodeRequired: 'Vui lòng nhập mã bộ đề.',
+    examCodeTooLong: 'Mã bộ đề không được vượt quá 50 ký tự.',
   };
+
+  const ACADEMIC_YEAR_REGEX = /^\d{4}-\d{4}$/;
+  let pendingCreatePayload = null;
 
   function parseSafeInt(value) {
     const parsed = parseInt(String(value ?? '').trim(), 10);
@@ -442,6 +538,15 @@
 
   function formatScore(value) {
     return parseSafeFloat(value).toFixed(2);
+  }
+
+  function validateAcademicYearField() {
+    const input = document.getElementById('academicYear');
+    if (!input) return true;
+
+    const isValid = ACADEMIC_YEAR_REGEX.test(String(input.value ?? ''));
+    input.setCustomValidity(isValid ? '' : EXAM_SET_MESSAGES.invalidAcademicYear);
+    return isValid;
   }
 
   function getMatrixConfig() {
@@ -481,11 +586,11 @@
     }
 
     if (config.totalScore > 10) {
-      return { valid: false, state: 'warning', message: EXAM_SET_MESSAGES.totalOver };
+      return { valid: true, state: 'warning', message: EXAM_SET_MESSAGES.totalOver };
     }
 
     if (config.totalScore < 10) {
-      return { valid: false, state: 'warning', message: EXAM_SET_MESSAGES.totalUnder };
+      return { valid: true, state: 'warning', message: EXAM_SET_MESSAGES.totalUnder };
     }
 
     return { valid: true, state: 'success', message: EXAM_SET_MESSAGES.success };
@@ -527,7 +632,6 @@
     const config = getMatrixConfig();
     const validation = getConfigValidation(config);
     const summaryBox = document.getElementById('summaryBox');
-    const summaryMessage = document.getElementById('summaryMessage');
     const btn = document.getElementById('btnSubmit');
 
     document.getElementById('totalQuestions').textContent = config.totalQuestions;
@@ -535,11 +639,6 @@
 
     if (summaryBox) {
       summaryBox.dataset.state = validation.state;
-    }
-
-    if (summaryMessage) {
-      summaryMessage.textContent = validation.message;
-      summaryMessage.className = `summary-message ${validation.state}`;
     }
 
     if (btn) {
@@ -550,60 +649,24 @@
     return { config, validation };
   }
 
-  document.getElementById('easyScore').addEventListener('input', updateSummary);
-  document.getElementById('mediumScore').addEventListener('input', updateSummary);
-  document.getElementById('hardScore').addEventListener('input', updateSummary);
-  ['easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
-    document.getElementById(id).addEventListener('blur', () => normalizeScoreInput(id, true));
-  });
-  ['easyCount', 'mediumCount', 'hardCount'].forEach((id) => {
-    document.getElementById(id).addEventListener('input', () => normalizeCountInput(id));
-    document.getElementById(id).addEventListener('blur', () => normalizeCountInput(id, true));
-  });
-  updateSummary();
+  function openConfirmCreateModal(message, payload) {
+    pendingCreatePayload = payload;
+    const modal = document.getElementById('confirmCreateModal');
+    const messageBox = document.getElementById('confirmCreateMessage');
+    messageBox.innerHTML = `<span class="confirm-create-warning">${message}</span><br>Bạn có chắc chắn muốn tiếp tục tạo bộ đề không?`;
+    modal.classList.add('show');
+  }
 
-  async function submitCreateExamSet() {
-    const sourceBanks = $('#sourceBanks').val() || [];
+  function closeConfirmCreateModal() {
+    const modal = document.getElementById('confirmCreateModal');
+    modal.classList.remove('show');
+    pendingCreatePayload = null;
+  }
+
+  async function performCreateExamSet(payload) {
     const btn = document.getElementById('btnSubmit');
-    const versionCount = parseSafeInt(document.getElementById('numberOfVersions').value);
-    const { config, validation } = updateSummary();
+    const originalText = '<i class="fas fa-bolt"></i> Tiến hành tạo đề thi';
 
-    if (sourceBanks.length === 0) {
-      showToast("Vui lòng chọn hoặc nhập ít nhất một nguồn câu hỏi!");
-      return;
-    }
-
-    if (!document.getElementById('subjectId').value) {
-      showToast("Vui lòng chọn môn học!");
-      return;
-    }
-
-    if (versionCount <= 0) {
-      showToast(EXAM_SET_MESSAGES.invalidVersionCount);
-      return;
-    }
-
-    if (!validation.valid) {
-      showToast(validation.message);
-      return;
-    }
-
-    const payload = {
-      subject_id: document.getElementById('subjectId').value,
-      academic_year: document.getElementById('academicYear').value.trim(),
-      semester: document.getElementById('semester').value,
-      source_bank_ids: sourceBanks,
-      easy_count: config.easyCount,
-      medium_count: config.mediumCount,
-      hard_count: config.hardCount,
-      easy_score: config.easyScore,
-      medium_score: config.mediumScore,
-      hard_score: config.hardScore,
-      number_of_versions: versionCount,
-      allow_duplicate_questions: document.getElementById('allowDuplicateQuestions').checked,
-    };
-
-    const originalText = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang xử lý...';
     btn.disabled = true;
 
@@ -625,7 +688,7 @@
         return;
       }
 
-      showToast(data.message || 'Tạo đề thi thành công!', true);
+      showToast(EXAM_SET_MESSAGES.success, true);
       setTimeout(() => {
         window.location.href = data.detail_url || '{% url "qna:lecturer_exam_codes_screen" %}';
       }, 500);
@@ -635,5 +698,106 @@
       updateSummary();
     }
   }
+
+  document.getElementById('easyScore').addEventListener('input', updateSummary);
+  document.getElementById('mediumScore').addEventListener('input', updateSummary);
+  document.getElementById('hardScore').addEventListener('input', updateSummary);
+  document.getElementById('academicYear').addEventListener('input', validateAcademicYearField);
+  document.getElementById('academicYear').addEventListener('blur', validateAcademicYearField);
+  ['easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
+    document.getElementById(id).addEventListener('blur', () => normalizeScoreInput(id, true));
+  });
+  ['easyCount', 'mediumCount', 'hardCount'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', () => normalizeCountInput(id));
+    document.getElementById(id).addEventListener('blur', () => normalizeCountInput(id, true));
+  });
+
+  validateAcademicYearField();
+  updateSummary();
+
+  async function submitCreateExamSet() {
+    const sourceBanks = $('#sourceBanks').val() || [];
+    const academicYearInput = document.getElementById('academicYear');
+    const academicYear = academicYearInput.value;
+    const versionCount = parseSafeInt(document.getElementById('numberOfVersions').value);
+    const examCodeInput = document.getElementById('examSetName');
+    const examCode = (examCodeInput.value || '').trim();
+    const { config, validation } = updateSummary();
+
+    if (sourceBanks.length === 0) {
+      showToast("Vui lòng chọn hoặc nhập ít nhất một nguồn câu hỏi!");
+      return;
+    }
+
+    if (!document.getElementById('subjectId').value) {
+      showToast("Vui lòng chọn môn học!");
+      return;
+    }
+
+    if (!examCode) {
+      showToast(EXAM_SET_MESSAGES.examCodeRequired);
+      examCodeInput.focus();
+      return;
+    }
+
+    if (examCode.length > 50) {
+      showToast(EXAM_SET_MESSAGES.examCodeTooLong);
+      examCodeInput.focus();
+      return;
+    }
+
+    if (!validateAcademicYearField()) {
+      showToast(EXAM_SET_MESSAGES.invalidAcademicYear);
+      academicYearInput.reportValidity();
+      academicYearInput.focus();
+      return;
+    }
+
+    if (versionCount <= 0) {
+      showToast(EXAM_SET_MESSAGES.invalidVersionCount);
+      return;
+    }
+
+    if (!validation.valid) {
+      showToast(validation.message);
+      return;
+    }
+
+    const payload = {
+      subject_id: document.getElementById('subjectId').value,
+      academic_year: academicYear,
+      semester: document.getElementById('semester').value,
+      source_bank_ids: sourceBanks,
+      easy_count: config.easyCount,
+      medium_count: config.mediumCount,
+      hard_count: config.hardCount,
+      easy_score: config.easyScore,
+      medium_score: config.mediumScore,
+      hard_score: config.hardScore,
+      number_of_versions: versionCount,
+      allow_duplicate_questions: document.getElementById('allowDuplicateQuestions').checked,
+      exam_code: examCode,
+    };
+
+    if (validation.state === 'warning') {
+      openConfirmCreateModal(validation.message, payload);
+      return;
+    }
+
+    await performCreateExamSet(payload);
+  }
+
+  document.getElementById('confirmCreateBtn').addEventListener('click', async () => {
+    if (!pendingCreatePayload) return;
+    const payload = pendingCreatePayload;
+    closeConfirmCreateModal();
+    await performCreateExamSet(payload);
+  });
+
+  document.getElementById('confirmCreateModal').addEventListener('click', (event) => {
+    if (event.target.id === 'confirmCreateModal') {
+      closeConfirmCreateModal();
+    }
+  });
 </script>
 {% endblock %}

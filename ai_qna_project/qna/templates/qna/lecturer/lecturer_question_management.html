@@ -1064,7 +1064,7 @@
 >
   <div class="qm2-shell">
 
-    {% if page_mode != 'detail' %}
+    {% if page_mode != 'detail' or not selected_subject %}
     <div class="qm2-topbar">
       <div class="qm2-title">
         <h1>Quản lý câu hỏi</h1>
@@ -1094,6 +1094,7 @@
       </div>
     </div>
 
+    {% if selected_subject %}
     <div class="qm2-card">
       <div class="qm2-card-head">
         <h2>Danh sách ngân hàng</h2>
@@ -1116,13 +1117,20 @@
         {% endif %}
       </div>
     </div>
+    {% else %}
+    <div class="qm2-card">
+      <div class="qm2-card-body">
+        <div class="qm2-empty">Vui lòng chọn môn học để quản lý câu hỏi.</div>
+      </div>
+    </div>
+    {% endif %}
 
     {% else %}
 
     <div class="qm2-topbar">
       <div class="qm2-title">
         <h1>Quản lý câu hỏi</h1>
-        <div class="sub">{{ selected_subject.name|default:'Kho và Khai phá dữ liệu' }}</div>
+        <div class="sub">{% if selected_subject %}{{ selected_subject.name }}{% endif %}</div>
       </div>
 
       <div class="qm2-topbar-actions">
@@ -2231,13 +2239,13 @@
       updateSummary(data.summary || {});
 
       if (data.process_status === 'PROCESSING' && currentJobId) {
-        showToast(data.message || 'Đã tiếp nhận yêu cầu tạo câu hỏi.', 'warning');
+        showToast('Đang tạo câu hỏi...', 'warning');
         startPolling();
         return;
       }
 
       if (aiGenerateStatus) aiGenerateStatus.textContent = '';
-      showToast(data.message || 'Tạo câu hỏi thành công', data.status === 'PARTIAL_SUCCESS' ? 'warning' : 'success');
+      showToast('Tạo câu hỏi thành công', 'success');
       await fetchQuestions();
     } catch (err) {
       if (aiGenerateStatus) aiGenerateStatus.textContent = '';
@@ -2279,12 +2287,7 @@
           clearInterval(pollingTimer);
           pollingTimer = null;
           if (aiGenerateStatus) aiGenerateStatus.textContent = '';
-          showToast(
-            data.message || (data.process_status === 'PARTIAL_SUCCESS'
-              ? 'Đã tạo được một phần câu hỏi theo yêu cầu.'
-              : 'Tạo câu hỏi thành công'),
-            data.process_status === 'PARTIAL_SUCCESS' ? 'warning' : 'success'
-          );
+          showToast('Tạo câu hỏi thành công', 'success');
           await fetchQuestions();
         } else if (data.process_status === 'FAIL') {
           clearInterval(pollingTimer);
@@ -2336,7 +2339,7 @@
       textarea.value = '';
       editingQuestionId = null;
       toggleModal('addQuestionModal', false);
-      showToast(isEditing ? 'Cập nhật thành công' : 'Thêm thành công');
+      showToast(isEditing ? 'Cập nhật thành công' : 'Tạo câu hỏi thành công');
       await fetchQuestions();
     } catch (err) {
       errEl.textContent = err.message || 'Thao tác thất bại.';
@@ -2600,7 +2603,12 @@
 
     if (subjectSelect) {
       subjectSelect.addEventListener('change', () => {
-        loadBanks(subjectSelect.value);
+        const id = subjectSelect.value;
+        if (!id) {
+          window.location.href = listUrl;
+        } else {
+          window.location.href = `${listUrl}?subject_id=${id}`;
+        }
       });
     }
 

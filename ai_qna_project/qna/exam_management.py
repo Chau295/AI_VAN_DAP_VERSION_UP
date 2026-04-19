@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.urls import reverse
 
+from .academic_year import ACADEMIC_YEAR_ERROR_MESSAGE, is_valid_academic_year
 from .exam_guards import subject_has_active_exam_group
 from .models import (
     DifficultyLevel,
@@ -58,7 +59,7 @@ def _locked_subject_mutation_response():
 
 
 def _validate_academic_year(value: str) -> bool:
-    return bool(re.match(r"^\d{4}-\d{4}$", (value or "").strip()))
+    return is_valid_academic_year(value)
 
 
 def _validate_exam_set_total_score(exam_set: ExamSet) -> None:
@@ -132,11 +133,8 @@ def _validate_exam_set_creation_rules(
         + Decimal(medium_count) * medium_score
         + Decimal(hard_count) * hard_score
     )
-    if total_score > EXAM_SET_TARGET_TOTAL_SCORE:
-        raise ValueError(EXAM_SET_TOTAL_OVER_MESSAGE)
-    if total_score < EXAM_SET_TARGET_TOTAL_SCORE:
-        raise ValueError(EXAM_SET_TOTAL_UNDER_MESSAGE)
 
+    # KHÔNG chặn khi tổng điểm khác 10
     return total_score
 
 
@@ -579,11 +577,6 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
             raise ValueError("Mã đề đang có câu hỏi bị trùng nội dung.")
         seen_normalized_contents.add(normalized_content)
 
-        if _question_exists_in_subject(code.subject_id, content, exclude_question_id=existing.question_id_id):
-            raise ValueError(
-                "Nội dung câu hỏi đang trùng với câu hỏi đã có trong ngân hàng. Vui lòng sửa lại."
-            )
-
         question = existing.question_id
         if question is None:
             question = Question.objects.create(
@@ -623,6 +616,9 @@ def _prefetch_exam_sets(qs):
 # ==============================================================================
 # VIEW FUNCTIONS
 # ==============================================================================
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+
+LIST_PAGE_SIZE = 20
 
 @login_required
 @require_GET
@@ -661,37 +657,52 @@ def lecturer_exam_codes_screen(request):
     rows = []
     for es in exam_sets:
         summary = _exam_set_summary(es)
-        if linked_filter == "USED" and summary["used_codes_count"] <= 0:
+        used_codes_count = summary["used_codes_count"]
+
+        if linked_filter == "USED" and used_codes_count <= 0:
             continue
-        if linked_filter == "UNUSED" and summary["used_codes_count"] > 0:
+        if linked_filter == "UNUSED" and used_codes_count > 0:
             continue
+
         rows.append(
             {
                 "id": es.exam_set_id,
-                "exam_set_code": f"BD-{es.exam_set_id:04d}",
+                "exam_set_code": es.exam_code or f"BD-{es.exam_set_id:04d}",
                 "subject_name": es.subject_id.name,
                 "subject_code": es.subject_id.subject_code,
                 "academic_year": es.academic_year,
                 "semester": es.get_semester_display(),
                 "version_count": summary["total_codes_count"],
                 "approved_codes_count": summary["approved_codes_count"],
-                "used_codes_count": summary["used_codes_count"],
+                "used_codes_count": used_codes_count,
                 "status": es.status,
-                "is_linked": es.is_linked,
-                "can_delete": not es.is_linked and es.status == ExamSetStatus.DRAFT,
+                "is_linked": used_codes_count > 0,
+                "can_delete": used_codes_count == 0,
                 "created_at": es.created_at,
-                "detail_url": reverse("qna:lecturer_exam_set_detail_screen", kwargs={"exam_set_id": es.exam_set_id}),
+                "detail_url": reverse(
+                    "qna:lecturer_exam_set_detail_screen",
+                    kwargs={"exam_set_id": es.exam_set_id},
+                ),
             }
         )
+
+    page_number = request.GET.get("page", "1")
+    paginator = Paginator(rows, LIST_PAGE_SIZE)
+    try:
+        page_obj = paginator.page(page_number)
+    except (PageNotAnInteger, EmptyPage):
+        page_obj = paginator.page(1)
 
     year_options = sorted(list(set(ExamSet.objects.values_list("academic_year", flat=True))), reverse=True)
     context = {
         "subjects": subjects,
-        "rows": rows,
+        "rows": list(page_obj.object_list),
         "year_options": year_options,
         "semester_choices": SemesterChoices.choices,
         "status_choices": ExamSetStatus.choices,
         "filter_values": request.GET,
+        "page_obj": page_obj,
+        "paginator": paginator,
     }
     return render(request, "qna/lecturer/lecturer_exam_codes_management.html", context)
 
@@ -741,7 +752,7 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
 
     context = {
         "exam_set": exam_set,
-        "exam_set_code": f"BD-{exam_set.exam_set_id:04d}",
+        "exam_set_code": exam_set.exam_code or f"BD-{exam_set.exam_set_id:04d}",
         "total_codes_count": exam_codes.count(),
         "approved_codes_count": sum(1 for c in codes_data if c['is_approved']),
         "used_codes_count": sum(1 for c in codes_data if c['is_linked']),
@@ -749,6 +760,9 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
         "exam_set_is_linked": exam_set.is_linked,
         "publish_disabled": exam_codes.filter(is_approved=False).exists() or exam_codes.count() == 0,
         "can_edit_exam_set": not exam_set.is_linked,
+        "easy_score": exam_set.easy_score or 0,
+        "medium_score": exam_set.medium_score or 0,
+        "hard_score": exam_set.hard_score or 0,
     }
     return render(request, "qna/lecturer/lecturer_exam_code_detail.html", context)
 
@@ -764,6 +778,18 @@ def lecturer_create_exam_set(request):
         return _locked_subject_mutation_response()
 
     try:
+        academic_year = "" if payload.get("academic_year") is None else str(payload.get("academic_year"))
+        if not _validate_academic_year(academic_year):
+            raise ValueError(ACADEMIC_YEAR_ERROR_MESSAGE)
+
+        exam_code = (payload.get("exam_code") or "").strip()
+        if not exam_code:
+            raise ValueError("Vui lòng nhập mã bộ đề.")
+
+        # Kiểm tra uniqueness (không phân biệt hoa thường)
+        if ExamSet.objects.filter(exam_code__iexact=exam_code).exists():
+            raise ValueError(f"Mã bộ đề '{exam_code}' đã tồn tại. Vui lòng chọn mã khác.")
+
         num_v = _parse_int_field(payload.get("number_of_versions"), "Số lượng mã đề")
         easy_c = _parse_int_field(payload.get("easy_count"), "Câu dễ")
         medium_c = _parse_int_field(payload.get("medium_count"), "Câu trung bình")
@@ -772,7 +798,7 @@ def lecturer_create_exam_set(request):
         medium_s = _parse_decimal_field(payload.get("medium_score"), "Điểm câu trung bình")
         hard_s = _parse_decimal_field(payload.get("hard_score"), "Điểm câu khó")
 
-        _validate_exam_set_creation_rules(
+        total_score = _validate_exam_set_creation_rules(
             number_of_versions=num_v,
             easy_count=easy_c,
             medium_count=medium_c,
@@ -783,6 +809,8 @@ def lecturer_create_exam_set(request):
         )
 
         bank_ids = [int(i) for i in payload.get("source_bank_ids", [])]
+        if len(bank_ids) > 10:
+            return JsonResponse({"status": "FAIL", "message": "Chỉ được chọn tối đa 10 ngân hàng câu hỏi."}, status=400)
         pools = _build_question_pools(subject, bank_ids, easy_c, medium_c, hard_c)
         blueprints = _generate_version_blueprints(
             pools, num_v, easy_c, medium_c, hard_c,
@@ -795,7 +823,8 @@ def lecturer_create_exam_set(request):
         es = ExamSet.objects.create(
             subject_id=subject,
             name=subject.name,
-            academic_year=payload.get("academic_year"),
+            exam_code=exam_code,
+            academic_year=academic_year,
             semester=payload.get("semester", SemesterChoices.HK1),
             number_of_versions=num_v,
             easy_pool_size=easy_c,
@@ -1097,20 +1126,25 @@ def lecturer_save_exam_set_draft(request, exam_set_id: int):
 @require_POST
 def lecturer_delete_exam_set(request, exam_set_id: int):
     _ensure_lecturer(request)
-    exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
+    exam_set = get_object_or_404(
+        ExamSet,
+        pk=exam_set_id,
+        subject_id__in=_lecturer_subjects(request),
+    )
     if _subject_has_ongoing_exam_group(exam_set.subject_id):
         return _locked_subject_mutation_response()
 
-    # Kiểm tra kĩ càng xem có mã đề nào bên trong đang được dùng không
-    has_used_codes = False
-    for code in exam_set.exam_codes.all():
-        if code.session_rooms.exists():
-            has_used_codes = True
-            break
+    # CHỈ nhìn usage thực tế qua session_rooms
+    has_used_codes = exam_set.exam_codes.filter(session_rooms__isnull=False).exists()
 
-    if exam_set.status == ExamSetStatus.APPROVED or exam_set.is_linked or has_used_codes:
-        return JsonResponse({"status": "FAIL", "message": "Bộ đề đã duyệt hoặc có mã đề đang được sử dụng, không thể xóa."},
-                            status=400)
+    if has_used_codes:
+        return JsonResponse(
+            {
+                "status": "FAIL",
+                "message": "Không thể xóa bộ đề này vì đã có mã đề được sử dụng.",
+            },
+            status=400,
+        )
 
     with transaction.atomic():
         for code in exam_set.exam_codes.all():
@@ -1119,4 +1153,9 @@ def lecturer_delete_exam_set(request, exam_set_id: int):
             code.delete()
         exam_set.delete()
 
-    return JsonResponse({"status": "SUCCESS", "message": "Xóa bộ đề thành công."})
+    return JsonResponse(
+        {
+            "status": "SUCCESS",
+            "message": "Xóa bộ đề thành công.",
+        }
+    )

@@ -1,7 +1,7 @@
 ﻿{% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Xem bài làm sinh viên - {{ selected_subject.name|default:subject.name }}{% endblock %}
+{% block title %}{% if selected_subject %}Xem bài làm sinh viên - {{ selected_subject.name }}{% else %}Xem bài làm sinh viên{% endif %}{% endblock %}
 
 {% block content %}
 <style>
@@ -148,148 +148,156 @@
       <div class="subject-filter-row">
         <label class="subject-filter-label" for="subject_id">Chọn môn học:</label>
         <select id="subject_id" name="subject_id" class="subject-filter-control" onchange="this.form.submit()">
+          <option value="">Chọn môn học</option>
           {% for s in subjects %}
             <option value="{{ s.id }}" {% if selected_subject and selected_subject.id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.subject_code }})</option>
           {% endfor %}
         </select>
-        {% if selected_exam_group_id %}<input type="hidden" name="exam_group_id" value="{{ selected_exam_group_id }}">{% endif %}
-        {% if student_filter %}<input type="hidden" name="student" value="{{ student_filter }}">{% endif %}
       </div>
     </form>
 
-    <div class="stats-grid">
-      <div class="stat-card stat-card-average">
-        <div class="stat-meta">
-          <span class="stat-label">Điểm trung bình</span>
-          <span class="stat-value">{{ average_score|floatformat:1 }}</span>
+    {% if selected_subject %}
+      <div class="stats-grid">
+        <div class="stat-card stat-card-average">
+          <div class="stat-meta">
+            <span class="stat-label">Điểm trung bình</span>
+            <span class="stat-value">{{ average_score|floatformat:1 }}</span>
+          </div>
+          <span class="stat-icon"><i class="fas fa-clipboard-list"></i></span>
         </div>
-        <span class="stat-icon"><i class="fas fa-clipboard-list"></i></span>
+        <div class="stat-card stat-card-complete">
+          <div class="stat-meta">
+            <span class="stat-label">Đã hoàn thành</span>
+            <span class="stat-value">{{ completed_count }}</span>
+          </div>
+          <span class="stat-icon"><i class="fas fa-check"></i></span>
+        </div>
+        <div class="stat-card stat-card-absent">
+          <div class="stat-meta">
+            <span class="stat-label">Vắng thi</span>
+            <span class="stat-value">{{ absent_count }}</span>
+          </div>
+          <span class="stat-icon"><i class="fas fa-times"></i></span>
+        </div>
       </div>
-      <div class="stat-card stat-card-complete">
-        <div class="stat-meta">
-          <span class="stat-label">Đã hoàn thành</span>
-          <span class="stat-value">{{ completed_count }}</span>
-        </div>
-        <span class="stat-icon"><i class="fas fa-check"></i></span>
-      </div>
-      <div class="stat-card stat-card-absent">
-        <div class="stat-meta">
-          <span class="stat-label">Vắng thi</span>
-          <span class="stat-value">{{ absent_count }}</span>
-        </div>
-        <span class="stat-icon"><i class="fas fa-times"></i></span>
-      </div>
-    </div>
 
-    <h2 class="list-title">Danh sách Bài làm</h2>
+      <h2 class="list-title">Danh sách Bài làm</h2>
 
-    <div class="student-review-panel table-panel">
-      <form method="get" class="table-filters">
-        {% if selected_subject %}<input type="hidden" name="subject_id" value="{{ selected_subject.id }}">{% endif %}
-        <div class="table-search">
-          <i class="fas fa-search"></i>
-          <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm ..." value="{{ student_filter }}">
-        </div>
-        <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
-          <option value="">Trạng thái: Tất cả</option>
-          {% for g in exam_groups %}
-            <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}</option>
-          {% endfor %}
-        </select>
-      </form>
+      <div class="student-review-panel table-panel">
+        <form method="get" class="table-filters">
+          <input type="hidden" name="subject_id" value="{{ selected_subject.id }}">
+          <div class="table-search">
+            <i class="fas fa-search"></i>
+            <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm ..." value="{{ student_filter }}">
+          </div>
+          <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
+            <option value="">Trạng thái: Tất cả</option>
+            {% for g in exam_groups %}
+              <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}</option>
+            {% endfor %}
+          </select>
+        </form>
 
-      {% if sessions %}
-        <div class="result-table-wrap">
-          <table class="result-table">
-            <thead>
-              <tr>
-                <th>Sinh viên</th>
-                <th>Lớp</th>
-                <th>Kỳ thi</th>
-                <th>Ngày thi</th>
-                <th>Thời gian</th>
-                <th>Trạng thái</th>
-                <th>Điểm</th>
-                <th></th>
-              </tr>
-            </thead>
-              <tbody>
-                {% for session in sessions %}
-                <tr class="session-row{% if session.can_view_detail %} is-clickable{% endif %}"{% if session.can_view_detail %} data-detail-url="{% url 'qna:lecturer_session_detail' session.id %}" onclick="window.location.href=this.dataset.detailUrl;"{% endif %}>
-                  <td>
-                    <span class="student-name">{{ session.student_name }}</span>
-                    <span class="student-id">{{ session.student_identifier }}</span>
-                  </td>
-                  <td>{{ session.student_class_name }}</td>
-                  <td>{{ session.exam_group.group_name|default:"-" }}</td>
-                  <td>{{ session.exam_date_display|date:"d/m/Y" }}</td>
-                  <td>
-                    {% if session.exam_group.start_at and session.exam_group.end_at %}
-                      {{ session.exam_group.start_at|date:"H:i" }} - {{ session.exam_group.end_at|date:"H:i" }}
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td>
-                    <span class="status-pill {{ session.review_status_class|default:session.status_class }}">{{ session.review_status_label|default:session.status_label }}</span>
-                  </td>
-                  <td><span class="score-value">{% if session.can_display_score %}{{ session.calculated_final_score|floatformat:2 }}{% else %}-{% endif %}</span></td>
-                  <td class="action-cell">
-                    {% if session.has_violation_warning and session.can_view_detail %}
-                      <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-flag-link" title="Có cảnh báo gian lận" onclick="event.stopPropagation();">
-                        <i class="fas fa-exclamation-triangle warning-icon"></i>
-                      </a>
-                    {% elif session.has_violation_warning %}
-                      <span title="Có cảnh báo gian lận">
-                        <i class="fas fa-exclamation-triangle warning-icon"></i>
-                      </span>
-                    {% endif %}
-
-                  </td>
+        {% if sessions %}
+          <div class="result-table-wrap">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th>Sinh viên</th>
+                  <th>Lớp</th>
+                  <th>Kỳ thi</th>
+                  <th>Ngày thi</th>
+                  <th>Thời gian</th>
+                  <th>Trạng thái</th>
+                  <th>Điểm</th>
+                  <th></th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        <div class="qm2-pagination">
-          <div>
-            Hiển thị
-            {% if page_obj and page_obj.paginator.count %}
-              <strong style="color: var(--review-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
-            {% else %}
-              <strong style="color: var(--review-text);">{{ sessions|length }}</strong>
-            {% endif %}
-            trong số
-            <strong style="color: var(--review-text);">{% if page_obj %}{{ page_obj.paginator.count }}{% else %}{{ sessions|length }}{% endif %}</strong>
-            sinh viên
-          </div>
-          <div class="qm2-page-controls">
-            {% if page_obj and page_obj.has_previous %}
-              <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
-                <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
-              </a>
-            {% else %}
-              <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
-            {% endif %}
+              </thead>
+                <tbody>
+                  {% for session in sessions %}
+                  <tr class="session-row{% if session.can_view_detail %} is-clickable{% endif %}"{% if session.can_view_detail %} data-detail-url="{% url 'qna:lecturer_session_detail' session.id %}" onclick="window.location.href=this.dataset.detailUrl;"{% endif %}>
+                    <td>
+                      <span class="student-name">{{ session.student_name }}</span>
+                      <span class="student-id">{{ session.student_identifier }}</span>
+                    </td>
+                    <td>{{ session.student_class_name }}</td>
+                    <td>{{ session.exam_group.group_name|default:"-" }}</td>
+                    <td>{{ session.exam_date_display|date:"d/m/Y" }}</td>
+                    <td>
+                      {% if session.exam_group.start_at and session.exam_group.end_at %}
+                        {{ session.exam_group.start_at|date:"H:i" }} - {{ session.exam_group.end_at|date:"H:i" }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
+                    <td>
+                      <span class="status-pill {{ session.review_status_class|default:session.status_class }}">{{ session.review_status_label|default:session.status_label }}</span>
+                    </td>
+                    <td><span class="score-value">{% if session.can_display_score %}{{ session.calculated_final_score|floatformat:2 }}{% else %}-{% endif %}</span></td>
+                    <td class="action-cell">
+                      {% if session.has_violation_warning and session.can_view_detail %}
+                        <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-flag-link" title="Có cảnh báo gian lận" onclick="event.stopPropagation();">
+                          <i class="fas fa-exclamation-triangle warning-icon"></i>
+                        </a>
+                      {% elif session.has_violation_warning %}
+                        <span title="Có cảnh báo gian lận">
+                          <i class="fas fa-exclamation-triangle warning-icon"></i>
+                        </span>
+                      {% endif %}
 
-            <span class="qm2-page-btn active">{% if page_obj %}{{ page_obj.number }}{% else %}1{% endif %}</span>
-
-            {% if page_obj and page_obj.has_next %}
-              <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
-                <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
-              </a>
-            {% else %}
-              <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
-            {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
-        </div>
-      {% else %}
+          <div class="qm2-pagination">
+            <div>
+              Hiển thị
+              {% if page_obj and page_obj.paginator.count %}
+                <strong style="color: var(--review-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+              {% else %}
+                <strong style="color: var(--review-text);">{{ sessions|length }}</strong>
+              {% endif %}
+              trong số
+              <strong style="color: var(--review-text);">{% if page_obj %}{{ page_obj.paginator.count }}{% else %}{{ sessions|length }}{% endif %}</strong>
+              sinh viên
+            </div>
+            <div class="qm2-page-controls">
+              {% if page_obj and page_obj.has_previous %}
+                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
+                  <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
+                </a>
+              {% else %}
+                <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+              {% endif %}
+
+              <span class="qm2-page-btn active">{% if page_obj %}{{ page_obj.number }}{% else %}1{% endif %}</span>
+
+              {% if page_obj and page_obj.has_next %}
+                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
+                  <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
+                </a>
+              {% else %}
+                <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            <i class="fas fa-inbox"></i>
+            <div>Chưa có bài làm nào để hiển thị.</div>
+          </div>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="student-review-panel table-panel">
         <div class="empty-state">
           <i class="fas fa-inbox"></i>
-          <div>Chưa có bài làm nào để hiển thị.</div>
+          <div>Vui lòng chọn môn học để xem kết quả.</div>
         </div>
-      {% endif %}
-    </div>
+      </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

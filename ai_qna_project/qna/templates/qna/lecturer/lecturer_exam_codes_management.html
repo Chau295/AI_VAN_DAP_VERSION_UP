@@ -6,19 +6,19 @@
 {% block content %}
 <style>
   :root {
-    --bg: #f3f5fa;
-    --panel: #ffffff;
-    --border: #e6ebf2;
-    --text: #152033;
-    --muted: #7a8699;
-    --blue: #1f6feb;
-    --blue-600: #1558c0;
-    --green: #16a34a;
-    --red: #dc2626;
-    --amber: #f59e0b;
-    --shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-    --radius-lg: 18px;
-    --radius-md: 14px;
+    --bg: var(--color-bg);
+    --panel: var(--color-panel);
+    --border: var(--color-border);
+    --text: var(--color-text);
+    --muted: var(--color-text-muted);
+    --blue: var(--color-primary);
+    --blue-600: var(--color-primary-dark);
+    --green: var(--color-success);
+    --red: var(--color-danger);
+    --amber: var(--color-warning);
+    --shadow: var(--shadow-card);
+    --radius-lg: var(--radius-card);
+    --radius-md: var(--radius-control);
   }
 
   * { box-sizing: border-box; }
@@ -26,15 +26,15 @@
   .qm2-page {
     background: var(--bg);
     min-height: calc(100vh - 80px);
-    padding: 28px 24px 32px;
+    padding: var(--spacing-page);
     font-family: inherit;
   }
 
   .qm2-shell {
-    max-width: 1480px;
+    max-width: 1280px;
     margin: 0 auto;
     display: grid;
-    gap: 24px;
+    gap: var(--spacing-section);
   }
 
   .qm2-topbar {
@@ -44,17 +44,10 @@
     gap: 20px;
   }
 
-  .qm2-title h1 {
-    font-size: 26px;
-    line-height: 1.2;
-    font-weight: 700;
-    color: var(--text);
-    margin: 0;
-  }
-
+  .qm2-title h1,
   .qm2-page-title {
-    font-size: 26px;
-    line-height: 1.2;
+    font-size: var(--font-size-title);
+    line-height: 1.3;
     font-weight: 700;
     color: var(--text);
     margin: 0;
@@ -64,17 +57,17 @@
 
   .qm2-title .sub {
     margin-top: 6px;
-    font-size: 14px;
+    font-size: var(--font-size-small);
     color: var(--muted);
   }
 
   .qm2-btn {
-    height: 40px;
+    height: var(--control-height);
     padding: 0 16px;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid transparent;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -92,32 +85,32 @@
   .qm2-btn-primary:hover { background: var(--blue-600); }
   .qm2-btn-outline { background: #fff; color: #475569; border: 1px solid #cfd7e3; }
   .qm2-btn-outline:hover { background: #f8fafc; }
-  .qm2-btn-danger { background: #fff5f5; color: var(--red); border-color: #fecaca; }
+  .qm2-btn-danger { background: var(--color-danger-bg); color: var(--red); border-color: #fecaca; }
 
   .qm2-card {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     box-shadow: var(--shadow);
     overflow: hidden;
   }
 
   .qm2-filters {
-    padding: 16px 20px;
+    padding: var(--spacing-card);
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    background: #fff;
+    background: var(--panel);
   }
 
   .qm2-input, .qm2-select {
-    height: 40px;
-    border: 1px solid #d7deea;
-    border-radius: 10px;
+    height: var(--control-height);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
     padding: 0 14px;
-    font-size: 13px;
+    font-size: var(--font-size-body);
     color: var(--text);
     background: #fff;
     outline: none;
@@ -140,8 +133,8 @@
     left: 14px;
     top: 50%;
     transform: translateY(-50%);
-    color: #94a3b8;
-    font-size: 13px;
+    color: var(--muted);
+    font-size: 14px;
   }
 
   .qm2-search-box input {
@@ -161,10 +154,10 @@
   }
 
   .qm2-table th {
-    padding: 14px 20px;
-    font-size: 12px;
-    font-weight: 700;
-    color: #64748b;
+    padding: 12px 16px;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-bold);
+    color: var(--muted);
     text-transform: uppercase;
     border-bottom: 1px solid var(--border);
     background: #f8fafc;
@@ -172,8 +165,8 @@
   }
 
   .qm2-table td {
-    padding: 16px 20px;
-    font-size: 14px;
+    padding: 12px 16px;
+    font-size: var(--font-size-body);
     color: var(--text);
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
@@ -195,9 +188,9 @@
   }
 
   .qm2-set-code {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 800;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.05em;
     color: var(--blue);
     text-transform: uppercase;
   }
@@ -213,22 +206,6 @@
     color: var(--muted);
     font-weight: 600;
   }
-
-  .qm2-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .qm2-pill-green { background: #e8f8ef; color: #137a38; }
-  .qm2-pill-amber { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
-  .qm2-pill-blue { background: #eef4ff; color: #2563eb; }
-  .qm2-pill-gray { background: #f1f5f9; color: #64748b; }
 
   .qm2-row-actions {
     display: flex;
@@ -254,6 +231,15 @@
 
   .qm2-row-actions a:hover { background: #eef4ff; color: var(--blue); }
   .qm2-row-actions button:hover { background: #fef2f2; color: var(--red); }
+  .qm2-row-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: #cbd5e1;
+  }
+  .qm2-row-actions button:disabled:hover {
+    background: transparent;
+    color: #cbd5e1;
+  }
 
   .qm2-pagination {
     display: flex;
@@ -273,21 +259,24 @@
   }
 
   .qm2-page-btn {
-    width: 30px;
-    height: 30px;
-    border-radius: 6px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #475569;
+    min-width: 36px;
+    height: 36px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-border);
+    background: var(--color-panel);
+    color: var(--color-text);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-body);
+    text-decoration: none;
+    transition: all 0.2s;
   }
 
-  .qm2-page-btn:hover { background: #f1f5f9; }
-  .qm2-page-btn.active { background: var(--blue); color: #fff; }
+  .qm2-page-btn:hover { background: #f1f5f9; border-color: var(--color-primary); color: var(--color-primary); }
+  .qm2-page-btn.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
   .qm2-page-btn.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
   .qm2-modal {
@@ -466,7 +455,15 @@
                   </td>
                   <td>
                     <div class="qm2-row-actions" style="justify-content: center;">
-                      <button type="button" title="Xóa" onclick="openDeleteSetModal({{ row.id }}, {{ row.can_delete|yesno:'true,false' }})"><i class="far fa-trash-alt"></i></button>
+                      {% if row.can_delete %}
+                        <button type="button" title="Xóa" onclick="openDeleteSetModal({{ row.id }}, true)">
+                          <i class="far fa-trash-alt"></i>
+                        </button>
+                      {% else %}
+                        <button type="button" title="Xóa" disabled>
+                          <i class="far fa-trash-alt"></i>
+                        </button>
+                      {% endif %}
                     </div>
                   </td>
                 </tr>
@@ -570,7 +567,7 @@
 
     document.getElementById('deleteSetMessage').textContent = canDelete
       ? 'Toàn bộ mã đề trong bộ đề này sẽ bị xóa vĩnh viễn.'
-      : 'Bộ đề đã duyệt hoặc đang trong ca thi, không thể xóa.';
+      : 'Không thể xóa bộ đề này vì đã có mã đề được sử dụng.';
 
     document.getElementById('confirmDeleteSetBtn').style.display = canDelete ? 'inline-flex' : 'none';
   }

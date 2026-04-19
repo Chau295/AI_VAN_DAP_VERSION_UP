@@ -295,6 +295,12 @@ class ExamSet(models.Model):
         verbose_name="Môn học",
     )
     name = models.CharField(max_length=255, blank=True, default="", verbose_name="Tên bộ đề")
+    exam_code = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name="Mã bộ đề",
+    )
     academic_year = models.CharField(max_length=20, verbose_name="Năm học")
     semester = models.CharField(
         max_length=10,

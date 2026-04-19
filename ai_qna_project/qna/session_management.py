@@ -25,6 +25,7 @@ from django.views.decorators.http import require_POST
 
 from openpyxl import Workbook as OpenpyxlWorkbook
 
+from .academic_year import ACADEMIC_YEAR_ERROR_MESSAGE, is_valid_academic_year
 from .models import (
     ExamCode,
     ExamRoom,
@@ -337,7 +338,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
     errors = []
     group_name = (payload.get("group_name") or "").strip()
-    academic_year = (payload.get("academic_year") or "").strip()
+    academic_year = "" if payload.get("academic_year") is None else str(payload.get("academic_year"))
     semester = (payload.get("semester") or "").strip() or SemesterChoices.HK1
     description = (payload.get("description") or "").strip()
     exam_password = (payload.get("exam_password") or "").strip()
@@ -349,8 +350,8 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
     if not group_name:
         errors.append("Vui lòng nhập tên kỳ thi.")
-    if not academic_year or not re.match(r"^\d{4}-\d{4}$", academic_year):
-        errors.append("Năm học không hợp lệ.")
+    if not is_valid_academic_year(academic_year):
+        errors.append(ACADEMIC_YEAR_ERROR_MESSAGE)
     if semester not in {choice[0] for choice in SemesterChoices.choices}:
         errors.append("Học kỳ không hợp lệ.")
     if not exam_date_value:

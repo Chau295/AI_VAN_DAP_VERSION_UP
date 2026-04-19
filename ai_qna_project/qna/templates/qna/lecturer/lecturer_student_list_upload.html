@@ -386,7 +386,7 @@
 
         <div class="qm2-field">
           <label>Năm học</label>
-          <input type="text" name="academic_year" class="qm2-input" value="{{ default_academic_year }}" placeholder="VD: 2024-2025" required>
+          <input type="text" name="academic_year" class="qm2-input" value="{{ default_academic_year }}" placeholder="VD: 2024-2025" pattern="\d{4}-\d{4}" title="Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số." required>
         </div>
 
         <div class="qm2-field">
@@ -458,6 +458,8 @@
   const toastContainer = document.getElementById('toastContainer');
   const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
   const academicYearInput = form.querySelector('[name=academic_year]');
+  const academicYearPattern = /^\d{4}-\d{4}$/;
+  const academicYearErrorMessage = 'Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.';
   const maxMb = {{ max_upload_mb|default:10 }};
   const maxSize = maxMb * 1024 * 1024;
   const allowed = ['xlsx', 'xls', 'csv'];
@@ -476,6 +478,12 @@
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
   const activeSemester = () => (document.querySelector('[name=semester]:checked') || {}).value || 'HK1';
+
+  function validateAcademicYear() {
+    const isValid = academicYearPattern.test(String(academicYearInput.value || ''));
+    academicYearInput.setCustomValidity(isValid ? '' : academicYearErrorMessage);
+    return isValid;
+  }
 
   function toast(title, message, isError = true) {
     const el = document.createElement('div');
@@ -681,7 +689,7 @@
 
     const formData = new FormData();
     formData.append('csrfmiddlewaretoken', csrfToken);
-    formData.append('academic_year', academicYearInput.value.trim());
+    formData.append('academic_year', academicYearInput.value);
     formData.append('semester', activeSemester());
     formData.append('files', item.file);
     xhr.send(formData);
@@ -766,9 +774,19 @@
       return;
     }
 
+    if (!validateAcademicYear()) {
+      toast('Năm học không hợp lệ', academicYearErrorMessage);
+      academicYearInput.reportValidity();
+      academicYearInput.focus();
+      return;
+    }
+
     filesState.filter(item => item.status === 'ready').forEach(uploadItem);
     syncButton();
   });
+
+  academicYearInput.addEventListener('input', validateAcademicYear);
+  academicYearInput.addEventListener('blur', validateAcademicYear);
 
   browseBtn.addEventListener('click', openPicker);
   dropZone.addEventListener('click', event => {
@@ -792,6 +810,7 @@
   dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
   input.addEventListener('change', event => addFiles(event.target.files));
 
+  validateAcademicYear();
   render();
 })();
 </script>

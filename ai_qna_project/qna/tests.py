@@ -142,6 +142,31 @@ class LecturerStudentRosterUploadTests(TestCase):
         self.assertEqual(StudentRosterStudent.objects.filter(student_roster_upload_id=roster).count(), 2)
         self.assertEqual(payload["results"][0]["total_students"], 2)
 
+    def test_ajax_upload_rejects_invalid_academic_year_with_letters(self):
+        upload = SimpleUploadedFile(
+            "Danh_sach_L01.csv",
+            (
+                "student_code,full_name,gender,date_of_birth,class_name,email\n"
+                "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com\n"
+            ).encode("utf-8-sig"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
+            {
+                "academic_year": "2025-20a6",
+                "semester": "HK1",
+                "files": upload,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(StudentRosterUpload.objects.count(), 0)
+
     def test_ajax_upload_rejects_invalid_extension(self):
         upload = SimpleUploadedFile(
             "danh_sach_sinh_vien.pdf",
@@ -687,7 +712,7 @@ class LecturerQuestionManagementTests(TestCase):
             status="SCHEDULED",
             created_by=self.lecturer,
             configuration_data={"rooms": [], "rosters": []},
-        )
+)
 
     def test_question_management_screen_exposes_has_active_exam_flag_for_selected_subject(self):
         self._create_active_exam_group()
@@ -699,6 +724,53 @@ class LecturerQuestionManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-has-active-exam="true"')
+
+    def test_question_management_screen_no_auto_select_subject_when_not_provided(self):
+        response = self.client.get(reverse("qna:lecturer_questions_screen"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<option value="">Chọn môn học</option>')
+        self.assertNotContains(response, "Ngan hang goc")
+
+    def test_question_management_screen_shows_empty_state_when_no_subject_selected(self):
+        response = self.client.get(reverse("qna:lecturer_questions_screen"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<option value="">Chọn môn học</option>')
+        self.assertContains(response, "Vui lòng chọn môn học để quản lý câu hỏi.")
+        self.assertNotContains(response, "Ngan hang goc")
+
+    def test_question_management_screen_displays_only_selected_subject_data(self):
+        other_subject = Subject.objects.create(
+            name="Machine Learning",
+            subject_code="ML401",
+        )
+        self.profile.subjects_taught.add(other_subject)
+        other_bank = QuestionBank.objects.create(
+            subject=other_subject,
+            name="ML Bank",
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_questions_screen"),
+            {"subject_id": str(self.subject.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'<option value="{self.subject.id}" selected>')
+        self.assertContains(response, "Ngan hang goc")
+        self.assertNotContains(response, "ML Bank")
+
+    def test_question_management_screen_with_mode_detail_without_subject_shows_empty_state(self):
+        response = self.client.get(
+            reverse("qna:lecturer_questions_screen"),
+            {"mode": "detail", "view": "bank", "bank_id": str(self.bank.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<option value="">Chọn môn học</option>')
+        self.assertContains(response, "Vui lòng chọn môn học để quản lý câu hỏi.")
+        self.assertNotContains(response, "Ngan hang goc")
 
     def test_create_question_bank_trims_name_and_rejects_duplicate_in_same_subject(self):
         create_response = self._post_json(
@@ -1277,6 +1349,31 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(payload["message"], "Tạo bộ đề thành công.")
         self.assertEqual(ExamSet.objects.count(), 1)
 
+    def test_create_exam_set_accepts_valid_academic_year_format(self):
+        response = self._create_exam_set_response(academic_year="2025-2026")
+
+        self.assertEqual(response.status_code, 200)
+        exam_set = ExamSet.objects.get(pk=response.json()["exam_set_id"])
+        self.assertEqual(exam_set.academic_year, "2025-2026")
+
+    def test_create_exam_set_rejects_academic_year_with_letters(self):
+        response = self._create_exam_set_response(academic_year="2025-20a6")
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(ExamSet.objects.count(), 0)
+
+    def test_create_exam_set_rejects_academic_year_with_wrong_separator(self):
+        response = self._create_exam_set_response(academic_year="2025/2026")
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(ExamSet.objects.count(), 0)
+
     def test_create_exam_set_rejects_total_score_greater_than_ten(self):
         response = self._create_exam_set_response(hard_score=6)
 
@@ -1363,6 +1460,22 @@ class LecturerExamManagementTests(TestCase):
         self.assertIsNone(re.search("[\\u00C3\\u00C2\\u00C4\\u00C5]", content))
         self.assertNotContains(response, 'class="stepper-input"')
         self.assertNotContains(response, 'type="hidden" id="easyCount"')
+
+    def test_generate_exam_screen_starts_with_zero_matrix_values(self):
+        response = self.client.get(
+            reverse("qna:lecturer_generate_codes_screen"),
+            {"subject_id": self.subject.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="easyCount" type="number" min="0" step="1" value="0"')
+        self.assertContains(response, 'id="mediumCount" type="number" min="0" step="1" value="0"')
+        self.assertContains(response, 'id="hardCount" type="number" min="0" step="1" value="0"')
+        self.assertContains(response, 'id="easyScore" type="number" min="0" step="0.5" value="0"')
+        self.assertContains(response, 'id="mediumScore" type="number" min="0" step="0.5" value="0"')
+        self.assertContains(response, 'id="hardScore" type="number" min="0" step="0.5" value="0"')
+        self.assertContains(response, 'id="totalQuestions">0</strong>')
+        self.assertContains(response, 'id="totalScore">0.00</strong>')
 
     def test_generate_exam_screen_includes_summary_validation_messages(self):
         response = self.client.get(
@@ -1477,33 +1590,40 @@ class LecturerExamManagementTests(TestCase):
         response = self.client.get(
             reverse("qna:lecturer_exam_codes_screen"),
             {"q": "Phân cụm", "linked": "USED"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.context["rows"]), 1)
-        self.assertEqual(response.context["rows"][0]["id"], used_exam_set.id)
-        self.assertContains(response, f"BD-{used_exam_set.id:04d}")
-        self.assertNotContains(response, f"BD-{unused_exam_set.id:04d}")
-
-    def test_exam_set_list_keeps_pagination_block_after_search(self):
-        first_exam_set = self._create_exam_set(number_of_versions=1)
-        second_exam_set = self._create_exam_set(number_of_versions=1)
-        first_exam_set.name = "Bộ đề PCA"
-        first_exam_set.save(update_fields=["name", "updated_at"])
-        second_exam_set.name = "Bộ đề Naive Bayes"
-        second_exam_set.save(update_fields=["name", "updated_at"])
-
-        response = self.client.get(
-            reverse("qna:lecturer_exam_codes_screen"),
-            {"q": "PCA"},
-        )
-
+)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.context["rows"]), 1)
         self.assertContains(response, 'class="qm2-pagination"')
         self.assertContains(response, "1-1")
         self.assertContains(response, f"BD-{first_exam_set.id:04d}")
         self.assertNotContains(response, f"BD-{second_exam_set.id:04d}")
+
+    def test_exam_set_list_pagination_page_number(self):
+        for i in range(25):
+            self._create_exam_set(number_of_versions=1)
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"page": "2"},
+        )
+        self.assertEqual(response.status_code, 200)
+        page_obj = response.context["page_obj"]
+        self.assertEqual(page_obj.number, 2)
+        self.assertTrue(len(page_obj.object_list) <= 20)
+
+    def test_exam_set_list_pagination_preserves_filter(self):
+        for i in range(25):
+            es = self._create_exam_set(number_of_versions=1)
+            es.name = "Bộ đề PCA"
+            es.save(update_fields=["name", "updated_at"])
+
+        response = self.client.get(
+            reverse("qna:lecturer_exam_codes_screen"),
+            {"q": "PCA", "page": "2"},
+        )
+        self.assertEqual(response.status_code, 200)
+        page_obj = response.context["page_obj"]
+        self.assertIn("q", response.context["filter_values"])
 
     def test_exam_set_detail_hides_regenerate_action_and_shows_set_code(self):
         exam_set = self._create_exam_set(number_of_versions=1)
@@ -2686,6 +2806,23 @@ class StudentExamAccessTests(TestCase):
                 self.assertEqual(response.json()["status"], "FAIL")
                 self.assertEqual(response.json()["message"], "Định dạng ngày giờ không hợp lệ.")
 
+    def test_create_exam_group_screen_rejects_invalid_academic_year_format(self):
+                payload = self._build_session_payload()
+                payload["academic_year"] = "2025/2026"
+
+                response = self._post_json(
+                    "qna:lecturer_create_exam_group_screen",
+                    payload,
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.json()["success"])
+                self.assertEqual(response.json()["status"], "FAIL")
+                self.assertEqual(
+                    response.json()["message"],
+                    "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.",
+                )
+
     def test_random_assign_students_updates_configuration_data_source_of_truth(self):
                 exam_group = self._create_exam_group()
 
@@ -2914,6 +3051,88 @@ class StudentExamAccessTests(TestCase):
                 )
 
                 self.assertEqual(room_counts, [2, 3])
+
+    def test_student_review_requires_subject_selection_before_showing_results(self):
+                exam_group = ExamSessionGroup.objects.create(
+                    subject=self.subject,
+                    group_name="Ca thi xem bai lam",
+                    academic_year="2025-2026",
+                    semester="HK1",
+                    exam_date=timezone.now() - timedelta(hours=2),
+                    duration_minutes=60,
+                    status="SCHEDULED",
+                    created_by=self.lecturer,
+                )
+                ExamSession.objects.create(
+                    user=self.student_user_1,
+                    subject=self.subject,
+                    exam_session_group_id=exam_group,
+                    session_status="COMPLETED",
+                    completed_at=timezone.now() - timedelta(hours=1),
+                )
+
+                response = self.client.get(reverse("qna:lecturer_student_review_screen"))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, '<option value="">Chọn môn học</option>', html=True)
+                self.assertContains(response, "Vui lòng chọn môn học để xem kết quả.")
+                self.assertNotContains(response, "Danh sách Bài làm")
+                self.assertNotContains(response, "Sinh Vien 1")
+                self.assertIsNone(response.context["selected_subject"])
+                self.assertEqual(list(response.context["sessions"]), [])
+
+    def test_student_review_only_shows_results_for_selected_subject(self):
+                other_subject = Subject.objects.create(
+                    name="Mon khac",
+                    subject_code="DS404",
+                )
+                self.profile.subjects_taught.add(other_subject)
+
+                current_group = ExamSessionGroup.objects.create(
+                    subject=self.subject,
+                    group_name="Ca thi mon hien tai",
+                    academic_year="2025-2026",
+                    semester="HK1",
+                    exam_date=timezone.now() - timedelta(hours=2),
+                    duration_minutes=60,
+                    status="SCHEDULED",
+                    created_by=self.lecturer,
+                )
+                other_group = ExamSessionGroup.objects.create(
+                    subject=other_subject,
+                    group_name="Ca thi mon khac",
+                    academic_year="2025-2026",
+                    semester="HK1",
+                    exam_date=timezone.now() - timedelta(hours=2),
+                    duration_minutes=60,
+                    status="SCHEDULED",
+                    created_by=self.lecturer,
+                )
+
+                ExamSession.objects.create(
+                    user=self.student_user_1,
+                    subject=self.subject,
+                    exam_session_group_id=current_group,
+                    session_status="COMPLETED",
+                    completed_at=timezone.now() - timedelta(hours=1),
+                )
+                ExamSession.objects.create(
+                    user=self.student_user_2,
+                    subject=other_subject,
+                    exam_session_group_id=other_group,
+                    session_status="COMPLETED",
+                    completed_at=timezone.now() - timedelta(hours=1),
+                )
+
+                response = self.client.get(
+                    reverse("qna:lecturer_student_review_screen"),
+                    {"subject_id": self.subject.id},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "Sinh Vien 1")
+                self.assertNotContains(response, "Sinh Vien 2")
+                self.assertEqual(response.context["selected_subject"], self.subject)
 
     def test_student_review_shows_only_one_red_triangle_for_flagged_session(self):
                 exam_group = self._create_exam_group()
@@ -4673,8 +4892,8 @@ class ExamSubmissionRegressionTests(TestCase):
                     self.assertEqual(
                         ExamResult.objects.filter(exam_session_id=self.session, question_id=self.question).count(), 0)
 
-    def test_update_profile_image_accepts_profile_image_and_avatar(self):
-                    first_response = self.client.post(
+    def test_update_profile_image_returns_forbidden(self):
+                    response = self.client.post(
                         reverse("qna:update_profile_image"),
                         {
                             "profile_image": SimpleUploadedFile(
@@ -4684,31 +4903,10 @@ class ExamSubmissionRegressionTests(TestCase):
                             )
                         },
                     )
-                    self.assertEqual(first_response.status_code, 200)
-                    first_payload = first_response.json()
-                    self.assertTrue(first_payload["success"])
-                    self.assertTrue(first_payload["image_data_url"])
-                    self.assertEqual(first_payload["image_data_url"], first_payload["avatar_url"])
-
-                    second_response = self.client.post(
-                        reverse("qna:update_profile_image"),
-                        {
-                            "avatar": SimpleUploadedFile(
-                                "avatar.png",
-                                b"avatar-image-data",
-                                content_type="image/png",
-                            )
-                        },
-                    )
-                    self.assertEqual(second_response.status_code, 200)
-                    second_payload = second_response.json()
-                    self.assertTrue(second_payload["success"])
-                    self.assertTrue(second_payload["image_data_url"])
-                    self.assertEqual(second_payload["image_data_url"], second_payload["avatar_url"])
-
-                    profile = self.student.userprofile
-                    profile.refresh_from_db()
-                    self.assertEqual(profile.profile_image_blob, b"avatar-image-data")
+                    self.assertEqual(response.status_code, 403)
+                    payload = response.json()
+                    self.assertFalse(payload["success"])
+                    self.assertIn("Người dùng không có quyền", payload["error"])
 
     def test_lecturer_student_review_screen_does_not_assign_readonly_property(self):
                     self.client.force_login(self.lecturer)

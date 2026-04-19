@@ -54,6 +54,7 @@ from openai import AuthenticationError, OpenAI
 from openpyxl import Workbook as OpenpyxlWorkbook
 from openpyxl import load_workbook
 
+from .academic_year import ACADEMIC_YEAR_ERROR_MESSAGE, is_valid_academic_year
 from .exam_guards import subject_has_active_exam_group
 from .exam_runtime import (
     EXAM_GRADING_STATUS_ERROR,
@@ -119,7 +120,7 @@ def _get_selected_subject_for_lecturer(request, subject_id):
     subjects = _get_lecturer_subjects(request)
     if subject_id:
         return get_object_or_404(subjects, pk=subject_id)
-    return subjects.first()
+    return None
 
 
 def _json_body(request: HttpRequest) -> Dict[str, Any]:
@@ -2916,12 +2917,7 @@ def api_generate_questions(request):
             {
                 "status": "SUCCESS",
                 "job_id": job_id,
-                "message": (
-                    f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công. "
-                    f"Hệ thống đã tự sinh bù {skipped_duplicates} câu bị trùng."
-                    if skipped_duplicates
-                    else f"Đã tạo {len(created_questions)}/{total_count} câu hỏi thành công."
-                ),
+                "message": "Tạo câu hỏi thành công.",
                 "questions": created_questions,
                 "summary": summary,
                 "created_count": len(created_questions),
@@ -3212,105 +3208,107 @@ def lecturer_student_review_screen(request):
     if not request.user.userprofile.is_lecturer:
         return redirect("qna:dashboard")
 
-    subjects = request.user.userprofile.subjects_taught.all()
-    selected_subject_id = request.GET.get("subject_id")
-    exam_group_id = request.GET.get("exam_group_id")
+    subjects = list(request.user.userprofile.subjects_taught.all().order_by("name"))
+    selected_subject_id = (request.GET.get("subject_id") or "").strip()
+    raw_exam_group_id = (request.GET.get("exam_group_id") or "").strip()
     student_filter = (request.GET.get("student") or "").strip()
+    selected_exam_group_id = int(raw_exam_group_id) if raw_exam_group_id.isdigit() else None
+    selected_subject = next((subject for subject in subjects if str(subject.pk) == selected_subject_id), None)
 
-    if not selected_subject_id:
-        selected_subject = subjects.first()
-    else:
-        try:
-            selected_subject = subjects.get(pk=selected_subject_id)
-        except (Subject.DoesNotExist, ValueError):
-            selected_subject = subjects.first()
-
-    exam_groups = ExamSessionGroup.objects.filter(subject_id=selected_subject).order_by("-exam_date", "-pk")
-    sessions = _with_lecturer_visible_violation_count(
-        ExamSession.objects.filter(
-            subject_id=selected_subject,
-            exam_session_group_id__isnull=False,
-        ).select_related(
-            "user_id",
-            "user_id__userprofile",
-            "exam_session_group_id",
-        )
-    )
-
-    if exam_group_id:
-        sessions = sessions.filter(exam_session_group_id=exam_group_id)
-
-    selected_exam_groups = list(exam_groups.filter(pk=exam_group_id)) if exam_group_id else list(exam_groups)
+    exam_groups = []
     review_rows = []
-    existing_session_keys = set()
-    sessions = sessions.order_by("-created_at", "-pk")
+    page_obj = None
 
-    for session in sessions:
-        main_avg, final_total = _compute_scores(session)
-        session.main_avg = main_avg
-        if session.final_score != final_total:
-            session.final_score = final_total
-
-        _attach_session_score_meta(session)
-
-        profile = getattr(session.user_id, "userprofile", None)
-
-        linked_roster_row = (
-            StudentRosterStudent.objects
-            .filter(linked_user_id=session.user_id, student_roster_upload_id__subject_id=session.subject_id)
-            .order_by("-student_roster_student_id")
-            .first()
+    if selected_subject:
+        exam_groups = list(
+            ExamSessionGroup.objects.filter(subject_id=selected_subject).order_by("-exam_date", "-pk")
+        )
+        sessions = _with_lecturer_visible_violation_count(
+            ExamSession.objects.filter(
+                subject_id=selected_subject,
+                exam_session_group_id__isnull=False,
+            ).select_related(
+                "user_id",
+                "user_id__userprofile",
+                "exam_session_group_id",
+            )
         )
 
-        session.student_identifier = (
-                (linked_roster_row.student_code if linked_roster_row else None)
-                or getattr(profile, "student_id", None)
-                or session.user_id.username
+        if selected_exam_group_id:
+            sessions = sessions.filter(exam_session_group_id=selected_exam_group_id)
+
+        selected_exam_groups = [
+            exam_group for exam_group in exam_groups if exam_group.pk == selected_exam_group_id
+        ] if selected_exam_group_id else exam_groups
+        existing_session_keys = set()
+        sessions = sessions.order_by("-created_at", "-pk")
+
+        for session in sessions:
+            main_avg, final_total = _compute_scores(session)
+            session.main_avg = main_avg
+            if session.final_score != final_total:
+                session.final_score = final_total
+
+            _attach_session_score_meta(session)
+
+            profile = getattr(session.user_id, "userprofile", None)
+
+            linked_roster_row = (
+                StudentRosterStudent.objects
+                .filter(linked_user_id=session.user_id, student_roster_upload_id__subject_id=session.subject_id)
+                .order_by("-student_roster_student_id")
+                .first()
+            )
+
+            session.student_identifier = (
+                    (linked_roster_row.student_code if linked_roster_row else None)
+                    or getattr(profile, "student_id", None)
+                    or session.user_id.username
+            )
+
+            session.student_name = (
+                    (linked_roster_row.full_name if linked_roster_row else None)
+                    or getattr(profile, "full_name", None)
+                    or session.user_id.username
+            )
+
+            session.student_class_name = (
+                    (linked_roster_row.class_name if linked_roster_row else None)
+                    or getattr(profile, "class_name", None)
+                    or "-"
+            )
+            session.exam_date_display = (
+                session.exam_group.exam_date
+                if session.exam_group and session.exam_group.exam_date
+                else session.completed_at.date() if session.completed_at
+                else session.created_at.date()
+            )
+            session.has_violation_warning = bool(getattr(session, "visible_violation_count", 0))
+            _attach_review_status_meta(session)
+            review_rows.append(session)
+
+            if session.exam_group:
+                session_key = normalize_student_code(session.student_identifier)
+                if session_key:
+                    existing_session_keys.add((session.exam_group.pk, session_key))
+
+        review_rows.extend(_build_missing_review_rows(selected_exam_groups, existing_session_keys))
+
+        if student_filter:
+            keyword = student_filter.lower()
+            review_rows = [
+                row for row in review_rows
+                if keyword in (row.student_identifier or "").lower()
+                or keyword in (row.student_name or "").lower()
+                or keyword in (row.student_class_name or "").lower()
+                or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
+            ]
+
+        default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
+        review_rows.sort(
+            key=lambda item: getattr(item, "created_at", None) or default_sort_time,
+            reverse=True,
         )
-
-        session.student_name = (
-                (linked_roster_row.full_name if linked_roster_row else None)
-                or getattr(profile, "full_name", None)
-                or session.user_id.username
-        )
-
-        session.student_class_name = (
-                (linked_roster_row.class_name if linked_roster_row else None)
-                or getattr(profile, "class_name", None)
-                or "-"
-        )
-        session.exam_date_display = (
-            session.exam_group.exam_date
-            if session.exam_group and session.exam_group.exam_date
-            else session.completed_at.date() if session.completed_at
-            else session.created_at.date()
-        )
-        session.has_violation_warning = bool(getattr(session, "visible_violation_count", 0))
-        _attach_review_status_meta(session)
-        review_rows.append(session)
-
-        if session.exam_group:
-            session_key = normalize_student_code(session.student_identifier)
-            if session_key:
-                existing_session_keys.add((session.exam_group.pk, session_key))
-
-    review_rows.extend(_build_missing_review_rows(selected_exam_groups, existing_session_keys))
-
-    if student_filter:
-        keyword = student_filter.lower()
-        review_rows = [
-            row for row in review_rows
-            if keyword in (row.student_identifier or "").lower()
-            or keyword in (row.student_name or "").lower()
-            or keyword in (row.student_class_name or "").lower()
-            or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
-        ]
-
-    default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
-    review_rows.sort(
-        key=lambda item: getattr(item, "created_at", None) or default_sort_time,
-        reverse=True,
-    )
 
     completed_count = 0
     absent_count = 0
@@ -3330,8 +3328,11 @@ def lecturer_student_review_screen(request):
 
     average_score = round(total_score / completed_count, 1) if completed_count else 0
 
-    paginator = Paginator(review_rows, LIST_PAGE_SIZE)
-    page_obj = paginator.get_page(request.GET.get("page"))
+    sessions_page = []
+    if selected_subject:
+        paginator = Paginator(review_rows, LIST_PAGE_SIZE)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        sessions_page = page_obj.object_list
 
     return render(
         request,
@@ -3341,8 +3342,8 @@ def lecturer_student_review_screen(request):
             "selected_subject": selected_subject,
             "subject": selected_subject,
             "exam_groups": exam_groups,
-            "selected_exam_group_id": int(exam_group_id) if exam_group_id else None,
-            "sessions": page_obj.object_list,
+            "selected_exam_group_id": selected_exam_group_id,
+            "sessions": sessions_page,
             "page_obj": page_obj,
             "student_filter": student_filter,
             "average_score": average_score,
@@ -4074,25 +4075,9 @@ def profile_view(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def update_profile_image(request: HttpRequest) -> JsonResponse:
-    file_obj = request.FILES.get("profile_image") or request.FILES.get("avatar")
-    if not file_obj:
-        return JsonResponse({"success": False, "error": "Không tìm thấy file ảnh."}, status=400)
-    if file_obj.size > 5 * 1024 * 1024:
-        return JsonResponse({"success": False, "error": "Kích thước ảnh không được vượt quá 5MB."}, status=400)
-
-    content = file_obj.read()
-    mime = file_obj.content_type
-    profile, _ = UserProfile.objects.get_or_create(user_id=request.user)
-    profile.profile_image_blob = content
-    profile.profile_image_mime = mime
-    profile.save()
-    image_data_url = f"data:{mime};base64,{b64encode(content).decode('ascii')}"
     return JsonResponse(
-        {
-            "success": True,
-            "image_data_url": image_data_url,
-            "avatar_url": image_data_url,
-        }
+        {"success": False, "error": "Người dùng không có quyền thay đổi hình ảnh."},
+        status=403,
     )
 
 
@@ -4666,6 +4651,9 @@ def _student_parse_records(file_name, file_bytes):
 
 
 def _student_create_roster(subject, created_by, academic_year, semester, uploaded_file, mode="new"):
+    if not is_valid_academic_year(academic_year):
+        raise ValidationError(ACADEMIC_YEAR_ERROR_MESSAGE)
+
     if mode == "replace":
         # Xóa các roster cũ cùng subject/academic_year/semester
         existing_rosters = StudentRosterUpload.objects.filter(
@@ -5014,7 +5002,7 @@ def lecturer_student_list_upload(request, subject_code):
     subject = get_object_or_404(_get_lecturer_subjects(request), subject_code=subject_code)
 
     if request.method == "POST":
-        academic_year = (request.POST.get("academic_year") or "").strip() or _student_default_academic_year()
+        academic_year = "" if request.POST.get("academic_year") is None else str(request.POST.get("academic_year"))
         semester = (request.POST.get("semester") or SemesterChoices.HK1).strip()
         if semester not in {choice[0] for choice in SemesterChoices.choices}:
             semester = SemesterChoices.HK1
@@ -5022,6 +5010,13 @@ def lecturer_student_list_upload(request, subject_code):
 
         files = request.FILES.getlist("files")
         wants_json = _is_ajax_request(request)
+
+        if not is_valid_academic_year(academic_year):
+            message = ACADEMIC_YEAR_ERROR_MESSAGE
+            if wants_json:
+                return JsonResponse({"success": False, "message": message}, status=400)
+            messages.error(request, message)
+            return redirect("qna:lecturer_student_list_upload", subject_code=subject.subject_code)
 
         if not files:
             message = "Vui lòng chọn ít nhất 1 file danh sách sinh viên."
