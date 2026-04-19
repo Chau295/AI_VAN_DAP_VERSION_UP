@@ -159,6 +159,7 @@
     border-radius: 18px;
     overflow: hidden;
     background: #fff;
+    margin-bottom: 24px;
   }
 
   .session-table {
@@ -262,50 +263,20 @@
     color: var(--session-muted);
   }
 
-  .session-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .session-actions a,
-  .session-actions span {
-    color: #364152;
-    font-size: 1rem;
-  }
-
-  .session-actions .disabled {
-    opacity: 0.36;
-  }
-
   .session-empty {
     padding: 3.2rem 1.5rem;
     text-align: center;
     color: var(--session-muted);
   }
 
-  .session-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1rem 0 0;
-    color: var(--session-muted);
-    flex-wrap: wrap;
-  }
-
-  .session-footer strong {
-    color: var(--session-text);
-  }
-
+  /* CSS PHÂN TRANG MỚI - ĐỒNG BỘ VỚI TRANG TRƯỚC */
   .qm2-pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 20px;
-    border-top: 1px solid var(--border, #e6ebf2);
+    padding: 14px 0;
     font-size: 13px;
-    color: var(--muted, #7a8699);
+    color: var(--session-muted);
     background: #fff;
     gap: 16px;
     flex-wrap: wrap;
@@ -318,30 +289,38 @@
   }
 
   .qm2-page-btn {
-    width: 30px;
-    height: 30px;
+    min-width: 36px;
+    height: 36px;
     border-radius: 6px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #475569;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #1f2937;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 500;
+    font-size: 14px;
     text-decoration: none;
+    transition: 0.2s;
   }
 
-  .qm2-page-btn:hover { background: #f1f5f9; }
-  .qm2-page-btn.active { background: var(--blue, #1f6feb); color: #fff; }
+  .qm2-page-btn:hover:not(.disabled):not(.active) {
+      background: #f3f4f6;
+  }
+
+  .qm2-page-btn.active {
+      background: var(--session-blue);
+      color: #fff;
+      border-color: var(--session-blue);
+  }
+
   .qm2-page-btn.disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
     pointer-events: none;
     transform: none;
   }
-
-
 
   @media (max-width: 1024px) {
     .session-page {
@@ -517,26 +496,34 @@
           {% endif %}
           trong số <strong style="color: var(--session-text);">{{ page_obj.paginator.count }}</strong> ca thi
         </div>
+
         <div class="qm2-page-controls">
           {% if page_obj.has_previous %}
             <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}">
-              <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
+              <i class="fas fa-chevron-left" style="font-size: 12px;"></i>
             </a>
           {% else %}
-            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 12px;"></i></span>
           {% endif %}
 
-          <span class="qm2-page-btn active">{{ page_obj.number }}</span>
+          {% for i in page_obj.paginator.page_range %}
+            {% if page_obj.number == i %}
+              <span class="qm2-page-btn active">{{ i }}</span>
+            {% elif i > page_obj.number|add:'-4' and i < page_obj.number|add:'4' %}
+              <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ i }}">{{ i }}</a>
+            {% endif %}
+          {% endfor %}
 
           {% if page_obj.has_next %}
             <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}">
-              <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
+              <i class="fas fa-chevron-right" style="font-size: 12px;"></i>
             </a>
           {% else %}
-            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
+            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 12px;"></i></span>
           {% endif %}
         </div>
       </div>
+
     </div>
   </div>
 </div>

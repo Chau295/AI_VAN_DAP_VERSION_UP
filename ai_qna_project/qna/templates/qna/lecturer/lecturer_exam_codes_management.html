@@ -5,144 +5,204 @@
 
 {% block content %}
 <style>
+  /* RESET & BASE VARIABLES (Đồng bộ DUE-EXAM) */
   :root {
-    --bg: var(--color-bg);
-    --panel: var(--color-panel);
-    --border: var(--color-border);
-    --text: var(--color-text);
-    --muted: var(--color-text-muted);
-    --blue: var(--color-primary);
-    --blue-600: var(--color-primary-dark);
-    --green: var(--color-success);
-    --red: var(--color-danger);
-    --amber: var(--color-warning);
-    --shadow: var(--shadow-card);
-    --radius-lg: var(--radius-card);
-    --radius-md: var(--radius-control);
+    --bg-body: #f4f5f7;
+    --primary: #1a73e8;
+    --primary-hover: #1557b0;
+    --text-main: #111827;
+    --text-muted: #6b7280;
+    --border-color: #e5e7eb;
+
+    --color-success: #16a34a;
+    --color-success-bg: #dcfce7;
+    --color-warning: #d97706;
+    --color-warning-bg: #fef3c7;
+    --color-info: #2563eb;
+    --color-info-bg: #e0f2fe;
+    --color-danger: #dc2626;
+    --color-danger-bg: #fee2e2;
+
+    --radius-card: 12px;
+    --radius-control: 8px;
+    --control-height: 40px;
   }
 
-  * { box-sizing: border-box; }
-
-  .qm2-page {
-    background: var(--bg);
-    min-height: calc(100vh - 80px);
-    padding: var(--spacing-page);
-    font-family: inherit;
-  }
-
-  .qm2-shell {
-    max-width: 1280px;
-    margin: 0 auto;
-    display: grid;
-    gap: var(--spacing-section);
-  }
-
-  .qm2-topbar {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 20px;
-  }
-
-  .qm2-title h1,
-  .qm2-page-title {
-    font-size: var(--font-size-title);
-    line-height: 1.3;
-    font-weight: 700;
-    color: var(--text);
+  body {
     margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-body);
+    color: var(--text-main);
   }
 
-  .qm2-title > h1 { display: none; }
-
-  .qm2-title .sub {
-    margin-top: 6px;
-    font-size: var(--font-size-small);
-    color: var(--muted);
+  /* MAIN CONTENT: Xóa margin/padding thừa của template cha */
+  .main-content {
+    padding: 0;
+    margin: -2.5rem;
+    min-height: calc(100vh + 5rem);
+    background-color: var(--bg-body);
   }
 
-  .qm2-btn {
-    height: var(--control-height);
-    padding: 0 16px;
+  /* HEADER SÁT GÓC TRÊN */
+  .top-header {
+    background: #fff;
+    padding: 16px 32px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #111827;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0;
+  }
+
+  .content-wrapper {
+    padding: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* PAGE HEADER */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+  }
+
+  .page-title h1 {
+    margin: 0 0 8px 0;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text-main);
+  }
+
+  .page-title p {
+    margin: 0;
+    font-size: 15px;
+    color: var(--text-muted);
+  }
+
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+    padding: 10px 24px;
     border-radius: var(--radius-control);
-    border: 1px solid transparent;
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-bold);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    transition: 0.2s;
+    border: none;
     cursor: pointer;
-    transition: .18s ease;
-    text-decoration: none;
-    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(26, 115, 232, 0.2);
   }
+  .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
 
-  .qm2-btn:hover { transform: translateY(-1px); }
-  .qm2-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-  .qm2-btn-primary { background: var(--blue); color: #fff; }
-  .qm2-btn-primary:hover { background: var(--blue-600); }
-  .qm2-btn-outline { background: #fff; color: #475569; border: 1px solid #cfd7e3; }
-  .qm2-btn-outline:hover { background: #f8fafc; }
-  .qm2-btn-danger { background: var(--color-danger-bg); color: var(--red); border-color: #fecaca; }
-
-  .qm2-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
+  /* PANEL CHỨA BẢNG VÀ FILTER */
+  .panel {
+    background: #fff;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-card);
-    box-shadow: var(--shadow);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     overflow: hidden;
   }
 
-  .qm2-filters {
-    padding: var(--spacing-card);
-    border-bottom: 1px solid var(--border);
+  /* FILTERS ROW - CẬP NHẬT TRÊN 1 HÀNG */
+  .filters-row {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     gap: 12px;
-    flex-wrap: wrap;
-    background: var(--panel);
+    flex-wrap: nowrap; /* Bắt buộc không xuống hàng */
+    overflow-x: auto; /* Cho phép cuộn ngang nếu màn hình nhỏ */
+    -ms-overflow-style: none;  /* Ẩn scrollbar IE/Edge */
+    scrollbar-width: none;  /* Ẩn scrollbar Firefox */
   }
 
-  .qm2-input, .qm2-select {
-    height: var(--control-height);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    padding: 0 14px;
-    font-size: var(--font-size-body);
-    color: var(--text);
+  .filters-row::-webkit-scrollbar {
+    display: none; /* Ẩn scrollbar Chrome/Safari/Opera */
+  }
+
+  .search-box {
+    position: relative;
+    flex: 1 1 auto; /* Tự động co giãn theo khoảng trống */
+    min-width: 200px;
+  }
+
+  .search-box i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 14px;
+  }
+
+  .filter-input, .filter-select {
+    height: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4b5563;
     background: #fff;
     outline: none;
     transition: 0.2s;
   }
 
-  .qm2-input:focus, .qm2-select:focus {
-    border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12);
-  }
-
-  .qm2-search-box {
-    position: relative;
-    flex: 1;
-    min-width: 220px;
-  }
-
-  .qm2-search-box i {
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--muted);
-    font-size: 14px;
-  }
-
-  .qm2-search-box input {
+  .search-box .filter-input {
     width: 100%;
-    padding-left: 36px;
+    padding-left: 40px;
+    box-sizing: border-box;
   }
 
-  .qm2-table-wrap {
+  .filter-input:focus, .filter-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+  }
+
+  /* Tùy chỉnh icon xổ xuống của Select và giới hạn độ rộng */
+  .filter-select {
+    appearance: none;
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px;
+    cursor: pointer;
+    flex: 0 0 auto; /* Không cho co bóp */
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn-reset {
+    flex: 0 0 auto; /* Không cho co bóp mất hình tròn */
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+    text-decoration: none;
+  }
+  .btn-reset:hover { background: #f3f4f6; color: #111827; }
+
+  /* TABLE */
+  .table-responsive {
     width: 100%;
     overflow-x: auto;
   }
@@ -154,307 +214,253 @@
   }
 
   .qm2-table th {
-    padding: 12px 16px;
-    font-size: var(--font-size-small);
-    font-weight: var(--font-weight-bold);
-    color: var(--muted);
+    padding: 16px 24px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
     text-transform: uppercase;
-    border-bottom: 1px solid var(--border);
-    background: #f8fafc;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+    background: #fff;
     white-space: nowrap;
   }
 
   .qm2-table td {
-    padding: 12px 16px;
-    font-size: var(--font-size-body);
-    color: var(--text);
-    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    font-size: 14px;
+    color: var(--text-main);
+    border-bottom: 1px solid #f3f4f6;
     vertical-align: middle;
+    white-space: nowrap;
   }
 
   .qm2-table tr:last-child td { border-bottom: none; }
-  .qm2-table tr:hover { background: #f8fafc; }
+  .qm2-table tr:hover td { background: #f9fafb; }
 
   .qm2-clickable-row { cursor: pointer; }
-  .qm2-clickable-row:focus-visible {
-    outline: 3px solid rgba(31, 111, 235, 0.2);
-    outline-offset: -3px;
-  }
+  .qm2-clickable-row:focus-visible { outline: 2px solid rgba(26, 115, 232, 0.4); outline-offset: -2px; }
 
-  .qm2-subject-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+  .set-code { font-weight: 800; color: var(--text-main); }
+  .subject-name { font-weight: 700; color: var(--text-main); }
 
-  .qm2-set-code {
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    color: var(--blue);
-    text-transform: uppercase;
-  }
+  .bold-text { font-weight: 600; }
 
-  .qm2-subject-name {
+  /* CÁC PILLS TRẠNG THÁI & LIÊN KẾT ĐỒNG BỘ */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 11px;
     font-weight: 700;
-    color: var(--text);
-    font-size: 14px;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
+  .pill-success { background: var(--color-success-bg); color: var(--color-success); }
+  .pill-warning { background: var(--color-warning-bg); color: var(--color-warning); }
+  .pill-info { background: var(--color-info-bg); color: var(--color-info); }
+  .pill-muted { background: #f3f4f6; color: #6b7280; }
 
-  .qm2-subject-code {
-    font-size: 12px;
-    color: var(--muted);
-    font-weight: 600;
-  }
-
-  .qm2-row-actions {
+  /* ROW ACTIONS */
+  .row-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
   }
-
-  .qm2-row-actions button,
-  .qm2-row-actions a {
+  .row-actions button {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    border: 0;
+    border-radius: 6px;
+    border: none;
     background: transparent;
-    color: #94a3b8;
+    color: #9ca3af;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: 0.2s;
-    text-decoration: none;
   }
+  .row-actions button:hover:not(:disabled) { background: var(--color-danger-bg); color: var(--color-danger); }
+  .row-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .qm2-row-actions a:hover { background: #eef4ff; color: var(--blue); }
-  .qm2-row-actions button:hover { background: #fef2f2; color: var(--red); }
-  .qm2-row-actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    color: #cbd5e1;
-  }
-  .qm2-row-actions button:disabled:hover {
-    background: transparent;
-    color: #cbd5e1;
-  }
-
-  .qm2-pagination {
+  /* PAGINATION */
+  .pagination-container {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 20px;
-    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-color);
     font-size: 13px;
-    color: var(--muted);
+    color: var(--text-muted);
     background: #fff;
   }
 
-  .qm2-page-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+  .page-controls { display: flex; align-items: center; gap: 6px; }
 
-  .qm2-page-btn {
-    min-width: 36px;
-    height: 36px;
-    border-radius: var(--radius-control);
-    border: 1px solid var(--color-border);
-    background: var(--color-panel);
-    color: var(--color-text);
+  .page-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    color: var(--text-main);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-weight: var(--font-weight-bold);
-    font-size: var(--font-size-body);
-    text-decoration: none;
-    transition: all 0.2s;
+    font-weight: 500;
+    font-size: 13px;
+    transition: 0.2s;
   }
 
-  .qm2-page-btn:hover { background: #f1f5f9; border-color: var(--color-primary); color: var(--color-primary); }
-  .qm2-page-btn.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-  .qm2-page-btn.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .page-btn:hover:not(.disabled):not(.active) { background: #f3f4f6; }
+  .page-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .page-btn.disabled { opacity: 0.4; cursor: not-allowed; border-color: transparent; background: transparent; }
 
-  .qm2-modal {
-    position: fixed;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(15, 23, 42, .4);
-    backdrop-filter: blur(4px);
-    z-index: 60;
-  }
+  /* MODALS & TOASTS */
+  .modal-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); z-index: 100; }
+  .modal-overlay.show { display: flex; }
+  .modal-dialog { width: min(400px, 100%); background: #fff; border-radius: 16px; padding: 32px 24px 24px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+  .modal-icon { font-size: 40px; color: var(--color-danger); margin-bottom: 16px; display: block; }
+  .modal-title { margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--text-main); }
+  .modal-desc { margin: 0 0 24px; color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+  .modal-actions { display: flex; justify-content: center; gap: 12px; }
+  .modal-btn { height: 40px; padding: 0 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; font-size: 14px; transition: 0.2s; }
+  .btn-outline { background: #f3f4f6; color: #4b5563; }
+  .btn-outline:hover { background: #e5e7eb; }
+  .btn-danger { background: var(--color-danger); color: #fff; }
+  .btn-danger:hover { background: #b91c1c; }
 
-  .qm2-modal.show { display: flex; }
+  .toast-stack { position: fixed; top: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+  .toast { min-width: 280px; background: #fff; border-left: 4px solid var(--color-success); border-radius: 8px; padding: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; font-weight: 600; color: var(--text-main); animation: slideIn 0.3s ease; }
+  .toast.error { border-left-color: var(--color-danger); }
+  .toast-close { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 16px; padding: 4px; transition: 0.2s; }
+  .toast-close:hover { color: var(--text-main); }
 
-  .qm2-dialog {
-    width: min(540px, 100%);
-    background: #fff;
-    border-radius: 18px;
-    box-shadow: 0 28px 50px rgba(15, 23, 42, .25);
-    overflow: hidden;
-  }
-
-  .qm2-dialog-body { padding: 34px 24px 24px; text-align: center; }
-  .qm2-dialog-body i { font-size: 44px; color: var(--red); margin-bottom: 16px; }
-  .qm2-dialog-body h3 { margin: 0 0 10px; font-size: 18px; font-weight: 700; color: var(--text); }
-  .qm2-dialog-body p { margin: 0; color: var(--muted); font-size: 14px; }
-  .qm2-dialog-foot { padding: 0 24px 24px; display: flex; justify-content: center; gap: 12px; }
-
-  .qm2-state-toast {
-    position: fixed;
-    right: 24px;
-    top: 26px;
-    z-index: 80;
-    min-width: 280px;
-    max-width: 360px;
-    padding: 14px 16px;
-    border-radius: 12px;
-    background: #fff;
-    border-left: 4px solid var(--green);
-    box-shadow: 0 18px 36px rgba(15, 23, 42, .12);
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-  }
-
-  .qm2-state-toast.show { display: flex; }
-  .qm2-state-toast.error { border-left-color: var(--red); }
-  .qm2-state-toast-close {
-    border: 0;
-    background: transparent;
-    color: #94a3b8;
-    cursor: pointer;
-    font-size: 16px;
-  }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
   @media (max-width: 768px) {
-    .qm2-page { padding: 18px 12px 24px; }
-    .qm2-topbar { flex-direction: column; align-items: stretch; }
-    .qm2-filters { flex-direction: column; align-items: stretch; }
-    .qm2-pagination { flex-direction: column; gap: 12px; }
+    .content-wrapper { padding: 20px 16px; }
+    .page-header { flex-direction: column; gap: 16px; }
+    .pagination-container { flex-direction: column; gap: 12px; }
   }
 </style>
 
-<div class="qm2-page">
-  <div class="qm2-shell">
+<div class="main-content">
+  <div class="top-header">
+    Quản lý đề thi
+  </div>
 
-    <div class="qm2-topbar">
-      <div class="qm2-title">
-        <div class="qm2-page-title">Danh sách bộ đề</div>
-        <h1>Quản lý bộ đề</h1>
-        <div class="sub">Theo dõi, mở chi tiết và quản lý các bộ đề đã tạo cho môn học đang phụ trách.</div>
+  <div class="content-wrapper">
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Danh sách đề thi</h1>
+        <p>Quản lý và theo dõi quá trình tạo đề thi của các học phần đang đảm nhiệm.</p>
       </div>
-      <a href="{% url 'qna:lecturer_generate_codes_screen' %}" class="qm2-btn qm2-btn-primary">
-        Tạo bộ đề
+      <a href="{% url 'qna:lecturer_generate_codes_screen' %}" class="btn-primary">
+        Tạo đề thi
       </a>
     </div>
 
-    <div class="qm2-card">
-      <form method="get" class="qm2-filters" id="filterForm">
-        <div class="qm2-search-box">
+    <div class="panel">
+      <form method="get" class="filters-row" id="filterForm">
+        <div class="search-box">
           <i class="fas fa-search"></i>
-          <input type="text" name="q" class="qm2-input" value="{{ filter_values.q }}" placeholder="Tìm theo mã bộ đề hoặc tên bộ đề">
+          <input type="text" name="q" class="filter-input" value="{{ filter_values.q }}" placeholder="Tìm kiếm file...">
         </div>
 
-        <select name="academic_year" class="qm2-select" onchange="this.form.submit()">
-          <option value="">Năm học</option>
-          {% for year in year_options %}
-            <option value="{{ year }}" {% if filter_values.academic_year == year %}selected{% endif %}>{{ year }}</option>
-          {% endfor %}
-        </select>
-
-        <select name="semester" class="qm2-select" onchange="this.form.submit()">
-          <option value="">Học kỳ</option>
-          {% for value, label in semester_choices %}
-            <option value="{{ value }}" {% if filter_values.semester == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-
-        <select name="subject_id" class="qm2-select" style="max-width: 200px;" onchange="this.form.submit()">
-          <option value="">Môn học</option>
+        <select name="subject_id" class="filter-select" onchange="this.form.submit()">
+          <option value="">Môn học: Tất cả</option>
           {% for subject in subjects %}
-            <option value="{{ subject.id }}" {% if filter_values.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>{{ subject.name }}</option>
+            <option value="{{ subject.id }}" {% if filter_values.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>Môn: {{ subject.name }}</option>
           {% endfor %}
         </select>
 
-        <select name="status" class="qm2-select" onchange="this.form.submit()">
-          <option value="">Trạng thái</option>
+        <select name="academic_year" class="filter-select" onchange="this.form.submit()">
+          <option value="">Năm học: Tất cả</option>
+          {% for year in year_options %}
+            <option value="{{ year }}" {% if filter_values.academic_year == year %}selected{% endif %}>Năm: {{ year }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="semester" class="filter-select" onchange="this.form.submit()">
+          <option value="">Học kỳ: Tất cả</option>
+          {% for value, label in semester_choices %}
+            <option value="{{ value }}" {% if filter_values.semester == value %}selected{% endif %}>HK: {{ label }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="status" class="filter-select" onchange="this.form.submit()">
+          <option value="">Trạng thái: Tất cả</option>
           {% for value, label in status_choices %}
-            <option value="{{ value }}" {% if filter_values.status == value %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if filter_values.status == value %}selected{% endif %}>TT: {{ label }}</option>
           {% endfor %}
         </select>
 
-        <select name="linked" class="qm2-select" onchange="this.form.submit()">
-          <option value="">Liên kết</option>
-          <option value="USED" {% if filter_values.linked == 'USED' %}selected{% endif %}>Đã dùng</option>
-          <option value="UNUSED" {% if filter_values.linked == 'UNUSED' %}selected{% endif %}>Chưa dùng</option>
+        <select name="linked" class="filter-select" onchange="this.form.submit()">
+          <option value="">Liên kết: Tất cả</option>
+          <option value="USED" {% if filter_values.linked == 'USED' %}selected{% endif %}>Liên kết: Đã dùng</option>
+          <option value="UNUSED" {% if filter_values.linked == 'UNUSED' %}selected{% endif %}>Liên kết: Chưa dùng</option>
         </select>
 
-        <button type="button" class="qm2-btn qm2-btn-outline" style="width: 40px; padding: 0;" title="Xóa bộ lọc" onclick="window.location.href=window.location.pathname">
+        <a href="window.location.pathname" class="btn-reset" title="Làm mới bộ lọc" onclick="event.preventDefault(); window.location.href=window.location.pathname">
           <i class="fas fa-redo-alt"></i>
-        </button>
+        </a>
       </form>
 
-      <div class="qm2-table-wrap">
+      <div class="table-responsive">
         <table class="qm2-table">
           <thead>
             <tr>
-              <th style="text-align: center;">Mã bộ đề</th>
-              <th>Môn học / Học phần</th>
-              <th style="text-align: center;">Năm / Kỳ</th>
-              <th style="text-align: center;">Số mã đề</th>
-              <th style="text-align: center;">Ngày tạo</th>
-              <th style="text-align: center;">Trạng thái</th>
-              <th style="text-align: center;">Liên kết</th>
-              <th style="text-align: center;">Xóa</th>
+              <th style="padding-left: 32px;">MÃ BỘ ĐỀ</th>
+              <th>MÔN HỌC / HỌC PHẦN</th>
+              <th style="text-align: center;">NĂM/KỲ</th>
+              <th style="text-align: center;">SỐ MÃ ĐỀ</th>
+              <th style="text-align: center;">NGÀY TẠO</th>
+              <th style="text-align: center;">TRẠNG THÁI</th>
+              <th style="text-align: center;">LIÊN KẾT</th>
+              <th style="text-align: center;">THAO TÁC</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="examSetTableBody">
             {% if rows %}
               {% for row in rows %}
-                <tr class="qm2-clickable-row" data-detail-url="{{ row.detail_url }}" tabindex="0" aria-label="Mở {{ row.exam_set_code }}">
-                  <td style="text-align: center;">
-                    <div class="qm2-set-code">{{ row.exam_set_code }}</div>
+                <tr class="qm2-clickable-row exam-row-item" data-detail-url="{{ row.detail_url }}" tabindex="0">
+                  <td style="padding-left: 32px;">
+                    <div class="set-code">{{ row.exam_set_code }}</div>
                   </td>
                   <td>
-                    <div class="qm2-subject-cell">
-                      <div class="qm2-subject-name">{{ row.subject_name }}</div>
-                      <div class="qm2-subject-code">{{ row.subject_code }}</div>
-                    </div>
+                    <div class="subject-name">{{ row.subject_name }}</div>
                   </td>
-                  <td style="text-align: center; color: var(--muted);">
+                  <td style="text-align: center; color: var(--text-muted);">
                     {{ row.academic_year }} / {{ row.semester }}
                   </td>
-                  <td style="text-align: center;">
-                    <strong>{{ row.version_count }}</strong> mã đề
+                  <td style="text-align: center;" class="bold-text">
+                    {{ row.version_count }} mã đề
                   </td>
-                  <td style="text-align: center; color: var(--muted);">
+                  <td style="text-align: center; color: var(--text-muted);">
                     {{ row.created_at|date:'d/m/Y' }}
                   </td>
+
                   <td style="text-align: center;">
                     {% if row.approved_codes_count > 0 %}
-                      <span style="font-size: 13px; font-weight: 600; color: #16a34a;">{{ row.approved_codes_count }} mã đề đã duyệt</span>
+                      <span class="pill pill-success">{{ row.approved_codes_count }} mã đề đã duyệt</span>
                     {% else %}
-                      <span style="font-size: 13px; font-weight: 500; color: var(--muted);">0 mã đề đã duyệt</span>
+                      <span class="pill pill-warning">0 mã đề đã duyệt</span>
                     {% endif %}
                   </td>
+
                   <td style="text-align: center;">
                     {% if row.used_codes_count > 0 %}
-                      <span style="font-size: 13px; font-weight: 600; color: #2563eb;">{{ row.used_codes_count }} mã đề đã dùng</span>
+                      <span class="pill pill-info">{{ row.used_codes_count }} mã đề đã dùng</span>
                     {% else %}
-                      <span style="font-size: 13px; font-weight: 500; color: var(--muted);">0 mã đề đã dùng</span>
+                      <span class="pill pill-muted">0 mã đề đã dùng</span>
                     {% endif %}
                   </td>
+
                   <td>
-                    <div class="qm2-row-actions" style="justify-content: center;">
+                    <div class="row-actions">
                       {% if row.can_delete %}
                         <button type="button" title="Xóa" onclick="openDeleteSetModal({{ row.id }}, true)">
                           <i class="far fa-trash-alt"></i>
@@ -470,8 +476,8 @@
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="8" style="text-align: center; padding: 60px 20px; color: var(--muted);">
-                  <i class="far fa-folder-open" style="font-size: 40px; color: #cbd5e1; margin-bottom: 12px; display: block;"></i>
+                <td colspan="8" style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+                  <i class="far fa-folder-open" style="font-size: 40px; color: #d1d5db; margin-bottom: 16px; display: block;"></i>
                   Chưa có bộ đề nào phù hợp với bộ lọc hiện tại.
                 </td>
               </tr>
@@ -480,42 +486,32 @@
         </table>
       </div>
 
-      <div class="qm2-pagination">
-        <div>
-          Hiển thị <strong style="color: var(--text);">1-{{ rows|length }}</strong> trong số <strong style="color: var(--text);">{{ rows|length }}</strong> bộ đề
+      <div class="pagination-container" id="paginationContainer" {% if not rows %}style="display: none;"{% endif %}>
+        <div id="paginationInfo">
+          Hiển thị <strong style="color: var(--text-main);">0-0</strong> trong số <strong style="color: var(--text-main);">0</strong> bộ đề
         </div>
-        <div class="qm2-page-controls">
-          <button class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></button>
-          <button class="qm2-page-btn active">1</button>
-          <button class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></button>
-        </div>
+        <div class="page-controls" id="paginationControls">
+          </div>
       </div>
 
     </div>
   </div>
 </div>
 
-<div class="qm2-modal" id="deleteSetModal">
-  <div class="qm2-dialog">
-    <div class="qm2-dialog-body">
-      <i class="far fa-trash-alt" style="color: var(--red);"></i>
-      <h3 id="deleteSetTitle">Bạn có chắc chắn muốn xóa?</h3>
-      <p id="deleteSetMessage">Cấu hình được xóa sẽ không thể khôi phục lại.</p>
-    </div>
-    <div class="qm2-dialog-foot">
-      <button type="button" class="qm2-btn qm2-btn-outline" onclick="closeDeleteSetModal()">Hủy bỏ</button>
-      <button type="button" id="confirmDeleteSetBtn" class="qm2-btn qm2-btn-danger">Xác nhận xóa</button>
+<div class="modal-overlay" id="deleteSetModal">
+  <div class="modal-dialog">
+    <i class="far fa-trash-alt modal-icon"></i>
+    <h3 class="modal-title" id="deleteSetTitle">Bạn có chắc chắn muốn xóa?</h3>
+    <p class="modal-desc" id="deleteSetMessage">Cấu hình được xóa sẽ không thể khôi phục lại.</p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn btn-outline" onclick="closeDeleteSetModal()">Hủy bỏ</button>
+      <button type="button" id="confirmDeleteSetBtn" class="modal-btn btn-danger">Xác nhận xóa</button>
     </div>
   </div>
 </div>
 
-<div class="qm2-state-toast" id="stateToast">
-  <div style="display: flex; gap: 10px; align-items: center;">
-    <i class="fas fa-check-circle" id="stateToastIcon" style="font-size: 18px; color: var(--green);"></i>
-    <div id="stateToastMessage" style="font-size: 14px; font-weight: 600; color: var(--text);">Thành công</div>
-  </div>
-  <button class="qm2-state-toast-close" type="button" onclick="hideToast()">×</button>
-</div>
+<div class="toast-stack" id="toastStack"></div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -535,28 +531,24 @@
   }
 
   function showToast(message, isError=false) {
-    const toast = document.getElementById('stateToast');
-    const icon = document.getElementById('stateToastIcon');
-    document.getElementById('stateToastMessage').textContent = message;
+    const stack = document.getElementById('toastStack');
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (isError ? ' error' : ' success');
 
-    toast.classList.remove('error');
-    if (isError) {
-        toast.classList.add('error');
-        icon.className = 'fas fa-exclamation-circle';
-        icon.style.color = 'var(--red)';
-    } else {
-        icon.className = 'fas fa-check-circle';
-        icon.style.color = 'var(--green)';
-    }
+    const icon = isError ? 'fa-exclamation-circle' : 'fa-check-circle';
+    const color = isError ? 'var(--color-danger)' : 'var(--color-success)';
 
-    toast.classList.add('show');
-    window.clearTimeout(window.__qm2ToastTimer);
-    window.__qm2ToastTimer = window.setTimeout(hideToast, 5000);
-  }
+    toast.innerHTML = `
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <i class="fas ${icon}" style="font-size: 18px; color: ${color};"></i>
+        <span>${message}</span>
+      </div>
+      <button class="toast-close" type="button"><i class="fas fa-times"></i></button>
+    `;
 
-  function hideToast() {
-    const toast = document.getElementById('stateToast');
-    if (toast) toast.classList.remove('show');
+    toast.querySelector('.toast-close').onclick = () => toast.remove();
+    stack.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
   }
 
   function openDeleteSetModal(id, canDelete) {
@@ -618,7 +610,7 @@
     if (!detailUrl) return;
 
     row.addEventListener('click', (event) => {
-      if (event.target.closest('.qm2-row-actions')) {
+      if (event.target.closest('.row-actions')) {
         return;
       }
       window.location.href = detailUrl;
@@ -628,12 +620,83 @@
       if (event.key !== 'Enter' && event.key !== ' ') {
         return;
       }
-      if (event.target.closest('.qm2-row-actions')) {
+      if (event.target.closest('.row-actions')) {
         return;
       }
       event.preventDefault();
       window.location.href = detailUrl;
     });
+  });
+
+  // --- LOGIC PHÂN TRANG (8 mục/trang) ---
+  document.addEventListener('DOMContentLoaded', () => {
+    const rows = Array.from(document.querySelectorAll('.exam-row-item'));
+    if (rows.length === 0) return;
+
+    const itemsPerPage = 8;
+    let currentPage = 1;
+    const totalPages = Math.ceil(rows.length / itemsPerPage) || 1;
+
+    function renderTablePage(page) {
+        currentPage = page;
+        const start = (page - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+
+        rows.forEach((row, index) => {
+            row.style.display = (index >= start && index < end) ? '' : 'none';
+        });
+
+        renderPaginationUI();
+    }
+
+    function renderPaginationUI() {
+        const paginationControls = document.getElementById('paginationControls');
+        const paginationInfo = document.getElementById('paginationInfo');
+
+        const startIdx = (currentPage - 1) * itemsPerPage + 1;
+        const endIdx = Math.min(currentPage * itemsPerPage, rows.length);
+        paginationInfo.innerHTML = `Hiển thị <strong style="color: var(--text-main);">${startIdx}-${endIdx}</strong> trong số <strong style="color: var(--text-main);">${rows.length}</strong> bộ đề`;
+
+        paginationControls.innerHTML = '';
+
+        const prevBtn = document.createElement('button');
+        prevBtn.type = 'button';
+        prevBtn.className = `page-btn ${currentPage === 1 ? 'disabled' : ''}`;
+        prevBtn.innerHTML = '<i class="fas fa-chevron-left" style="font-size: 10px;"></i>';
+        if (currentPage > 1) {
+            prevBtn.onclick = () => renderTablePage(currentPage - 1);
+        }
+        paginationControls.appendChild(prevBtn);
+
+        // Hiển thị danh sách trang rút gọn
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                const pageBtn = document.createElement('button');
+                pageBtn.type = 'button';
+                pageBtn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
+                pageBtn.textContent = i;
+                pageBtn.onclick = () => renderTablePage(i);
+                paginationControls.appendChild(pageBtn);
+            } else if (i === currentPage - 2 || i === currentPage + 2) {
+                const ellipsis = document.createElement('span');
+                ellipsis.className = 'page-btn disabled';
+                ellipsis.style.border = 'none';
+                ellipsis.textContent = '...';
+                paginationControls.appendChild(ellipsis);
+            }
+        }
+
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.className = `page-btn ${currentPage === totalPages ? 'disabled' : ''}`;
+        nextBtn.innerHTML = '<i class="fas fa-chevron-right" style="font-size: 10px;"></i>';
+        if (currentPage < totalPages) {
+            nextBtn.onclick = () => renderTablePage(currentPage + 1);
+        }
+        paginationControls.appendChild(nextBtn);
+    }
+
+    renderTablePage(1);
   });
 </script>
 {% endblock %}

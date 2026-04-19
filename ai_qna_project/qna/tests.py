@@ -5304,3 +5304,215 @@ class LecturerGenerateQuestionsTests(TestCase):
                     self.assertEqual(payload["requested_count"], 2)
                     self.assertEqual(payload["skipped_duplicates"], 1)
                     self.assertIn("tự sinh bù 1 câu bị trùng", payload["message"])
+
+
+class StudentEnrollmentTests(TestCase):
+    def setUp(self):
+        self.media_root = tempfile.mkdtemp(dir=os.path.dirname(__file__))
+        self.override = override_settings(
+            MEDIA_ROOT=self.media_root,
+            CACHES=TEST_CACHES,
+            CHANNEL_LAYERS=TEST_CHANNEL_LAYERS,
+        )
+        self.override.enable()
+
+        self.user_model = get_user_model()
+        self.lecturer = self.user_model.objects.create_user(
+            username="lecturer01",
+            password="Password123!",
+        )
+        self.lecturer_profile = UserProfile.objects.create(
+            user=self.lecturer,
+            is_lecturer=True,
+            full_name="Giang Vien",
+        )
+        self.subject_a = Subject.objects.create(
+            name="Mon A",
+            subject_code="MA001",
+        )
+        self.subject_b = Subject.objects.create(
+            name="Mon B",
+            subject_code="MB001",
+        )
+        self.lecturer_profile.subjects_taught.add(self.subject_a, self.subject_b)
+
+    def tearDown(self):
+        self.override.disable()
+        shutil.rmtree(self.media_root, ignore_errors=True)
+
+    def test_student_dashboard_shows_only_enrolled_subjects(self):
+        # Tạo student user
+        student = self.user_model.objects.create_user(
+            username="student01",
+            password="Password123!",
+        )
+        student_profile = UserProfile.objects.create(
+            user=student,
+            is_lecturer=False,
+            full_name="Sinh Vien",
+        )
+        student_profile.subjects_enrolled.add(self.subject_a)
+        self.client.force_login(student)
+
+        response = self.client.get(reverse("qna:dashboard"))
+        self.assertEqual(response.status_code, 200)
+
+        # Chỉ thấy subject_a
+        self.assertContains(response, self.subject_a.name)
+        self.assertNotContains(response, self.subject_b.name)
+
+    def test_import_new_student_creates_account_and_enrolls_in_subject(self):
+        self.client.force_login(self.lecturer)
+
+        # Upload roster cho subject_a
+        roster = StudentRosterUpload.objects.create(
+            subject_id=self.subject_a,
+            academic_year="2024-2025",
+            semester="HK1",
+            title="Roster A",
+            total_students=1,
+        )
+        StudentRosterStudent.objects.create(
+            student_roster_upload_id=roster,
+            row_number=1,
+            student_code="SV001",
+            full_name="Sinh Vien Moi",
+            class_name="L01",
+        )
+
+        # Create accounts
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_create_accounts", args=[roster.id]),
+            {
+                "default_password": "Password123!",
+                "confirm_password": "Password123!",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        # Check user created
+        user = self.user_model.objects.get(username="SV001")
+        profile = UserProfile.objects.get(user_id=user)
+        self.assertIn(self.subject_a, profile.subjects_enrolled.all())
+
+        # Check student dashboard
+        self.client.force_login(user)
+        response = self.client.get(reverse("qna:dashboard"))
+        self.assertContains(response, self.subject_a.name)
+        self.assertNotContains(response, self.subject_b.name)
+
+    def test_import_existing_student_enrolls_in_new_subject_without_creating_duplicate_account(self):
+        self.client.force_login(self.lecturer)
+
+        # Tạo user cũ enrolled in subject_a
+        existing_user = self.user_model.objects.create_user(
+            username="SV002",
+            password="Password123!",
+        )
+        existing_profile = UserProfile.objects.create(
+            user=existing_user,
+            is_lecturer=False,
+            full_name="Sinh Vien Cu",
+        )
+        existing_profile.subjects_enrolled.add(self.subject_a)
+
+        # Upload roster cho subject_b
+        roster_b = StudentRosterUpload.objects.create(
+            subject_id=self.subject_b,
+            academic_year="2024-2025",
+            semester="HK1",
+            title="Roster B",
+            total_students=1,
+        )
+        StudentRosterStudent.objects.create(
+            student_roster_upload_id=roster_b,
+            row_number=1,
+            student_code="SV002",
+            full_name="Sinh Vien Cu",
+            class_name="L01",
+        )
+
+        # Create accounts
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_create_accounts", args=[roster_b.id]),
+            {
+                "default_password": "Password123!",
+                "confirm_password": "Password123!",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        # Check no new user created
+        self.assertEqual(self.user_model.objects.filter(username="SV002").count(), 1)
+
+        # Check enrolled in both subjects
+        existing_profile.refresh_from_db()
+        self.assertIn(self.subject_a, existing_profile.subjects_enrolled.all())
+        self.assertIn(self.subject_b, existing_profile.subjects_enrolled.all())
+
+        # Check student dashboard
+        self.client.force_login(existing_user)
+        response = self.client.get(reverse("qna:dashboard"))
+        self.assertContains(response, self.subject_a.name)
+        self.assertContains(response, self.subject_b.name)
+
+    def test_import_student_again_does_not_duplicate_enrollment(self):
+        self.client.force_login(self.lecturer)
+
+        # Upload roster cho subject_a
+        roster_a1 = StudentRosterUpload.objects.create(
+            subject_id=self.subject_a,
+            academic_year="2024-2025",
+            semester="HK1",
+            title="Roster A1",
+            total_students=1,
+        )
+        StudentRosterStudent.objects.create(
+            student_roster_upload_id=roster_a1,
+            row_number=1,
+            student_code="SV003",
+            full_name="Sinh Vien Test",
+            class_name="L01",
+        )
+
+        # Create accounts first time
+        self.client.post(
+            reverse("qna:lecturer_student_list_create_accounts", args=[roster_a1.id]),
+            {
+                "default_password": "Password123!",
+                "confirm_password": "Password123!",
+            },
+        )
+
+        # Upload roster cho subject_a again
+        roster_a2 = StudentRosterUpload.objects.create(
+            subject_id=self.subject_a,
+            academic_year="2024-2025",
+            semester="HK1",
+            title="Roster A2",
+            total_students=1,
+        )
+        StudentRosterStudent.objects.create(
+            student_roster_upload_id=roster_a2,
+            row_number=1,
+            student_code="SV003",
+            full_name="Sinh Vien Test",
+            class_name="L01",
+        )
+
+        # Create accounts second time
+        self.client.post(
+            reverse("qna:lecturer_student_list_create_accounts", args=[roster_a2.id]),
+            {
+                "default_password": "Password123!",
+                "confirm_password": "Password123!",
+            },
+        )
+
+        # Check user created only once
+        self.assertEqual(self.user_model.objects.filter(username="SV003").count(), 1)
+
+        # Check enrolled only once
+        user = self.user_model.objects.get(username="SV003")
+        profile = UserProfile.objects.get(user_id=user)
+        self.assertEqual(profile.subjects_enrolled.filter(id=self.subject_a.id).count(), 1)

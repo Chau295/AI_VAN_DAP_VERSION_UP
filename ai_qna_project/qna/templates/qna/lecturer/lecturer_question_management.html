@@ -31,15 +31,32 @@
 
   * { box-sizing: border-box; }
 
+  /* Kéo giãn khung sát viền để loại bỏ padding thừa từ base.html */
   .qm2-page {
     background: var(--bg);
-    min-height: calc(100vh - 80px);
-    padding: 28px 24px 32px;
+    min-height: calc(100vh + 5rem);
+    padding: 0;
+    margin: -2.5rem;
+  }
+
+  /* HEADER SÁT GÓC TRÊN */
+  .top-header {
+    background: #fff;
+    padding: 16px 32px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #111827;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0;
   }
 
   .qm2-shell {
     max-width: 1480px;
     margin: 0 auto;
+    padding: 32px;
     display: grid;
     gap: 24px;
   }
@@ -53,7 +70,7 @@
   }
 
   .qm2-title h1 {
-    font-size: 26px;
+    font-size: 24px;
     line-height: 1.2;
     font-weight: 700;
     color: var(--text);
@@ -995,7 +1012,8 @@
   }
 
   @media (max-width: 768px) {
-    .qm2-page { padding: 18px 12px 24px; }
+    .qm2-page { margin: -1.5rem; }
+    .qm2-shell { padding: 20px 16px; }
     .qm2-subject-bar { flex-direction: column; align-items: stretch; }
     .qm2-question-row { grid-template-columns: 24px 1fr; gap: 12px; }
     .qm2-row-actions { grid-column: 2 / -1; justify-content: flex-start; }
@@ -1062,12 +1080,15 @@
   data-api-banks="{% url 'qna:api_get_question_banks' %}"
   data-has-active-exam="{% if has_active_exam %}true{% else %}false{% endif %}"
 >
-  <div class="qm2-shell">
+  <div class="top-header">
+    Quản lý câu hỏi
+  </div>
 
+  <div class="qm2-shell">
     {% if page_mode != 'detail' or not selected_subject %}
     <div class="qm2-topbar">
       <div class="qm2-title">
-        <h1>Quản lý câu hỏi</h1>
+        <h1 style="font-size: 24px;">Ngân hàng câu hỏi</h1>
         <div class="sub">Màn hình quản lý ngân hàng câu hỏi theo môn học</div>
       </div>
       <a href="{% url 'qna:lecturer_dashboard' %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-back" id="backToSubjectsBtn">
@@ -1129,7 +1150,7 @@
 
     <div class="qm2-topbar">
       <div class="qm2-title">
-        <h1>Quản lý câu hỏi</h1>
+        <h1 style="font-size: 24px;">Chi tiết ngân hàng</h1>
         <div class="sub">{% if selected_subject %}{{ selected_subject.name }}{% endif %}</div>
       </div>
 

@@ -3684,7 +3684,7 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
     if profile.is_lecturer:
         return redirect("qna:lecturer_dashboard")
 
-    subjects = Subject.objects.all().order_by("name")
+    subjects = profile.subjects_enrolled.all().order_by("name")
     subject_cards = []
 
     for subject in subjects:
@@ -5164,6 +5164,9 @@ def lecturer_student_list_create_accounts(request, roster_id):
                     student_row.account_created = True
                     student_row.account_status = StudentRosterAccountStatus.EXISTING
                     student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+                    profile, _ = UserProfile.objects.get_or_create(user_id=existing_user)
+                    if roster.subject not in profile.subjects_enrolled.all():
+                        profile.subjects_enrolled.add(roster.subject)
 
             for student_row in pending_rows:
                 user, created, _ = _student_provision_account(student_row, default_password)
@@ -5175,6 +5178,8 @@ def lecturer_student_list_create_accounts(request, roster_id):
                 student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
                 if created:
                     created_count += 1
+                    profile, _ = UserProfile.objects.get_or_create(user_id=user)
+                    profile.subjects_enrolled.add(roster.subject)
 
             roster.refresh_status()
 

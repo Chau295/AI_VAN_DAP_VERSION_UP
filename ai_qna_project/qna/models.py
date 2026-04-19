@@ -130,6 +130,11 @@ class UserProfile(models.Model):
         blank=True,
         related_name="lecturers",
     )
+    subjects_enrolled = models.ManyToManyField(
+        Subject,
+        blank=True,
+        related_name="enrolled_students",
+    )
     full_name = models.CharField(max_length=150, blank=True, default="")
     class_name = models.CharField(max_length=100, blank=True, default="")
     student_id = models.CharField(max_length=150, blank=True, default="")
