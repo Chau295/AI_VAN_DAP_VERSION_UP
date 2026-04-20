@@ -3677,12 +3677,91 @@ class RegistrationForm(forms.Form):
             self.add_error("password2", "Mật khẩu nhập lại không khớp.")
         return cleaned_data
 
+def _ensure_student_enrolled_subject(user, subject):
+    if not user or not subject:
+        return
+
+    profile, _ = UserProfile.objects.get_or_create(user_id=user)
+    if not profile.subjects_enrolled.filter(pk=subject.pk).exists():
+        profile.subjects_enrolled.add(subject)
+
+
+def _revoke_student_enrolled_subject_if_unused(user, subject):
+    if not user or not subject:
+        return
+
+    profile, _ = UserProfile.objects.get_or_create(user_id=user)
+
+    still_linked = StudentRosterStudent.objects.filter(
+        linked_user_id=user,
+        student_roster_upload_id__subject_id=subject,
+    ).exists()
+
+    if not still_linked:
+        profile.subjects_enrolled.remove(subject)
+
+
+def _sync_roster_enrollments(roster):
+    if not roster:
+        return 0
+
+    linked_rows = (
+        roster.students
+        .select_related("linked_user_id")
+        .filter(linked_user_id__isnull=False)
+    )
+
+    synced_count = 0
+    for row in linked_rows:
+        profile, _ = UserProfile.objects.get_or_create(user_id=row.linked_user_id)
+        before_exists = profile.subjects_enrolled.filter(pk=roster.subject.pk).exists()
+        _ensure_student_enrolled_subject(row.linked_user_id, roster.subject)
+        after_exists = profile.subjects_enrolled.filter(pk=roster.subject.pk).exists()
+        if not before_exists and after_exists:
+            synced_count += 1
+
+    return synced_count
+
+
+def _sync_student_subjects_from_rosters(user):
+    if not user:
+        return {"added": 0, "removed": 0}
+
+    profile, _ = UserProfile.objects.get_or_create(user_id=user)
+
+    roster_subject_ids = set(
+        StudentRosterStudent.objects.filter(linked_user_id=user)
+        .values_list("student_roster_upload_id__subject_id", flat=True)
+        .distinct()
+    )
+
+    enrolled_ids = set(profile.subjects_enrolled.values_list("pk", flat=True))
+
+    missing_ids = roster_subject_ids - enrolled_ids
+    stale_ids = enrolled_ids - roster_subject_ids
+
+    if missing_ids:
+        profile.subjects_enrolled.add(*Subject.objects.filter(pk__in=missing_ids))
+
+    if stale_ids:
+        profile.subjects_enrolled.remove(*Subject.objects.filter(pk__in=stale_ids))
+
+    return {
+        "added": len(missing_ids),
+        "removed": len(stale_ids),
+    }
 
 @login_required
 def dashboard_view(request: HttpRequest) -> HttpResponse:
     profile, _ = UserProfile.objects.get_or_create(user_id=request.user)
     if profile.is_lecturer:
         return redirect("qna:lecturer_dashboard")
+
+    # Tự đồng bộ lại dữ liệu quyền môn theo roster:
+    # - thêm môn còn thiếu
+    # - gỡ môn đã stale sau khi roster bị xóa
+    _sync_student_subjects_from_rosters(request.user)
+    profile.refresh_from_db()
 
     subjects = profile.subjects_enrolled.all().order_by("name")
     subject_cards = []
@@ -4655,16 +4734,27 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
         raise ValidationError(ACADEMIC_YEAR_ERROR_MESSAGE)
 
     if mode == "replace":
-        # Xóa các roster cũ cùng subject/academic_year/semester
         existing_rosters = StudentRosterUpload.objects.filter(
             subject_id=subject,
             academic_year=academic_year,
-            semester=semester
+            semester=semester,
         )
-        for roster in existing_rosters:
-            if roster.uploaded_file:
-                roster.uploaded_file.delete(save=False)
-            roster.delete()
+
+        for old_roster in existing_rosters.prefetch_related("students"):
+            linked_users = list(
+                old_roster.students.filter(linked_user_id__isnull=False)
+                .values_list("linked_user_id", flat=True)
+                .distinct()
+            )
+
+            if old_roster.uploaded_file:
+                old_roster.uploaded_file.delete(save=False)
+            old_roster.delete()
+
+            for user_id in linked_users:
+                user = User.objects.filter(pk=user_id).first()
+                if user:
+                    _revoke_student_enrolled_subject_if_unused(user, subject)
 
     _student_validate_file(uploaded_file)
     file_bytes = uploaded_file.read()
@@ -4673,17 +4763,18 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
 
     records, skipped_rows = _student_parse_records(uploaded_file.name, file_bytes)
 
-    # Kiểm tra trùng lặp MSSV với các roster khác cùng môn, cùng kỳ.
-    existing_codes = set(StudentRosterStudent.objects.filter(
-        student_roster_upload_id__subject_id=subject,
-        student_roster_upload_id__academic_year=academic_year,
-        student_roster_upload_id__semester=semester
-    ).values_list('student_code', flat=True))
+    existing_codes = set(
+        StudentRosterStudent.objects.filter(
+            student_roster_upload_id__subject_id=subject,
+            student_roster_upload_id__academic_year=academic_year,
+            student_roster_upload_id__semester=semester,
+        ).values_list("student_code", flat=True)
+    )
 
     duplicate_codes = set()
     for record in records:
-        if record['student_code'] in existing_codes:
-            duplicate_codes.add(record['student_code'])
+        if record["student_code"] in existing_codes:
+            duplicate_codes.add(record["student_code"])
 
     if duplicate_codes:
         skipped_rows.append({
@@ -4693,7 +4784,6 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
                        "Có thể là import trùng hoặc học lại."
         })
 
-    # Kiểm tra nếu đã có roster cho cùng subject/academic_year/semester.
     existing_roster_count = StudentRosterUpload.objects.filter(
         subject_id=subject,
         academic_year=academic_year,
@@ -4749,6 +4839,10 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
 
     StudentRosterStudent.objects.bulk_create(students)
     roster.refresh_status()
+
+    # Nếu file roster đã map được tới user có sẵn thì cấp quyền môn ngay
+    _sync_roster_enrollments(roster)
+
     roster.import_warnings = skipped_rows
     return roster
 
@@ -4984,14 +5078,31 @@ def _validate_student_batch_password(password):
 @require_POST
 def lecturer_student_list_delete(request, roster_id):
     _ensure_lecturer(request)
-    roster = get_object_or_404(StudentRosterUpload.objects.select_related("subject_id"), pk=roster_id)
+    roster = get_object_or_404(
+        StudentRosterUpload.objects.select_related("subject_id"),
+        pk=roster_id,
+    )
     if roster.subject not in request.user.userprofile.subjects_taught.all():
         raise PermissionDenied("Bạn không có quyền xóa danh sách này.")
 
-    subject_code = roster.subject.subject_code
+    subject = roster.subject
+    subject_code = subject.subject_code
+
+    linked_users = list(
+        roster.students.filter(linked_user_id__isnull=False)
+        .values_list("linked_user_id", flat=True)
+        .distinct()
+    )
+
     if roster.uploaded_file:
         roster.uploaded_file.delete(save=False)
     roster.delete()
+
+    for user_id in linked_users:
+        user = User.objects.filter(pk=user_id).first()
+        if user:
+            _revoke_student_enrolled_subject_if_unused(user, subject)
+
     messages.success(request, "Xóa danh sách lớp thành công")
     return redirect("qna:lecturer_student_list_management", subject_code=subject_code)
 
@@ -5164,9 +5275,7 @@ def lecturer_student_list_create_accounts(request, roster_id):
                     student_row.account_created = True
                     student_row.account_status = StudentRosterAccountStatus.EXISTING
                     student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
-                    profile, _ = UserProfile.objects.get_or_create(user_id=existing_user)
-                    if roster.subject not in profile.subjects_enrolled.all():
-                        profile.subjects_enrolled.add(roster.subject)
+                    _ensure_student_enrolled_subject(existing_user, roster.subject)
 
             for student_row in pending_rows:
                 user, created, _ = _student_provision_account(student_row, default_password)
@@ -5176,10 +5285,12 @@ def lecturer_student_list_create_accounts(request, roster_id):
                     StudentRosterAccountStatus.CREATED if created else StudentRosterAccountStatus.EXISTING
                 )
                 student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+
+                # Dù là newly created hay do race-condition thành existing, đều phải cấp quyền môn
+                _ensure_student_enrolled_subject(user, roster.subject)
+
                 if created:
                     created_count += 1
-                    profile, _ = UserProfile.objects.get_or_create(user_id=user)
-                    profile.subjects_enrolled.add(roster.subject)
 
             roster.refresh_status()
 

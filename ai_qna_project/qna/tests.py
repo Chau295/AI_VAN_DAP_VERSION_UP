@@ -745,7 +745,7 @@ class LecturerQuestionManagementTests(TestCase):
             name="Machine Learning",
             subject_code="ML401",
         )
-        self.profile.subjects_taught.add(other_subject)
+        self.lecturer_profile.subjects_taught.add(other_subject)
         other_bank = QuestionBank.objects.create(
             subject=other_subject,
             name="ML Bank",
@@ -1276,6 +1276,7 @@ class LecturerExamManagementTests(TestCase):
             "shuffle_question_order": False,
             "allow_duplicate_questions": False,
             "source_bank_ids": [self.bank.id],
+            "exam_code": f"BD-UT-{ExamSet.objects.count() + 1:04d}",
         }
         payload.update(overrides)
         return payload
@@ -1625,7 +1626,7 @@ class LecturerExamManagementTests(TestCase):
         page_obj = response.context["page_obj"]
         self.assertIn("q", response.context["filter_values"])
 
-    def test_exam_set_detail_hides_regenerate_action_and_shows_set_code(self):
+    def test_exam_set_detail_hides_regenerate_action_and_renders_current_detail_layout(self):
         exam_set = self._create_exam_set(number_of_versions=1)
 
         response = self.client.get(
@@ -1633,7 +1634,8 @@ class LecturerExamManagementTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, f"BD-{exam_set.id:04d}")
+        self.assertContains(response, "Quản lý đề thi")
+        self.assertContains(response, "Tạo thủ công")
         self.assertNotContains(response, "fa-rotate-right")
         self.assertNotContains(response, "Sinh lại")
 
@@ -1645,11 +1647,11 @@ class LecturerExamManagementTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="btnManualCreate"')
+        self.assertContains(response, 'onclick="createManualCode()"')
         self.assertContains(response, 'id="bulkBar"')
-        self.assertContains(response, 'id="drawerTitle"')
+        self.assertContains(response, 'id="drawerTitleText"')
         self.assertContains(response, 'clearCodeSelection()')
-        self.assertContains(response, 'fa-circle-check')
+        self.assertContains(response, 'fa-check-circle')
         self.assertNotContains(response, 'id="btnBatchApprove"')
         self.assertNotContains(response, 'class="summary-bar"')
         self.assertNotContains(response, "fa-eye")
@@ -2600,6 +2602,7 @@ class StudentExamAccessTests(TestCase):
                         "hard_score": 5,
                         "allow_duplicate_questions": False,
                         "source_bank_ids": [self.bank.id],
+                        "exam_code": f"BD-UT-{ExamSet.objects.count() + 1:04d}",
                     },
                 )
                 self.assertEqual(response.status_code, 200)
@@ -3086,7 +3089,7 @@ class StudentExamAccessTests(TestCase):
                     name="Mon khac",
                     subject_code="DS404",
                 )
-                self.profile.subjects_taught.add(other_subject)
+                self.lecturer_profile.subjects_taught.add(other_subject)
 
                 current_group = ExamSessionGroup.objects.create(
                     subject=self.subject,
@@ -4241,6 +4244,7 @@ class ExamWindowBoundaryTests(TestCase):
                                     "hard_score": 5,
                                     "allow_duplicate_questions": False,
                                     "source_bank_ids": [self.bank.id],
+                                    "exam_code": f"BD-UT-{ExamSet.objects.count() + 1:04d}",
                                 }
                             ),
                             content_type="application/json",
@@ -4356,6 +4360,7 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
                             "shuffle_question_order": False,
                             "allow_duplicate_questions": False,
                             "source_bank_ids": [self.bank.id],
+                            "exam_code": f"BD-UT-{ExamSet.objects.count() + 1:04d}",
                         },
                     )
 
@@ -4487,6 +4492,7 @@ class LecturerExamManagementTests(LecturerExamManagementTests):
                             "medium_count": 1,
                             "hard_count": 1,
                             "source_bank_ids": [self.bank.id],
+                            "exam_code": f"BD-UT-{ExamSet.objects.count() + 1:04d}",
                         },
                     )
 

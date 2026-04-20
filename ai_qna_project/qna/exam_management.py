@@ -618,7 +618,7 @@ def _prefetch_exam_sets(qs):
 # ==============================================================================
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
-LIST_PAGE_SIZE = 20
+LIST_PAGE_SIZE = 8
 
 @login_required
 @require_GET
