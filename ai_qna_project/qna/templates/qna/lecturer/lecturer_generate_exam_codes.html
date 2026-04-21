@@ -581,28 +581,6 @@
   </div>
 </div>
 
-<div class="confirm-create-modal" id="confirmCreateModal">
-  <div class="confirm-create-dialog">
-    <div class="confirm-create-body">
-      <div class="confirm-create-icon">
-        <i class="fas fa-exclamation-triangle"></i>
-      </div>
-      <h3 class="confirm-create-title">Xác nhận tạo bộ đề</h3>
-      <p class="confirm-create-message" id="confirmCreateMessage">
-        Tổng điểm hiện tại chưa đủ 10 điểm.<br>
-        Bạn có chắc chắn muốn tiếp tục tạo bộ đề không?
-      </p>
-    </div>
-    <div class="confirm-create-actions">
-      <button type="button" class="btn btn-secondary" onclick="closeConfirmCreateModal()">Hủy</button>
-      <button type="button" class="btn btn-primary" id="confirmCreateBtn">
-        <i class="fas fa-check"></i> Xác nhận
-      </button>
-    </div>
-  </div>
-</div>
-
-<div class="toast-stack" id="toastStack"></div>
 {% endblock %}
 
 {% block extra_js %}
@@ -641,18 +619,9 @@
   }
 
   function showToast(message, success=false) {
-    const stack = document.getElementById('toastStack');
-    const toast = document.createElement('div');
-    toast.className = 'toast' + (success ? ' success' : '');
-    toast.innerHTML = `
-      <div style="display:flex; align-items:center; gap:12px;">
-        <i class="fas ${success ? 'fa-check-circle' : 'fa-exclamation-circle'}" style="font-size:20px; color: ${success ? 'var(--green)' : 'var(--red)'}"></i>
-        ${message}
-      </div>
-      <button type="button"><i class="fas fa-times"></i></button>`;
-    toast.querySelector('button').onclick = () => toast.remove();
-    stack.appendChild(toast);
-    setTimeout(() => toast.remove(), 5000);
+    if (typeof window.showGlobalToast === 'function' && message) {
+      window.showGlobalToast(message, success ? 'success' : 'error');
+    }
   }
 
   function reloadBySubject(subjectId) {
@@ -676,15 +645,17 @@
     totalOver: 'Tổng điểm hiện tại đang vượt quá 10 điểm.',
     totalUnder: 'Tổng điểm hiện tại chưa đủ 10 điểm.',
     noQuestions: 'Mỗi mã đề phải có ít nhất 1 câu hỏi.',
-    invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm lớn hơn 0.',
+    invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm không âm.',
     invalidVersionCount: 'Số lượng mã đề phải lớn hơn 0.',
-    invalidAcademicYear: 'Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.',
+    emptyAcademicYear: 'Vui lòng nhập năm học',
+    invalidAcademicYear: 'Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)',
     examCodeRequired: 'Vui lòng nhập mã bộ đề.',
     examCodeTooLong: 'Mã bộ đề không được vượt quá 50 ký tự.',
   };
 
   const ACADEMIC_YEAR_REGEX = /^\d{4}-\d{4}$/;
   let pendingCreatePayload = null;
+  let academicYearTouched = false;
 
   function parseSafeInt(value) {
     const parsed = parseInt(String(value ?? '').trim(), 10);
@@ -703,10 +674,23 @@
   function validateAcademicYearField() {
     const input = document.getElementById('academicYear');
     if (!input) return true;
-
-    const isValid = ACADEMIC_YEAR_REGEX.test(String(input.value ?? ''));
-    input.setCustomValidity(isValid ? '' : EXAM_SET_MESSAGES.invalidAcademicYear);
-    return isValid;
+    const rawValue = String(input.value ?? '');
+    const value = rawValue.trim();
+    const isUntouched = !academicYearTouched;
+    if (isUntouched) {
+      input.setCustomValidity('');
+      return { valid: true, state: 'untouched', message: '' };
+    }
+    if (!value) {
+      input.setCustomValidity(EXAM_SET_MESSAGES.emptyAcademicYear);
+      return { valid: false, state: 'empty', message: EXAM_SET_MESSAGES.emptyAcademicYear };
+    }
+    if (!ACADEMIC_YEAR_REGEX.test(value)) {
+      input.setCustomValidity(EXAM_SET_MESSAGES.invalidAcademicYear);
+      return { valid: false, state: 'invalid_format', message: EXAM_SET_MESSAGES.invalidAcademicYear };
+    }
+    input.setCustomValidity('');
+    return { valid: true, state: 'valid', message: '' };
   }
 
   function getMatrixConfig() {
@@ -791,6 +775,7 @@
   function updateSummary() {
     const config = getMatrixConfig();
     const validation = getConfigValidation(config);
+    const academicYearValidation = validateAcademicYearField();
     const summaryBox = document.getElementById('summaryBox');
     const btn = document.getElementById('btnSubmit');
 
@@ -802,25 +787,30 @@
     }
 
     if (btn) {
-      btn.disabled = !validation.valid;
-      btn.title = validation.valid ? '' : validation.message;
+      const disableSubmit = !validation.valid || !academicYearValidation.valid;
+      btn.disabled = disableSubmit;
+      btn.title = !academicYearValidation.valid ? academicYearValidation.message : (validation.valid ? '' : validation.message);
     }
 
-    return { config, validation };
+    return { config, validation, academicYearValidation };
   }
 
-  function openConfirmCreateModal(message, payload) {
+  async function openConfirmCreateModal(message, payload) {
     pendingCreatePayload = payload;
-    const modal = document.getElementById('confirmCreateModal');
-    const messageBox = document.getElementById('confirmCreateMessage');
-    messageBox.innerHTML = `<span class="confirm-create-warning">${message}</span><br>Bạn có chắc chắn muốn tiếp tục tạo bộ đề không?`;
-    modal.classList.add('show');
-  }
-
-  function closeConfirmCreateModal() {
-    const modal = document.getElementById('confirmCreateModal');
-    modal.classList.remove('show');
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận tạo bộ đề',
+      message: message
+        ? `${message}\nBạn có chắc chắn muốn tiếp tục tạo bộ đề không?`
+        : 'Bạn có chắc chắn muốn tiếp tục tạo bộ đề không?',
+      confirmText: 'Xác nhận',
+      cancelText: 'Hủy',
+      danger: false,
+    });
+    const nextPayload = pendingCreatePayload;
     pendingCreatePayload = null;
+    if (confirmed && nextPayload) {
+      await performCreateExamSet(nextPayload);
+    }
   }
 
   async function performCreateExamSet(payload) {
@@ -862,8 +852,14 @@
   document.getElementById('easyScore').addEventListener('input', updateSummary);
   document.getElementById('mediumScore').addEventListener('input', updateSummary);
   document.getElementById('hardScore').addEventListener('input', updateSummary);
-  document.getElementById('academicYear').addEventListener('input', validateAcademicYearField);
-  document.getElementById('academicYear').addEventListener('blur', validateAcademicYearField);
+  document.getElementById('academicYear').addEventListener('input', () => {
+    academicYearTouched = true;
+    updateSummary();
+  });
+  document.getElementById('academicYear').addEventListener('blur', () => {
+    academicYearTouched = true;
+    updateSummary();
+  });
   ['easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
     document.getElementById(id).addEventListener('blur', () => normalizeScoreInput(id, true));
   });
@@ -882,9 +878,9 @@
     const versionCount = parseSafeInt(document.getElementById('numberOfVersions').value);
     const examCodeInput = document.getElementById('examSetName');
     const examCode = (examCodeInput.value || '').trim();
-    const { config, validation } = updateSummary();
+    const { config, validation, academicYearValidation } = updateSummary();
 
-    // BỔ SUNG VALIDATE CHẶN TẠI GIAO DIỆN NẾU QUÁ 10 NGÂN HÀNG
+    // BUG_022: kiểm tra số lượng nguồn chọn - tối đa 10
     if (sourceBanks.length > 10) {
       showToast("Chỉ được phép chọn tối đa 10 nguồn câu hỏi.");
       return;
@@ -912,9 +908,8 @@
       return;
     }
 
-    if (!validateAcademicYearField()) {
-      showToast(EXAM_SET_MESSAGES.invalidAcademicYear);
-      academicYearInput.reportValidity();
+    if (!academicYearValidation.valid) {
+      showToast(academicYearValidation.message);
       academicYearInput.focus();
       return;
     }
@@ -946,24 +941,11 @@
     };
 
     if (validation.state === 'warning') {
-      openConfirmCreateModal(validation.message, payload);
+      await openConfirmCreateModal(validation.message, payload);
       return;
     }
 
-    await performCreateExamSet(payload);
+    await openConfirmCreateModal('', payload);
   }
-
-  document.getElementById('confirmCreateBtn').addEventListener('click', async () => {
-    if (!pendingCreatePayload) return;
-    const payload = pendingCreatePayload;
-    closeConfirmCreateModal();
-    await performCreateExamSet(payload);
-  });
-
-  document.getElementById('confirmCreateModal').addEventListener('click', (event) => {
-    if (event.target.id === 'confirmCreateModal') {
-      closeConfirmCreateModal();
-    }
-  });
 </script>
 {% endblock %}

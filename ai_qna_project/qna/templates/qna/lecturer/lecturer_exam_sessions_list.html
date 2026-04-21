@@ -21,6 +21,19 @@
     background: var(--session-bg);
   }
 
+  .top-header {
+    background: #fff;
+    padding: 16px 32px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #111827;
+    border-bottom: 1px solid var(--session-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0;
+  }
+
   .session-shell {
     max-width: 1250px;
     margin: 0 auto;
@@ -334,6 +347,7 @@
   }
 
   @media (max-width: 768px) {
+    .top-header,
     .session-breadcrumb,
     .session-body {
       padding-left: 1rem;
@@ -361,6 +375,7 @@
 </style>
 
 <div class="session-page">
+  <div class="top-header">Quản lý ca thi</div>
   <div class="session-shell">
     <div class="session-breadcrumb">
       <span>Quản lý ca thi</span>

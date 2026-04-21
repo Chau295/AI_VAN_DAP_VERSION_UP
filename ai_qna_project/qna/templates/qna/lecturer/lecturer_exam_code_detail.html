@@ -510,17 +510,6 @@
     <button class="float-btn deselect" onclick="clearCodeSelection()">Bỏ chọn tất cả</button>
 </div>
 
-<div id="confirmModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-title" id="confirmTitle">Xác nhận</div>
-        <div class="modal-desc" id="confirmMessage">Bạn có chắc chắn muốn thực hiện hành động này?</div>
-        <div class="modal-actions">
-            <button class="btn btn-secondary" onclick="closeConfirmModal()">Hủy</button>
-            <button class="btn btn-danger" id="confirmActionBtn">Xác nhận</button>
-        </div>
-    </div>
-</div>
-
 <div id="drawerOverlay" class="drawer-overlay" onclick="closeDrawer()"></div>
 
 <div id="drawer" class="drawer">
@@ -554,8 +543,6 @@
     </div>
 </div>
 
-<div id="toastStack" class="toast-stack"></div>
-
 {% endblock %}
 
 
@@ -576,23 +563,22 @@
   };
 
   function getScoreForDifficulty(difficulty) {
+    // BUG_031: examSetScores đã là điểm/câu, không cần chia thêm
     const diff = difficulty.toLowerCase();
-    const count = examSetBarem[diff] || 0;
-    if (count === 0) return null;
-    const totalScore = examSetScores[diff] || 0;
-    return (totalScore / count).toFixed(1);
+    const score = examSetScores[diff];
+    if (score == null || score === 0) return null;
+    return parseFloat(score).toFixed(1);
   }
 
   let examSetStatus = "{{ exam_set.status }}";
   let examCodes = {{ exam_codes_json|safe }};
   let currentCodeId = null;
-  let pendingAction = null;
   let selectedCodeIds = new Set();
   let isCreatingNewCode = false;
 
-  // BIẾN CHO PHÂN TRANG (9 items / trang)
+  // BIẾN CHO PHÂN TRANG (8 items / trang)
   let currentPage = 1;
-  const itemsPerPage = 9;
+  const itemsPerPage = 8;
 
   function getCookie(name) {
     const cookies = document.cookie ? document.cookie.split(';') : [];
@@ -613,13 +599,9 @@
   }
 
   function showToast(message, isError = false) {
-    const stack = document.getElementById('toastStack');
-    const toast = document.createElement('div');
-    toast.className = 'toast' + (isError ? ' error' : '');
-    toast.innerHTML = `<div>${escapeHtml(message)}</div><button type="button"><i class="fas fa-xmark"></i></button>`;
-    toast.querySelector('button').onclick = () => toast.remove();
-    stack.appendChild(toast);
-    setTimeout(() => toast.remove(), 5000);
+    if (typeof window.showGlobalToast === 'function' && message) {
+      window.showGlobalToast(message, isError ? 'error' : 'success');
+    }
   }
 
   // LOGIC TRẠNG THÁI BADGE
@@ -676,7 +658,7 @@
     }
   }
 
-  // RENDER PAGINATION
+  // RENDER PAGINATION (BUG_036: thêm ellipsis khi nhiều trang)
   function renderPagination() {
       const totalPages = Math.ceil(examCodes.length / itemsPerPage) || 1;
       const paginationContainer = document.getElementById('paginationContainer');
@@ -693,11 +675,19 @@
       paginationContainer.appendChild(prevBtn);
 
       for (let i = 1; i <= totalPages; i++) {
-          const pageBtn = document.createElement('div');
-          pageBtn.className = `page-item ${i === currentPage ? 'active' : ''}`;
-          pageBtn.textContent = i;
-          pageBtn.onclick = () => { currentPage = i; renderCards(); };
-          paginationContainer.appendChild(pageBtn);
+          if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+              const pageBtn = document.createElement('div');
+              pageBtn.className = `page-item ${i === currentPage ? 'active' : ''}`;
+              pageBtn.textContent = i;
+              pageBtn.onclick = () => { currentPage = i; renderCards(); };
+              paginationContainer.appendChild(pageBtn);
+          } else if (i === currentPage - 2 || i === currentPage + 2) {
+              const ellipsis = document.createElement('div');
+              ellipsis.className = 'page-item disabled';
+              ellipsis.style.border = 'none';
+              ellipsis.textContent = '...';
+              paginationContainer.appendChild(ellipsis);
+          }
       }
 
       const nextBtn = document.createElement('div');
@@ -926,42 +916,71 @@
 
   function clearCodeSelection() { selectedCodeIds.clear(); renderCards(); }
 
-  function openDeleteCodeModal(id) {
+  async function openDeleteCodeModal(id) {
     const code = getCodeById(id);
     if (isLockedCode(code)) {
       showToast('Mã đề đã được sử dụng trong ca thi nên không thể xóa.', true);
       return;
     }
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa mã đề',
+      message: 'Mã đề được xóa sẽ không thể khôi phục lại.',
+      confirmText: 'Xác nhận',
+      cancelText: 'Hủy',
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
     currentCodeId = id;
-    pendingAction = deleteCurrentCode;
-    document.getElementById('confirmTitle').textContent = 'Bạn có chắc chắn muốn xóa mã đề này?';
-    document.getElementById('confirmMessage').textContent = 'Mã đề được xóa sẽ không thể khôi phục lại.';
-    document.getElementById('confirmModal').classList.add('show');
+    await deleteCurrentCode();
   }
 
-  function confirmBulkDeleteSelectedCodes() {
+  async function confirmBulkDeleteSelectedCodes() {
     if (!selectedCodeIds.size) {
       showToast('Vui lòng chọn ít nhất 1 mã đề chưa dùng để xóa.', true);
       return;
     }
-    pendingAction = deleteSelectedCodes;
-    document.getElementById('confirmTitle').textContent = 'Xác nhận xóa các mã đề đã chọn';
-    document.getElementById('confirmMessage').textContent = 'Chỉ các mã đề chưa dùng mới được xóa. Các mã đề đã dùng sẽ bị bỏ qua.';
-    document.getElementById('confirmModal').classList.add('show');
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa các mã đề đã chọn',
+      message: 'Chỉ các mã đề chưa dùng mới được xóa. Các mã đề đã dùng sẽ bị bỏ qua.',
+      confirmText: 'Xóa',
+      cancelText: 'Hủy',
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    await deleteSelectedCodes();
   }
 
-  function closeConfirmModal() { document.getElementById('confirmModal').classList.remove('show'); }
   function confirmDeleteCode() { if (currentCodeId) openDeleteCodeModal(currentCodeId); }
 
-  document.getElementById('confirmActionBtn').addEventListener('click', async () => { if (pendingAction) await pendingAction(); closeConfirmModal(); });
-
-  async function saveCurrentCode(showToastMsg = true, shouldClose = true) {
+  async function saveCurrentCode(showToastMsg = true, shouldClose = true, options = {}) {
     const nameInput = document.getElementById('examCodeNameInput');
     const codeName = nameInput ? nameInput.value.trim() : '';
     if (!codeName) { showToast("Vui lòng nhập tên mã đề!", true); return false; }
 
     const textareas = Array.from(document.querySelectorAll('#questionEditorList textarea'));
     if (textareas.some(ta => !ta.value.trim())) { showToast("Vui lòng nhập đủ nội dung câu hỏi!", true); return false; }
+
+    if (!options.skipConfirm) {
+      const confirmed = await window.showGlobalConfirm({
+        title: isCreatingNewCode ? 'Xác nhận tạo mã đề' : 'Xác nhận lưu thay đổi',
+        message: isCreatingNewCode
+          ? 'Hệ thống sẽ tạo mã đề mới với nội dung hiện tại.'
+          : 'Hệ thống sẽ lưu các thay đổi hiện tại của mã đề này.',
+        confirmText: 'Lưu',
+        cancelText: 'Hủy',
+      });
+      if (!confirmed) {
+        return false;
+      }
+    }
 
     const originalText = document.getElementById('btnSaveCode').innerHTML;
     document.getElementById('btnSaveCode').disabled = true;
@@ -974,13 +993,19 @@
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify({ items, code_name: codeName }) });
         const data = await res.json();
         if (data.status === 'SUCCESS') {
+            const wasCreating = isCreatingNewCode;
             upsertExamCode(data.exam_code);
             currentCodeId = data.exam_code.id;
             isCreatingNewCode = false;
 
-            if (isCreatingNewCode) {
-                const totalPages = Math.ceil(examCodes.length / itemsPerPage);
-                currentPage = totalPages;
+            // BUG_030: cập nhật examSetStatus nếu server trả về
+            if (data.exam_set_status) {
+                examSetStatus = data.exam_set_status;
+            }
+
+            // BUG_036: sau khi tạo mưới chuyển đến trang cuối
+            if (wasCreating) {
+                currentPage = Math.ceil(examCodes.length / itemsPerPage);
             }
 
             renderCards();
@@ -999,7 +1024,15 @@
   }
 
   async function approveCurrentCode() {
-    const isSaved = await saveCurrentCode(false, false);
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận duyệt mã đề',
+      message: 'Hệ thống sẽ lưu nội dung hiện tại và chuyển mã đề này sang trạng thái đã duyệt.',
+      confirmText: 'Xác nhận duyệt',
+      cancelText: 'Hủy',
+    });
+    if (!confirmed) return;
+
+    const isSaved = await saveCurrentCode(false, false, { skipConfirm: true });
     if (!isSaved) return;
 
     const originalText = document.getElementById('btnApproveCode').innerHTML;
@@ -1033,6 +1066,21 @@
   }
 
   async function bulkApproveSelectedCodes() {
+    if (!selectedCodeIds.size) {
+      showToast('Vui lòng chọn ít nhất 1 mã đề để duyệt.', true);
+      return;
+    }
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận duyệt các mã đề đã chọn',
+      message: 'Hệ thống sẽ duyệt toàn bộ các mã đề đang được chọn.',
+      confirmText: 'Xác nhận duyệt',
+      cancelText: 'Hủy',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/approve-codes/`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify({ exam_code_ids: Array.from(selectedCodeIds) }) });
     if (res.ok) { location.reload(); }
   }
@@ -1090,9 +1138,23 @@
   }
 
   async function publishExamSet() {
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận lưu bộ đề',
+      message: 'Hệ thống sẽ lưu bộ đề hiện tại.',
+      confirmText: 'Xác nhận',
+      cancelText: 'Hủy',
+    });
+    if (!confirmed) {
+      return;
+    }
+
     const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/publish/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
-    const data = await res.json();
-    if (data.status === 'SUCCESS') window.location.href = data.redirect_url;
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'SUCCESS') {
+      window.location.href = data.redirect_url;
+      return;
+    }
+    showToast(data.message || 'Không thể lưu bộ đề.', true);
   }
 
   document.getElementById('selectAllCodes').addEventListener('change', (e) => {
@@ -1103,6 +1165,8 @@
   });
 
   function createManualCode() { openDrawer(null); }
+
+  document.getElementById('btnPublishExamSet')?.addEventListener('click', publishExamSet);
 
   renderCards();
 </script>

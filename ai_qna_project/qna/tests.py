@@ -100,7 +100,23 @@ class LecturerStudentRosterUploadTests(TestCase):
             HTTP_ACCEPT="application/json",
         )
         self.assertEqual(response.status_code, 200)
-        return StudentRosterUpload.objects.get(subject_id=self.subject)
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+
+        results = payload.get("results") if isinstance(payload, dict) else []
+        if results:
+            roster_payload = results[0] or {}
+            roster_id = roster_payload.get("roster_id") or roster_payload.get("id")
+            if roster_id:
+                return StudentRosterUpload.objects.get(pk=roster_id)
+
+        return (
+            StudentRosterUpload.objects.filter(subject_id=self.subject)
+            .order_by("-student_roster_upload_id")
+            .first()
+        )
 
     def tearDown(self):
         self.override.disable()
@@ -520,17 +536,130 @@ class LecturerStudentRosterUploadTests(TestCase):
         self.assertTrue(session["student_account_modal"]["open"])
         self.assertTrue(session["student_account_modal"]["error"])
         error_message = session["student_account_modal"]["error"]
-
         detail_response = self.client.get(
             reverse("qna:lecturer_student_list_detail", args=[roster.id])
         )
-        self.assertContains(detail_response, 'id="passwordValidationMessage"')
-        self.assertContains(detail_response, "show")
+        self.assertContains(detail_response, "const shouldOpenCreateModal = true;")
+        self.assertContains(detail_response, "const initialCreateAccountError =")
         self.assertContains(detail_response, error_message)
 
         roster.refresh_from_db()
         self.assertEqual(roster.status, "PENDING")
         self.assertFalse(roster.students.get(student_code="SV001").account_created)
+
+    def test_create_accounts_skips_already_created_students(self):
+        """BUG_009: roster co ca SV da co account_created=True lan SV chua co;
+        create_accounts chi xu ly SV chua co, khong phat sinh skip-confirm."""
+        existing_user = self.user_model.objects.create_user(
+            username="SV010",
+            password="ExistingPass123!",
+        )
+        UserProfile.objects.create(
+            user=existing_user,
+            is_lecturer=False,
+            full_name="Sinh Vien Da Co TK",
+            student_id="SV010",
+        )
+
+        roster = self._upload_roster([
+            "SV010,Sinh Vien Da Co TK,Nam,12/05/2003,CNT01,sv010@example.com",
+            "SV011,Sinh Vien Chua Co,Nu,24/08/2003,CNT01,sv011@example.com",
+        ])
+
+        row_sv010 = roster.students.get(student_code="SV010")
+        row_sv010.account_created = True
+        row_sv010.linked_user_id = existing_user
+        row_sv010.account_status = StudentRosterAccountStatus.EXISTING
+        row_sv010.save(update_fields=["account_created", "linked_user_id", "account_status"])
+
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_create_accounts", args=[roster.id]),
+            {
+                "default_password": "NewPass123!",
+                "confirm_password": "NewPass123!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(
+            response,
+            reverse("qna:lecturer_student_list_detail", args=[roster.id]),
+            fetch_redirect_response=False,
+        )
+
+        self.assertTrue(self.user_model.objects.filter(username="SV011").exists())
+        row_sv011 = roster.students.get(student_code="SV011")
+        row_sv011.refresh_from_db()
+        self.assertTrue(row_sv011.account_created)
+        self.assertEqual(row_sv011.account_status, StudentRosterAccountStatus.CREATED)
+
+        existing_user.refresh_from_db()
+        self.assertTrue(existing_user.check_password("ExistingPass123!"))
+        self.assertFalse(existing_user.check_password("NewPass123!"))
+
+        session = self.client.session
+        modal = session.get("student_account_modal") or {}
+        self.assertFalse(modal.get("need_skip_confirm"))
+
+    def test_bug_005_create_accounts_refreshes_all_related_rosters_of_same_file(self):
+        self._upload_roster(
+            ["SV021,Sinh Vien Cu,Nam,12/05/2003,CNT01,sv021@example.com"],
+            file_name="Danh_sach_trung.csv",
+        )
+        roster_old = StudentRosterUpload.objects.filter(subject_id=self.subject).order_by("student_roster_upload_id").first()
+        second_upload = SimpleUploadedFile(
+            "Danh_sach_trung.csv",
+            (
+                "student_code,full_name,gender,date_of_birth,class_name,email\n"
+                "SV022,Sinh Vien Moi,Nu,24/08/2003,CNT01,sv022@example.com\n"
+            ).encode("utf-8-sig"),
+            content_type="text/csv",
+        )
+        second_response = self.client.post(
+            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
+            {"academic_year": "2024-2025", "semester": "HK1", "files": second_upload},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(second_response.status_code, 200)
+        roster_new = StudentRosterUpload.objects.filter(subject_id=self.subject).order_by("-student_roster_upload_id").first()
+
+        old_row = roster_old.students.get(student_code="SV021")
+        old_row.account_created = True
+        old_row.account_status = StudentRosterAccountStatus.CREATED
+        old_row.save(update_fields=["account_created", "account_status"])
+        StudentRosterUpload.objects.filter(pk=roster_old.id).update(status="PENDING", account_created_at=None)
+
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_create_accounts", args=[roster_new.id]),
+            {"default_password": "SafePass123!", "confirm_password": "SafePass123!"},
+        )
+        self.assertEqual(response.status_code, 302)
+
+        roster_old.refresh_from_db()
+        roster_new.refresh_from_db()
+        self.assertEqual(roster_old.status, "CREATED")
+        self.assertIsNotNone(roster_old.account_created_at)
+        self.assertEqual(roster_new.status, "CREATED")
+
+    def test_bug_002_invalid_academic_year_is_hidden_in_management_filter_and_table(self):
+        StudentRosterUpload.objects.create(
+            subject_id=self.subject,
+            academic_year="2025/2026",
+            semester="HK1",
+            title="Du lieu ban",
+            original_file_name="du_lieu_ban.csv",
+            total_students=1,
+            status="PENDING",
+            created_by_user_id=self.lecturer,
+        )
+
+        response = self.client.get(
+            reverse("qna:lecturer_student_list_management", args=[self.subject.subject_code]),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Năm học: 2025/2026")
+        self.assertContains(response, "<td class=\"qm2-center\">-</td>")
 
 
 class LecturerRedirectTests(TestCase):
@@ -682,6 +811,8 @@ class LecturerQuestionManagementTests(TestCase):
             is_lecturer=True,
             full_name="Giang Vien Question",
         )
+        # Alias để tương thích với test dùng self.lecturer_profile
+        self.lecturer_profile = self.profile
         self.subject = Subject.objects.create(
             name="Tri tue nhan tao",
             subject_code="AI401",
@@ -887,6 +1018,17 @@ class LecturerQuestionManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "if (document.cookie && document.cookie !== '') {")
         self.assertNotContains(response, "<d></d>ocument.cookie")
+
+    def test_bug_011_save_bank_modal_uses_new_title_and_resets_input(self):
+        response = self.client.get(
+            reverse("qna:lecturer_questions_screen"),
+            {"subject_id": self.subject.id, "mode": "detail"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Đặt tên cho ngân hàng câu hỏi!")
+        self.assertContains(response, 'id="bankNameInput"')
+        self.assertContains(response, 'placeholder="Ví dụ: Ngân hàng thi cuối kỳ"')
+        self.assertContains(response, "if (bankNameInput) bankNameInput.value = '';")
 
     def test_legacy_question_management_route_redirects_to_new_screen(self):
         response = self.client.get(reverse("qna:lecturer_question_management", args=[self.subject.subject_code]))
@@ -1206,6 +1348,100 @@ class LecturerQuestionManagementTests(TestCase):
         self.assertTrue(Question.objects.filter(subject_id=self.subject, question_text="Mo ta bai toan").exists())
         self.assertTrue(Question.objects.filter(subject_id=self.subject, question_text="Phan tich du lieu").exists())
 
+    # BUG_014: update API must reject question_text exceeding 5000 chars
+    def test_update_question_rejects_text_over_5000_chars(self):
+        question = Question.objects.create(
+            subject=self.subject,
+            bank=self.bank,
+            question_text="Cau hoi ban dau.",
+            question_id_in_barem="MAN_AI401_bug014",
+            difficulty=DifficultyLevel.EASY,
+        )
+        long_text = "A" * 5001
+        response = self._post_json(
+            "qna:api_update_question_v2",
+            {"content": long_text, "difficulty": "EASY"},
+            args=[question.pk],
+        )
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertEqual(data["status"], "FAIL")
+        self.assertIn("5000", data["message"])
+        question.refresh_from_db()
+        self.assertEqual(question.question_text, "Cau hoi ban dau.")
+
+    # BUG_014: update within limit should still succeed
+    def test_update_question_accepts_text_at_5000_chars(self):
+        question = Question.objects.create(
+            subject=self.subject,
+            bank=self.bank,
+            question_text="Cau hoi nguyen ban.",
+            question_id_in_barem="MAN_AI401_bug014b",
+            difficulty=DifficultyLevel.EASY,
+        )
+        exact_text = "B" * 5000
+        response = self._post_json(
+            "qna:api_update_question_v2",
+            {"content": exact_text, "difficulty": "EASY"},
+            args=[question.pk],
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "SUCCESS")
+
+    # BUG_015: deleting a bank used in an ExamSet must return FAIL
+    def test_delete_question_bank_in_use_by_exam_set_is_rejected(self):
+        exam_set = ExamSet.objects.create(
+            subject=self.subject,
+            academic_year="2025-2026",
+            semester="HK1",
+            easy_pool_size=0,
+            medium_pool_size=0,
+            hard_pool_size=0,
+        )
+        exam_set.question_banks.add(self.bank)
+
+        url = f"/api/lecturer/question-banks/{self.bank.pk}/delete/"
+        response = self.client.post(url, content_type="application/json")
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertEqual(data["status"], "FAIL")
+        self.assertTrue(QuestionBank.objects.filter(pk=self.bank.pk).exists())
+
+    # BUG_015: deleting an unused bank must succeed cleanly
+    def test_delete_question_bank_not_in_use_succeeds(self):
+        Question.objects.create(
+            subject=self.subject,
+            bank=self.bank,
+            question_text="Se bi xoa cung bank.",
+            question_id_in_barem="MAN_AI401_todelete",
+            difficulty=DifficultyLevel.EASY,
+        )
+        url = f"/api/lecturer/question-banks/{self.bank.pk}/delete/"
+        response = self.client.post(url, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "SUCCESS")
+        self.assertFalse(QuestionBank.objects.filter(pk=self.bank.pk).exists())
+        self.assertFalse(Question.objects.filter(subject_id=self.subject, is_exam_clone=False).exists())
+
+    # BUG_016: update API response must include non-empty updated_at
+    def test_update_question_response_includes_updated_at(self):
+        question = Question.objects.create(
+            subject=self.subject,
+            bank=self.bank,
+            question_text="Kiem tra updated_at.",
+            question_id_in_barem="MAN_AI401_bug016",
+            difficulty=DifficultyLevel.MEDIUM,
+        )
+        response = self._post_json(
+            "qna:api_update_question_v2",
+            {"content": "Noi dung moi sau khi sua.", "difficulty": "MEDIUM"},
+            args=[question.pk],
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "SUCCESS")
+        self.assertTrue(data["question"]["updated_at"], "updated_at phai khac rong sau khi cap nhat")
+
 
 class LecturerExamManagementTests(TestCase):
     def setUp(self):
@@ -1363,7 +1599,7 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["status"], "FAIL")
-        self.assertEqual(payload["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(payload["message"], "Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)")
         self.assertEqual(ExamSet.objects.count(), 0)
 
     def test_create_exam_set_rejects_academic_year_with_wrong_separator(self):
@@ -1372,7 +1608,16 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["status"], "FAIL")
-        self.assertEqual(payload["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(payload["message"], "Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)")
+        self.assertEqual(ExamSet.objects.count(), 0)
+
+    def test_bug_026_create_exam_set_rejects_empty_academic_year_with_specific_message(self):
+        response = self._create_exam_set_response(academic_year="")
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["message"], "Vui lòng nhập năm học")
         self.assertEqual(ExamSet.objects.count(), 0)
 
     def test_create_exam_set_rejects_total_score_greater_than_ten(self):
@@ -1408,16 +1653,21 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(ExamCode.objects.count(), 0)
         self.assertEqual(ExamCodeQuestion.objects.count(), 0)
 
-    def test_create_exam_set_rejects_positive_count_with_zero_score(self):
-        response = self._create_exam_set_response(easy_score=0)
+    def test_bug_033_create_exam_set_allows_zero_score_when_total_still_valid(self):
+        response = self._create_exam_set_response(
+            easy_count=1,
+            medium_count=1,
+            hard_count=1,
+            easy_score=0,
+            medium_score=5,
+            hard_score=5,
+        )
 
-        self.assertEqual(response.status_code, 400)
-        payload = response.json()
-        self.assertEqual(payload["status"], "FAIL")
-        self.assertEqual(payload["message"], "Mỗi câu hỏi phải có số điểm lớn hơn 0.")
-        self.assertEqual(ExamSet.objects.count(), 0)
-        self.assertEqual(ExamCode.objects.count(), 0)
-        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+        self.assertEqual(response.status_code, 200)
+        exam_set = ExamSet.objects.get(pk=response.json()["exam_set_id"])
+        exam_code = exam_set.exam_codes.first()
+        self.assertIsNotNone(exam_code)
+        self.assertTrue(exam_code.exam_code_questions.filter(score=0).exists())
 
     def test_create_exam_set_creates_only_non_empty_exam_codes_with_positive_scores(self):
         exam_set = self._create_exam_set(number_of_versions=2)
@@ -1478,6 +1728,19 @@ class LecturerExamManagementTests(TestCase):
         self.assertContains(response, 'id="totalQuestions">0</strong>')
         self.assertContains(response, 'id="totalScore">0.00</strong>')
 
+    def test_bug_034_generate_exam_screen_has_separated_empty_and_invalid_academic_year_messages(self):
+        response = self.client.get(
+            reverse("qna:lecturer_generate_codes_screen"),
+            {"subject_id": self.subject.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "emptyAcademicYear: 'Vui lòng nhập năm học'")
+        self.assertContains(response, "invalidAcademicYear: 'Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)'")
+        self.assertContains(response, "let academicYearTouched = false;")
+        self.assertContains(response, "state: 'untouched'")
+        self.assertContains(response, "state: 'empty'")
+        self.assertContains(response, "state: 'invalid_format'")
+
     def test_generate_exam_screen_includes_summary_validation_messages(self):
         response = self.client.get(
             reverse("qna:lecturer_generate_codes_screen"),
@@ -1491,9 +1754,9 @@ class LecturerExamManagementTests(TestCase):
         self.assertContains(response, "Tổng điểm hiện tại đang vượt quá 10 điểm.")
         self.assertContains(response, "Tổng điểm hiện tại chưa đủ 10 điểm.")
         self.assertContains(response, "Mỗi mã đề phải có ít nhất 1 câu hỏi.")
-        self.assertContains(response, "Mỗi câu hỏi phải có số điểm lớn hơn 0.")
+        self.assertContains(response, "Mỗi câu hỏi phải có số điểm không âm.")
         self.assertIn("getConfigValidation", content)
-        self.assertIn("btn.disabled = !validation.valid;", content)
+        self.assertIn("const disableSubmit = !validation.valid || !academicYearValidation.valid;", content)
 
     def test_legacy_create_session_route_redirects_to_session_wizard(self):
         response = self.client.get(
@@ -1596,8 +1859,8 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(len(response.context["rows"]), 1)
         self.assertContains(response, 'class="qm2-pagination"')
         self.assertContains(response, "1-1")
-        self.assertContains(response, f"BD-{first_exam_set.id:04d}")
-        self.assertNotContains(response, f"BD-{second_exam_set.id:04d}")
+        self.assertContains(response, f"BD-{used_exam_set.id:04d}")
+        self.assertNotContains(response, f"BD-{unused_exam_set.id:04d}")
 
     def test_exam_set_list_pagination_page_number(self):
         for i in range(25):
@@ -1648,6 +1911,15 @@ class LecturerExamManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'onclick="createManualCode()"')
+
+    def test_bug_036_exam_set_detail_uses_eight_items_per_page(self):
+        exam_set = self._create_exam_set(number_of_versions=1)
+        response = self.client.get(
+            reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "const itemsPerPage = 8;")
+        self.assertNotContains(response, "const itemsPerPage = 9;")
         self.assertContains(response, 'id="bulkBar"')
         self.assertContains(response, 'id="drawerTitleText"')
         self.assertContains(response, 'clearCodeSelection()')
@@ -1934,6 +2206,105 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["status"], "FAIL")
         self.assertTrue(response.json()["message"])
+
+    # ----- BUG_024: t\u1ed5ng s\u1ed1 c\u00e2u > 100 ph\u1ea3i b\u1ecb ch\u1eb7n -----
+    def test_create_exam_set_rejects_total_questions_over_100(self):
+        response = self._create_exam_set_response(
+            easy_count=50,
+            medium_count=30,
+            hard_count=25,
+            easy_score=0,
+            medium_score=0,
+            hard_score=0,
+        )
+        # T\u1ed5ng = 105 > 100, ph\u1ea3i FAIL
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertIn("100", payload["message"])
+        self.assertEqual(ExamSet.objects.count(), 0)
+
+    def test_create_exam_set_accepts_exactly_100_questions(self):
+        # T\u1ea1o \u0111\u1ee7 question trong pool
+        for i in range(98):
+            Question.objects.create(
+                subject=self.subject,
+                bank=self.bank,
+                question_text=f"Extra Q {i}",
+                question_id_in_barem=f"X_{i}",
+                difficulty=DifficultyLevel.EASY,
+            )
+        # 100 c\u00e2u d\u1ec5, \u0111i\u1ec3m = 100 * 0.1 = 10
+        response = self._create_exam_set_response(
+            number_of_versions=1,
+            easy_count=100,
+            medium_count=0,
+            hard_count=0,
+            easy_score=0.1,
+            medium_score=0,
+            hard_score=0,
+            allow_duplicate_questions=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "SUCCESS")
+
+    # ----- BUG_030: t\u1ea1o m\u00e3 \u0111\u1ec1 th\u1ee7 c\u00f4ng ph\u1ea3i tr\u1ea3 exam_set_status -----
+    def test_create_manual_exam_code_returns_exam_set_status(self):
+        exam_set = self._create_exam_set(number_of_versions=1)
+        # Ch\u1ecdn \u0111\u1ea7u ti\u00ean \u0111\u1ec3 l\u1ea5y exam_code
+        code = exam_set.exam_codes.first()
+        # C\u1ea5p nh\u1eadt exam_set sang APPROVED
+        from qna.models import ExamSetStatus
+        exam_set.status = ExamSetStatus.APPROVED
+        exam_set.save(update_fields=["status", "updated_at"])
+
+        payload = {
+            "items": [
+                {"content": "N\u1ed9i dung c\u00e2u h\u1ecfi th\u1ee7 c\u00f4ng 1", "difficulty": "EASY", "display_order": 1}
+            ]
+        }
+        response = self._post_json(
+            "qna:lecturer_create_manual_exam_code",
+            payload,
+            args=[exam_set.id],
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "SUCCESS")
+        # exam_set_status ph\u1ea3i c\u00f3 trong response
+        self.assertIn("exam_set_status", data)
+        # Sau khi th\u00eam m\u00e3 \u0111\u1ec1 m\u1edbi, exam_set ph\u1ea3i v\u1ec1 DRAFT
+        exam_set.refresh_from_db()
+        self.assertEqual(exam_set.status, ExamSetStatus.DRAFT)
+        self.assertEqual(data["exam_set_status"], ExamSetStatus.DRAFT)
+
+    # ----- BUG_033: t\u1ed5ng \u0111i\u1ec3m != 10 ph\u1ea3i b\u1ecb ch\u1eb7n -----
+    def test_create_exam_set_rejects_total_score_over_ten(self):
+        response = self._create_exam_set_response(hard_score=6)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["status"], "FAIL")
+        self.assertIn("v\u01b0\u1ee3t qu\u00e1", response.json()["message"].lower() + "v\u01b0\u1ee3t qu\u00e1")
+
+    def test_create_exam_set_rejects_total_score_under_ten(self):
+        response = self._create_exam_set_response(hard_score=4)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["status"], "FAIL")
+        self.assertIn("ch\u01b0a \u0111\u1ee7", response.json()["message"].lower() + "ch\u01b0a \u0111\u1ee7")
+
+    # ----- BUG_035: m\u00e0n h\u00ecnh generate kh\u00f4ng auto-select m\u00f4n \u0111\u1ea7u ti\u00ean -----
+    def test_generate_screen_does_not_auto_select_subject_when_no_query_param(self):
+        response = self.client.get(reverse("qna:lecturer_generate_codes_screen"))
+        self.assertEqual(response.status_code, 200)
+        # kh\u00f4ng truy\u1ec1n subject_id -> selected_subject ph\u1ea3i l\u00e0 None
+        self.assertIsNone(response.context["selected_subject"])
+
+    def test_generate_screen_selects_subject_when_query_param_given(self):
+        response = self.client.get(
+            reverse("qna:lecturer_generate_codes_screen"),
+            {"subject_id": self.subject.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_subject"], self.subject)
 
 
 class LecturerExamSessionManagementTests(TestCase):
@@ -2333,7 +2704,8 @@ class StudentExamAccessTests(TestCase):
 
         self.assertIsNotNone(visibility_block)
         body = visibility_block.group("body")
-        self.assertIn("alert('Không được chuyển tab khi thi!');", body)
+        self.assertIn("showAlert('Không được chuyển tab khi thi!');", body)
+        self.assertNotIn("alert" + "('Không được chuyển tab khi thi!');", body)
         self.assertNotIn("forceExamTermination", body)
         self.assertNotIn("finalizeAndShowResult", body)
 

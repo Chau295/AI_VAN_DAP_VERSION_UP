@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% load static %}
 
 {% block title %}Tải lên danh sách sinh viên{% endblock %}
@@ -281,47 +281,6 @@
   .qm2-info-content a { color: var(--text); font-weight: 700; text-decoration: underline; }
   .qm2-info-content a:hover { color: var(--blue); }
 
-  .qm2-toast-container {
-    position: fixed;
-    top: 24px;
-    right: 24px;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .qm2-toast {
-    background: #fff;
-    border-left: 4px solid var(--red);
-    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-    border-radius: 8px;
-    padding: 16px;
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    width: 320px;
-    animation: slideInRight 0.3s ease forwards;
-  }
-
-  .qm2-toast.success { border-left-color: var(--green); }
-  .qm2-toast i.icon { font-size: 18px; color: var(--red); margin-top: 2px; }
-  .qm2-toast.success i.icon { color: var(--green); }
-  .qm2-toast-content { flex: 1; }
-  .qm2-toast-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-  .qm2-toast-msg { font-size: 13px; color: var(--muted); line-height: 1.4; }
-  .qm2-toast-close { border: none; background: transparent; color: var(--muted); cursor: pointer; }
-  .qm2-toast-close:hover { color: var(--text); }
-
-  @keyframes slideInRight {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-
-  @keyframes fadeOut {
-    to { opacity: 0; transform: translateY(-10px); }
-  }
-
   .text-right { text-align: right; }
 
   @media (max-width: 900px) {
@@ -386,7 +345,7 @@
 
         <div class="qm2-field">
           <label>Năm học</label>
-          <input type="text" name="academic_year" class="qm2-input" value="{{ default_academic_year }}" placeholder="VD: 2024-2025" pattern="\d{4}-\d{4}" title="Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số." required>
+          <input type="text" name="academic_year" class="qm2-input" value="{{ default_academic_year }}" placeholder="VD: 2024-2025">
         </div>
 
         <div class="qm2-field">
@@ -436,8 +395,6 @@
   </div>
 </div>
 
-<div class="qm2-toast-container" id="toastContainer"></div>
-
 {% endblock %}
 
 {% block extra_js %}
@@ -455,11 +412,12 @@
   const fileList = document.getElementById('fileList');
   const queueCount = document.getElementById('queueCount');
   const submitBtn = document.getElementById('submitBtn');
-  const toastContainer = document.getElementById('toastContainer');
   const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
   const academicYearInput = form.querySelector('[name=academic_year]');
+
   const academicYearPattern = /^\d{4}-\d{4}$/;
   const academicYearErrorMessage = 'Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.';
+
   const maxMb = {{ max_upload_mb|default:10 }};
   const maxSize = maxMb * 1024 * 1024;
   const allowed = ['xlsx', 'xls', 'csv'];
@@ -480,42 +438,20 @@
   const activeSemester = () => (document.querySelector('[name=semester]:checked') || {}).value || 'HK1';
 
   function validateAcademicYear() {
-    const isValid = academicYearPattern.test(String(academicYearInput.value || ''));
-    academicYearInput.setCustomValidity(isValid ? '' : academicYearErrorMessage);
-    return isValid;
+    return academicYearPattern.test(String(academicYearInput.value || '').trim());
   }
 
-  function toast(title, message, isError = true) {
-    const el = document.createElement('div');
-    el.className = `qm2-toast ${isError ? '' : 'success'}`;
-    el.innerHTML = `
-      <i class="fas ${isError ? 'fa-exclamation-circle' : 'fa-check-circle'} icon"></i>
-      <div class="qm2-toast-content">
-        <div class="qm2-toast-title">${esc(title)}</div>
-        <div class="qm2-toast-msg">${esc(message)}</div>
-      </div>
-      <button type="button" class="qm2-toast-close"><i class="fas fa-times"></i></button>
-    `;
-
-    const close = () => {
-      el.style.animation = 'fadeOut 0.3s ease forwards';
-      setTimeout(() => el.remove(), 300);
-    };
-
-    el.querySelector('.qm2-toast-close').onclick = close;
-    toastContainer.appendChild(el);
-
-    setTimeout(() => {
-      if (el.parentElement) close();
-    }, 5000);
+  function toast(title, message, type = 'error') {
+    if (typeof window.showGlobalToast !== 'function') {
+      return;
+    }
+    window.showGlobalToast(message, type, { title });
   }
 
   function refreshDropZone() {
     const invalid = filesState.find(item => item.status === 'invalid');
     if (invalid) {
       dropZone.classList.add('error');
-      dropTitle.textContent = 'Tệp tin không hợp lệ';
-      dropDesc.textContent = invalid.error;
       return;
     }
 
@@ -548,8 +484,20 @@
   }
 
   function addFiles(fileCollection) {
+    // BUG_004: xóa các item invalid cũ để reset sạch trạng thái lỗi dropzone
+    filesState = filesState.filter(item => item.status !== 'invalid');
+
     Array.from(fileCollection || []).forEach(file => {
       const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+
+      // BUG_005: cho phép re-add nếu item cũ đã success hoặc error
+      filesState = filesState.filter(item =>
+        !(item.file.name === file.name &&
+          item.file.size === file.size &&
+          item.file.lastModified === file.lastModified &&
+          (item.status === 'success' || item.status === 'error'))
+      );
+
       const duplicated = filesState.some(item =>
         item.file.name === file.name &&
         item.file.size === file.size &&
@@ -662,7 +610,14 @@
           ? `Hoàn tất với ${warningMessages.length} cảnh báo`
           : `Tải lên lúc ${result.created_at || 'vừa xong'}`;
         render();
-        toast('Tải file lên thành công', `${item.file.name} đã được lưu vào hệ thống.`, false);
+        toast('Tải file lên thành công', `${item.file.name} đã được lưu vào hệ thống.`, 'success');
+        if (warningMessages.length) {
+          toast(
+            'Tải file hoàn tất với cảnh báo',
+            `${item.file.name} có ${warningMessages.length} cảnh báo dữ liệu.`,
+            'warning'
+          );
+        }
 
         const isUploading = filesState.some(f => f.status === 'uploading');
         const hasError = filesState.some(f => f.status === 'error' || f.status === 'invalid');
@@ -740,8 +695,6 @@
               <div class="qm2-progress-bar mt-1">
                 <div class="qm2-progress-fill ${isError ? 'bg-red-500' : (isSuccess || isReady ? 'bg-green-500' : '')}" style="width:${progress}%"></div>
               </div>
-              ${item.error ? `<div class="text-xs text-red-500 mt-1">${esc(item.error)}</div>` : ''}
-              ${(item.warningMessages || []).length ? `<div class="mt-2 rounded-md bg-yellow-50 px-3 py-2 text-xs text-yellow-800">${item.warningMessages.map(message => `<div>${esc(message)}</div>`).join('')}</div>` : ''}
             </div>
           </div>
           <div class="qm2-file-actions ml-4">
@@ -765,7 +718,7 @@
     if (browseAltBtn) openPicker();
   });
 
-  form.addEventListener('submit', event => {
+  form.addEventListener('submit', async event => {
     event.preventDefault();
 
     if (!academicYearInput.value.trim()) {
@@ -776,17 +729,37 @@
 
     if (!validateAcademicYear()) {
       toast('Năm học không hợp lệ', academicYearErrorMessage);
-      academicYearInput.reportValidity();
       academicYearInput.focus();
       return;
     }
 
-    filesState.filter(item => item.status === 'ready').forEach(uploadItem);
+    const readyFiles = filesState.filter(item => item.status === 'ready');
+    if (readyFiles.length === 0) {
+      toast('Thiếu file', 'Vui lòng chọn ít nhất một file hợp lệ để tải lên.');
+      return;
+    }
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận tải lên danh sách sinh viên',
+      message: 'Hệ thống sẽ tải các file hợp lệ hiện có lên và bắt đầu xử lý dữ liệu.',
+      confirmText: 'Xác nhận tải lên',
+      cancelText: 'Hủy',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    readyFiles.forEach(uploadItem);
     syncButton();
   });
 
-  academicYearInput.addEventListener('input', validateAcademicYear);
-  academicYearInput.addEventListener('blur', validateAcademicYear);
+  // Hiển thị toast nhắc nhở nếu người dùng gõ sai và click ra ngoài
+  academicYearInput.addEventListener('blur', () => {
+    const val = academicYearInput.value.trim();
+    if (val && !validateAcademicYear()) {
+      toast('Năm học không hợp lệ', academicYearErrorMessage);
+    }
+  });
 
   browseBtn.addEventListener('click', openPicker);
   dropZone.addEventListener('click', event => {
@@ -810,7 +783,6 @@
   dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
   input.addEventListener('change', event => addFiles(event.target.files));
 
-  validateAcademicYear();
   render();
 })();
 </script>

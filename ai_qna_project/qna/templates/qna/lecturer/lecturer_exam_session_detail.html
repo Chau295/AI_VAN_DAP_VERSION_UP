@@ -21,6 +21,19 @@
     background: var(--detail-bg);
   }
 
+  .top-header {
+    background: #fff;
+    padding: 16px 32px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #111827;
+    border-bottom: 1px solid var(--detail-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0;
+  }
+
   .detail-shell {
     max-width: 1320px;
     margin: 0 auto;
@@ -467,6 +480,7 @@
   }
 
   @media (max-width: 768px) {
+    .top-header,
     .detail-breadcrumb,
     .detail-body {
       padding-left: 1rem;
@@ -497,6 +511,7 @@
 </style>
 
 <div class="detail-page">
+  <div class="top-header">Quản lý ca thi</div>
   <div class="detail-shell">
     <div class="detail-breadcrumb">
       <span>{{ exam_group.subject.name }}</span>
@@ -749,43 +764,21 @@
     {% csrf_token %}
   </form>
 
-  <div class="detail-modal-backdrop" id="deleteModalBackdrop">
-    <div class="detail-modal">
-      <h3 class="detail-modal-title">Bạn có chắc chắn muốn xóa ca thi "{{ exam_group.group_name }}" này?</h3>
-      <div class="detail-modal-description">Hành động này sẽ bị xóa vĩnh viễn, không thể khôi phục.</div>
-      <div class="detail-modal-actions">
-        <button type="button" class="detail-outline-btn" id="closeDeleteModalButton">
-          <i class="fas fa-times"></i>
-          Hủy bỏ
-        </button>
-        <button type="submit" form="deleteExamGroupForm" class="detail-confirm-btn">
-          Xác nhận
-        </button>
-      </div>
-    </div>
-  </div>
-
   <script>
-    const deleteModalBackdrop = document.getElementById("deleteModalBackdrop");
     const openDeleteModalButton = document.getElementById("openDeleteModalButton");
-    const closeDeleteModalButton = document.getElementById("closeDeleteModalButton");
+    const deleteExamGroupForm = document.getElementById("deleteExamGroupForm");
 
-    if (openDeleteModalButton && deleteModalBackdrop) {
-      openDeleteModalButton.addEventListener("click", () => {
-        deleteModalBackdrop.classList.add("open");
-      });
-    }
-
-    if (closeDeleteModalButton && deleteModalBackdrop) {
-      closeDeleteModalButton.addEventListener("click", () => {
-        deleteModalBackdrop.classList.remove("open");
-      });
-    }
-
-    if (deleteModalBackdrop) {
-      deleteModalBackdrop.addEventListener("click", (event) => {
-        if (event.target === deleteModalBackdrop) {
-          deleteModalBackdrop.classList.remove("open");
+    if (openDeleteModalButton && deleteExamGroupForm) {
+      openDeleteModalButton.addEventListener("click", async () => {
+        const confirmed = await window.showGlobalConfirm({
+          title: 'Xác nhận xóa ca thi',
+          message: 'Hành động này sẽ xóa vĩnh viễn ca thi hiện tại và không thể khôi phục.',
+          confirmText: 'Xác nhận',
+          cancelText: 'Hủy bỏ',
+          danger: true,
+        });
+        if (confirmed) {
+          deleteExamGroupForm.submit();
         }
       });
     }

@@ -23,7 +23,9 @@
     --review-radius: 26px;
   }
 
-  .student-review-page { min-height: calc(100vh - 80px); background: radial-gradient(circle at top left, #ffffff 0%, #f4f6fb 45%, #eef2ff 100%); padding: 28px 22px 36px; }
+  .student-review-page { min-height: calc(100vh - 80px); margin: -2.5rem; background: radial-gradient(circle at top left, #ffffff 0%, #f4f6fb 45%, #eef2ff 100%); }
+  .top-header { background: #fff; padding: 16px 32px; font-size: 20px; font-weight: 800; color: #111827; border-bottom: 1px solid var(--review-border); display: flex; align-items: center; justify-content: space-between; margin-top: 0; }
+  .student-review-content { padding: 28px 22px 36px; }
   .student-review-shell { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
   .student-review-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .student-review-title { margin: 0; color: var(--review-text); font-size: 2.15rem; font-weight: 800; letter-spacing: -0.03em; }
@@ -127,7 +129,8 @@
   }
 
   @media (max-width: 640px) {
-    .student-review-page { padding: 18px 12px 26px; }
+    .top-header { padding-left: 1rem; padding-right: 1rem; }
+    .student-review-content { padding: 18px 12px 26px; }
     .subject-filter-row, .table-filters, .table-footer { align-items: stretch; }
     .student-review-back, .subject-filter-control, .table-search, .table-filter-select { width: 100%; max-width: none; }
     .result-table thead th, .result-table tbody td { padding: 16px 14px; }
@@ -135,7 +138,9 @@
 </style>
 
 <div class="student-review-page">
-  <div class="student-review-shell">
+  <div class="top-header">Xem bài làm sinh viên</div>
+  <div class="student-review-content">
+    <div class="student-review-shell">
     <div class="student-review-topbar">
       <h1 class="student-review-title">Xem bài làm sinh viên</h1>
       <a href="{% url 'qna:lecturer_subject_list' %}" class="student-review-back">
@@ -298,6 +303,7 @@
         </div>
       </div>
     {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}

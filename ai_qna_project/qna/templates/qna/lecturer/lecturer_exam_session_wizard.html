@@ -22,6 +22,7 @@
   }
 
   .es-page { min-height: calc(100vh - 5rem); margin: -2.5rem; background: var(--es-bg); }
+  .top-header { background: #fff; padding: 16px 32px; font-size: 20px; font-weight: 800; color: #111827; border-bottom: 1px solid var(--es-border); display: flex; align-items: center; justify-content: space-between; margin-top: 0; }
   .es-breadcrumb { padding: 1.45rem 2rem; border-bottom: 1px solid var(--es-border); background: #fff; color: var(--es-muted); font-size: 0.95rem; font-weight: 600; }
   .es-shell { max-width: 1240px; margin: 0 auto; padding: 1.9rem 2rem 2.5rem; }
   .es-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
@@ -109,13 +110,7 @@
   .es-selected-tag { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #2563eb; font-size: 0.82rem; font-weight: 700; }
   .es-actions { margin-top: 1.4rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   .es-actions-right { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-  .es-toast-stack { position: fixed; top: 1.25rem; right: 1.25rem; display: grid; gap: 0.7rem; z-index: 90; }
-  .es-toast { min-width: 320px; max-width: 420px; padding: 0.95rem 1rem; border-radius: 16px; border-left: 4px solid var(--es-blue); background: #fff; color: var(--es-text); box-shadow: var(--es-shadow); }
-  .es-toast.error { border-left-color: var(--es-red); }
-  .es-toast.success { border-left-color: var(--es-green); }
   .es-hidden { display: none !important; }
-  .es-toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; border-radius: 2px; }
-  .es-toast button { border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 0.95rem; line-height: 1; }
   section[data-step-panel="1"] .es-card { max-width: 940px; margin: 0 auto; }
   section[data-step-panel="1"] .es-card-head { padding: 1.7rem 1.85rem 1.35rem; }
   section[data-step-panel="1"] .es-card-body { padding: 1.95rem 1.85rem 1.8rem; }
@@ -159,14 +154,6 @@
   .es-room-students-list { display: grid; gap: 0.45rem; max-height: 362px; overflow-y: auto; padding-right: 0.25rem; }
   .es-room-students-list::-webkit-scrollbar { width: 8px; }
   .es-room-students-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
-  .es-confirm-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.46); display: none; align-items: center; justify-content: center; padding: 1.5rem; z-index: 85; }
-  .es-confirm-backdrop.open { display: flex; }
-  .es-confirm-box { width: min(640px, 100%); background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25); padding: 2.3rem 2rem 2rem; text-align: center; }
-  .es-confirm-title { margin: 0; color: #666b73; font-size: 1.42rem; font-weight: 500; line-height: 1.25; }
-  .es-confirm-description { margin-top: 0.95rem; color: #9aa2af; font-size: 1rem; line-height: 1.5; }
-  .es-confirm-actions { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.8rem; flex-wrap: wrap; }
-  .es-confirm-actions .es-btn-primary { background: linear-gradient(180deg, #5f2bd8 0%, #4720b7 100%); box-shadow: 0 14px 28px rgba(79, 33, 191, 0.24); }
-  .es-confirm-actions .es-btn-primary:hover { background: linear-gradient(180deg, #5524c8 0%, #3f1aa6 100%); }
 
   @media (max-width: 1024px) {
     .es-page { margin: -1.5rem; }
@@ -178,6 +165,7 @@
   }
 
   @media (max-width: 768px) {
+    .top-header,
     .es-breadcrumb { padding: 1rem 1.1rem; }
     .es-shell { padding: 1rem; }
     .es-header { flex-direction: column; }
@@ -192,6 +180,7 @@
 </style>
 
 <div class="es-page">
+  <div class="top-header">Quản lý ca thi</div>
   <div class="es-breadcrumb">Quản lý ca thi &nbsp;&gt;&nbsp; {{ screen_mode_label }}</div>
 
   <div class="es-shell">
@@ -471,12 +460,22 @@
   </div>
 </div>
 
-<div id="toastStack" class="es-toast-stack"></div>
-
 <div id="examPickerBackdrop" class="es-modal-backdrop">
   </div>
 
 <script>
+  // BUG FIX: getCookie not defined
+  function getCookie(name) {
+    const cookies = document.cookie ? document.cookie.split(';') : [];
+    for (const cookie of cookies) {
+      const trimmed = cookie.trim();
+      if (trimmed.startsWith(name + '=')) {
+        return decodeURIComponent(trimmed.slice(name.length + 1));
+      }
+    }
+    return '';
+  }
+
   const sessionCatalog = {{ catalog_json|safe }};
   const sessionInitialState = {{ initial_state_json|safe }};
   const sessionMode = "{{ screen_mode }}";
@@ -596,8 +595,6 @@
   let examPickerSelection = [];
   let examPickerOriginalSelection = [];
   let examPickerOriginalSetId = null;
-  let confirmAction = null;
-
   let stepPanels;
   let stepMarkers;
   let roomTableBody;
@@ -622,12 +619,6 @@
   let pickerSearch;
   let pickerSelectAll;
   let pickerSelectionMeta;
-  let confirmBackdrop;
-  let confirmTitle;
-  let confirmDescription;
-  let confirmAcceptButton;
-  let confirmCancelButton;
-
   function bindDomRefs() {
     stepPanels = document.querySelectorAll("[data-step-panel]");
     stepMarkers = document.querySelectorAll("[data-step-marker]");
@@ -653,11 +644,6 @@
     pickerSearch = document.getElementById("pickerSearch");
     pickerSelectAll = document.getElementById("pickerSelectAll");
     pickerSelectionMeta = document.getElementById("pickerSelectionMeta");
-    confirmBackdrop = document.getElementById("confirmBackdrop");
-    confirmTitle = document.getElementById("confirmTitle");
-    confirmDescription = document.getElementById("confirmDescription");
-    confirmAcceptButton = document.getElementById("confirmAcceptButton");
-    confirmCancelButton = document.getElementById("confirmCancelButton");
   }
 
   function isViewMode() {
@@ -854,9 +840,9 @@
     }
 
     // --- BẮT ĐẦU CẬP NHẬT TEMPLATE MODAL CHO GIỐNG IMAGE_E96588.PNG ---
-    const toastStack = document.getElementById("toastStack");
-    if (toastStack && document.getElementById("examPickerBackdrop")) {
-      document.getElementById("examPickerBackdrop").innerHTML = `
+    const examPickerBackdropElement = document.getElementById("examPickerBackdrop");
+    if (examPickerBackdropElement) {
+      examPickerBackdropElement.innerHTML = `
         <div class="es-modal" style="width: 1000px; max-width: 95vw; border-radius: 20px; display: flex; flex-direction: column;">
 
           <div class="es-modal-head" style="border-bottom: 1px solid #edf2f8; padding: 20px 32px; display: flex; gap: 16px; align-items: center;">
@@ -954,67 +940,35 @@
     }
     // --- KẾT THÚC CẬP NHẬT TEMPLATE MODAL ---
 
-    if (!document.getElementById("confirmBackdrop")) {
-      document.body.insertAdjacentHTML("beforeend", `
-        <div id="confirmBackdrop" class="es-confirm-backdrop">
-          <div class="es-confirm-box">
-            <h3 id="confirmTitle" class="es-confirm-title">Bạn có chắc chắn muốn tiếp tục?</h3>
-            <div id="confirmDescription" class="es-confirm-description"></div>
-            <div class="es-confirm-actions">
-              <button type="button" id="confirmCancelButton" class="es-btn es-btn-secondary">
-                <i class="fas fa-times"></i>
-                Hủy bỏ
-              </button>
-              <button type="button" id="confirmAcceptButton" class="es-btn es-btn-primary">Xác nhận</button>
-            </div>
-          </div>
-        </div>
-      `);
-    }
-  }
-
-  function removeToast(toast) {
-    if (toast && toast.parentNode) {
-      toast.parentNode.removeChild(toast);
-    }
   }
 
   function clearToasts(type = null) {
-    const selector = type ? `.es-toast.${type}` : ".es-toast";
-    document.querySelectorAll(selector).forEach((toast) => removeToast(toast));
+    if (typeof window.clearGlobalToasts === "function") {
+      window.clearGlobalToasts(type);
+    }
   }
 
   function pushToast(message, type = "error") {
-    const stack = document.getElementById("toastStack");
-    const toast = document.createElement("div");
-    toast.className = `es-toast ${type}`;
-    toast.innerHTML = `
-      <span>${escapeHtml(message)}</span>
-      <button type="button" aria-label="Đóng">&times;</button>
-    `;
-    toast.querySelector("button").addEventListener("click", () => removeToast(toast));
-    stack.appendChild(toast);
-    window.setTimeout(() => {
-      removeToast(toast);
-    }, 3500);
+    window.showGlobalToast(message, type);
   }
 
-  function openConfirmModal(title, description, onAccept) {
-    if (!confirmBackdrop) {
-      return;
+  async function openConfirmModal(title, description, onAccept, options = {}) {
+    const confirmed = await window.showGlobalConfirm({
+      title,
+      message: description || "",
+      confirmText: options.confirmText || "Xác nhận",
+      cancelText: options.cancelText || "Hủy bỏ",
+      danger: !!options.danger,
+    });
+    if (confirmed && typeof onAccept === "function") {
+      await onAccept();
     }
-    confirmTitle.textContent = title;
-    confirmDescription.textContent = description || "";
-    confirmAction = onAccept;
-    confirmBackdrop.classList.add("open");
   }
 
   function closeConfirmModal() {
-    if (!confirmBackdrop) {
-      return;
+    if (typeof window.closeGlobalConfirm === "function") {
+      window.closeGlobalConfirm();
     }
-    confirmBackdrop.classList.remove("open");
-    confirmAction = null;
   }
 
   function computeRealtimeWizardStatus() {
@@ -1318,21 +1272,21 @@
     renderDistribution();
   }
 
-  function removeRoom(index) {
+  async function removeRoom(index) {
     const room = wizardState.roomConfigs[index];
     if (!room) {
       return;
     }
-    openConfirmModal(
+    await openConfirmModal(
       "Bạn có chắc chắn muốn xóa phòng thi khỏi cấu hình không?",
       "Phòng thi này sẽ bị gỡ khỏi ca thi hiện tại.",
       () => {
         wizardState.roomConfigs.splice(index, 1);
         wizardState.roomConfigs.forEach((item, itemIndex) => { item.display_order = itemIndex + 1; });
-        closeConfirmModal();
         renderRooms();
         renderDistribution();
-      }
+      },
+      { confirmText: "Xóa phòng", danger: true }
     );
   }
 
@@ -1531,18 +1485,18 @@
     renderDistribution();
   }
 
-  function removeRoster(rosterId) {
-    openConfirmModal(
+  async function removeRoster(rosterId) {
+    await openConfirmModal(
       "Bạn có chắc chắn muốn xóa danh sách này ra khỏi nguồn danh sách sinh viên không?",
       "Sinh viên thuộc danh sách bị xóa sẽ được gỡ khỏi các phòng thi hiện tại.",
       () => {
         wizardState.rosterIds = wizardState.rosterIds.filter((item) => item !== rosterId);
         clearAllAssignments();
-        closeConfirmModal();
         populateRosterPicker();
         renderSelectedRosters();
         renderDistribution();
-      }
+      },
+      { confirmText: "Xóa danh sách", danger: true }
     );
   }
 
@@ -1823,7 +1777,7 @@
     }
   }
 
-  function closeExamPicker(forceClose = false) {
+  async function closeExamPicker(forceClose = false) {
     const currentSetId = Number(pickerExamSet?.value || 0) || null;
     const originalSelection = examPickerOriginalSelection.slice().sort((a, b) => a - b).join(",");
     const currentSelection = examPickerSelection.slice().sort((a, b) => a - b).join(",");
@@ -1831,7 +1785,7 @@
 
     if (changed) {
       const hadOriginal = examPickerOriginalSelection.length > 0;
-      openConfirmModal(
+      await openConfirmModal(
         hadOriginal
           ? "Bạn có chắc chắn muốn hủy thao tác chỉnh sửa?"
           : "Bạn có chắc chắn muốn hủy thao tác thêm bộ đề cho phòng thi không?",
@@ -1839,7 +1793,6 @@
           ? "Phòng thi sẽ được giữ nguyên bộ đề và mã đề."
           : "Phòng thi sẽ không được gắn bộ đề.",
         () => {
-          closeConfirmModal();
           closeExamPicker(true);
         }
       );
@@ -2138,26 +2091,39 @@
       return;
     }
 
-    const targetUrl = wizardState.sessionId
-      ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
-      : createSessionUrl;
+    const btn = submitAction === "CONFIRM" ? wizardSubmitButton : saveDraftButton;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang xử lý...';
+    btn.disabled = true;
 
-    const response = await fetch(targetUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": getCookie("csrftoken"),
-      },
-      body: JSON.stringify(buildPayload(submitAction)),
-    });
+    try {
+        const targetUrl = wizardState.sessionId
+          ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
+          : createSessionUrl;
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.success) {
-      pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
-      return;
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken"),
+          },
+          body: JSON.stringify(buildPayload(submitAction)),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+          pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
+          return;
+        }
+
+        window.location.href = payload.redirect_url || sessionListUrl;
+    } catch (err) {
+        console.error("Lỗi khi lưu:", err);
+        pushToast("Lỗi kết nối đến máy chủ: " + (err.message || ""), "error");
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
     }
-
-    window.location.href = payload.redirect_url || sessionListUrl;
   }
 
   function bindWizardActions() {
@@ -2174,7 +2140,9 @@
       }
     }
     if (randomAssignButton) {
-      randomAssignButton.addEventListener("click", randomAssignAllStudents);
+      randomAssignButton.addEventListener("click", () => {
+        randomAssignAllStudents();
+      });
       if (isViewMode()) {
         randomAssignButton.classList.add("es-hidden");
       }
@@ -2190,50 +2158,34 @@
       });
     }
     if (wizardSubmitButton) {
-      wizardSubmitButton.addEventListener("click", () => {
+      wizardSubmitButton.addEventListener("click", async () => {
         if (!validateStep(3)) {
           return;
         }
-
-        const isEditMode = sessionMode === "edit" || Boolean(wizardState.sessionId);
-        const title = isEditMode
-          ? "Xác nhận cập nhật ca thi?"
-          : "Xác nhận tạo ca thi?";
-
-        openConfirmModal(title, "", async () => {
-          closeConfirmModal();
-          await saveSession("CONFIRM");
-        });
+        // Chỉ hiện popup xác nhận khi chỉnh sửa ca thi
+        const isEditMode = sessionMode === "edit" && Boolean(wizardState.sessionId);
+        if (isEditMode) {
+          const confirmed = await window.showGlobalConfirm({
+            title: "Xác nhận cập nhật ca thi",
+            message: "Các thay đổi của ca thi sẽ được cập nhật theo cấu hình hiện tại.",
+            confirmText: "Cập nhật",
+            cancelText: "Hủy bỏ",
+          });
+          if (!confirmed) {
+            return;
+          }
+        }
+        await saveSession("CONFIRM");
       });
     }
     if (saveDraftButton) {
-      saveDraftButton.addEventListener("click", () => saveSession("DRAFT"));
+      saveDraftButton.addEventListener("click", async () => {
+        await saveSession("DRAFT");
+      });
     }
     if (wizardViewBackButton) {
       wizardViewBackButton.addEventListener("click", () => {
         window.location.href = sessionListUrl;
-      });
-    }
-  }
-
-  function bindConfirmModal() {
-    if (confirmCancelButton) {
-      confirmCancelButton.addEventListener("click", closeConfirmModal);
-    }
-    if (confirmAcceptButton) {
-      confirmAcceptButton.addEventListener("click", () => {
-        if (typeof confirmAction === "function") {
-          confirmAction();
-        } else {
-          closeConfirmModal();
-        }
-      });
-    }
-    if (confirmBackdrop) {
-      confirmBackdrop.addEventListener("click", (event) => {
-        if (event.target === confirmBackdrop) {
-          closeConfirmModal();
-        }
       });
     }
   }
@@ -2294,7 +2246,6 @@
     bindGeneralFields();
     bindWizardActions();
     bindExamPicker();
-    bindConfirmModal();
     populateRosterPicker();
     renderRooms();
     renderSelectedRosters();

@@ -624,7 +624,7 @@
                   </a>
                 </td>
                 <td class="qm2-center">{{ roster.total_students }} sinh viên</td>
-                <td class="qm2-center">{{ roster.academic_year }}</td>
+                <td class="qm2-center">{{ roster.safe_academic_year|default:"-" }}</td>
                 <td class="qm2-center">{{ roster.get_semester_display }}</td>
                 <td class="qm2-center">{{ roster.created_at|date:"d/m/Y" }}</td>
                 <td class="qm2-center">
@@ -703,49 +703,32 @@
     </div>
   </div>
 </div>
-</div>
 
-<div id="deleteModal" class="qm2-modal">
-  <div class="qm2-dialog">
-    <h3>
-      Bạn có chắc chắn muốn xóa file<br>
-      <span id="deleteFileName" class="qm2-dialog-file"></span>?
-    </h3>
-    <p>Danh sách lớp được xóa sẽ không thể khôi phục lại.</p>
-
-    <form id="deleteForm" method="post" class="qm2-dialog-actions">
-      {% csrf_token %}
-      <button type="button" class="qm2-btn-outline" id="closeDeleteModal">Hủy bỏ</button>
-      <button type="submit" class="qm2-btn-danger">Xóa</button>
-    </form>
-  </div>
-</div>
+<form id="deleteForm" method="post" class="hidden">
+  {% csrf_token %}
+</form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    const modal = document.getElementById('deleteModal');
-    const closeBtn = document.getElementById('closeDeleteModal');
     const deleteForm = document.getElementById('deleteForm');
-    const deleteFileName = document.getElementById('deleteFileName');
 
     document.querySelectorAll('.js-open-delete').forEach(btn => {
-      btn.addEventListener('click', function () {
+      btn.addEventListener('click', async function () {
         deleteForm.action = this.dataset.deleteUrl;
-        deleteFileName.textContent = this.dataset.fileName;
-        modal.classList.add('show');
+        const confirmed = await window.showGlobalConfirm({
+          title: 'Xác nhận xóa danh sách lớp',
+          message: `Bạn có chắc chắn muốn xóa file ${this.dataset.fileName}?`,
+          confirmText: 'Xóa',
+          cancelText: 'Hủy bỏ',
+          danger: true,
+        });
+        if (confirmed) {
+          deleteForm.submit();
+        }
       });
     });
-
-    closeBtn.addEventListener('click', () => modal.classList.remove('show'));
-
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.classList.remove('show');
-      }
-    });
-
   });
 </script>
 {% endblock %}

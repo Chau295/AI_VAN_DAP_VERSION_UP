@@ -20,6 +20,19 @@
     background: var(--common-bg);
   }
 
+  .top-header {
+    background: #fff;
+    padding: 16px 32px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #111827;
+    border-bottom: 1px solid var(--common-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0;
+  }
+
   .common-shell {
     max-width: 1320px;
     margin: 0 auto;
@@ -303,6 +316,7 @@
   }
 
   @media (max-width: 768px) {
+    .top-header,
     .common-breadcrumb,
     .common-body {
       padding-left: 1rem;
@@ -329,6 +343,7 @@
 </style>
 
 <div class="common-page">
+  <div class="top-header">Quản lý ca thi</div>
   <div class="common-shell">
     <div class="common-breadcrumb">
       <span>{{ exam_group.subject.name }}</span>

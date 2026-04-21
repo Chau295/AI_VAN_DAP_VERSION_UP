@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% load static %}
 
 {% block title %}Chi tiết danh sách sinh viên{% endblock %}
@@ -162,6 +162,16 @@
   }
 
   .qm2-card {
+      <form method="get" class="qm2-filters">
+        <div class="qm2-search">
+          <i class="fas fa-search"></i>
+          <input type="text" name="q" class="qm2-input" value="{{ search_query }}" placeholder="Tìm kiếm sinh viên trong danh sách...">
+        </div>
+        <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}" class="qm2-btn qm2-btn-secondary">
+          <i class="fas fa-rotate-left"></i>
+          Xóa bộ lọc
+        </a>
+      </form>
     background: var(--qm-panel);
     border: 1px solid var(--qm-border);
     border-radius: var(--qm-radius-xl);
@@ -649,6 +659,11 @@
     padding-right: 46px;
   }
 
+  .mdl-input-invalid {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
+  }
+
   .mdl-password-toggle {
     position: absolute;
     top: 50%;
@@ -664,28 +679,6 @@
 
   .mdl-password-toggle:hover {
     color: #1d4ed8;
-  }
-
-  .mdl-inline-alert {
-    display: none;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid #fecaca;
-    background: #fef2f2;
-    color: #b91c1c;
-    font-size: 13px;
-    line-height: 1.5;
-    margin-bottom: 12px;
-  }
-
-  .mdl-inline-alert.show {
-    display: flex;
-  }
-
-  .mdl-inline-alert i {
-    margin-top: 2px;
   }
 
   .mdl-password-rules {
@@ -791,7 +784,7 @@
       </div>
 
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
+        <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" class="qm2-btn qm2-btn-secondary">
           <i class="fas fa-arrow-left"></i> Quay lại
         </a>
         <button type="button" id="openCreateModal" class="qm2-btn qm2-btn-primary" {% if pending_accounts_count == 0 %}disabled{% endif %}>
@@ -973,10 +966,6 @@
             <div class="mdl-section-title">
               <i class="fas fa-cog"></i> Cấu hình bảo mật
             </div>
-            <div id="passwordValidationMessage" class="mdl-inline-alert{% if create_account_modal.error %} show{% endif %}">
-              <i class="fas fa-circle-exclamation"></i>
-              <span id="passwordValidationText">{{ create_account_modal.error }}</span>
-            </div>
             <div class="mdl-form-row" style="margin-top: 10px;">
               <div class="mdl-form-group">
                 <label>Mật khẩu mặc định <span style="color:#ef4444">*</span></label>
@@ -1020,34 +1009,44 @@
   const createForm = createModal?.querySelector('form');
   const defaultPasswordInput = document.getElementById('defaultPasswordInput');
   const confirmPasswordInput = document.getElementById('confirmPasswordInput');
-  const passwordValidationMessage = document.getElementById('passwordValidationMessage');
-  const passwordValidationText = document.getElementById('passwordValidationText');
   const shouldOpenCreateModal = {{ create_account_modal.open|yesno:"true,false" }};
+  const initialCreateAccountError = "{{ create_account_modal.error|escapejs }}";
+  let createFormConfirmed = false;
 
-  function setValidationMessage(message) {
-    if (!passwordValidationMessage || !passwordValidationText) return;
-    passwordValidationText.textContent = message || '';
-    passwordValidationMessage.classList.toggle('show', Boolean(message));
+  // BUG_010: highlight chỉ đúng trường bị lỗi
+  function setValidationState(message, target) {
+    const invalidPassword = Boolean(message) && (target === 'password' || target === 'both');
+    const invalidConfirm  = Boolean(message) && (target === 'confirm'  || target === 'both');
+    defaultPasswordInput?.classList.toggle('mdl-input-invalid', invalidPassword);
+    confirmPasswordInput?.classList.toggle('mdl-input-invalid', invalidConfirm);
   }
 
-  function validateCreateAccountForm(showMessage = false) {
+  function validateCreateAccountForm(showToast = false) {
     if (!defaultPasswordInput || !confirmPasswordInput) return true;
 
     const password = defaultPasswordInput.value || '';
     const confirmPassword = confirmPasswordInput.value || '';
 
     let errorMessage = '';
+    let errorTarget = 'both';
 
     if (!password.trim()) {
       errorMessage = 'Vui lòng nhập mật khẩu mặc định.';
+      errorTarget = 'password';
     } else if (confirmPassword.trim() && password !== confirmPassword) {
       errorMessage = 'Mật khẩu xác nhận không khớp.';
-    } else if (showMessage && !confirmPassword.trim()) {
+      errorTarget = 'confirm';
+    } else if (showToast && !confirmPassword.trim()) {
       errorMessage = 'Vui lòng nhập lại mật khẩu để xác nhận.';
+      errorTarget = 'confirm';
     }
 
-    if (showMessage || password || confirmPassword) {
-      setValidationMessage(errorMessage);
+    if (showToast || password || confirmPassword) {
+      setValidationState(errorMessage, errorTarget);
+    }
+
+    if (showToast && errorMessage && typeof window.showGlobalToast === 'function') {
+      window.showGlobalToast(errorMessage, 'error');
     }
 
     return !errorMessage;
@@ -1060,7 +1059,7 @@
 
   if (openCreateModal && !openCreateModal.disabled) {
     openCreateModal.addEventListener('click', function () {
-      setValidationMessage('');
+      setValidationState('');
       toggleCreateModal(true);
     });
   }
@@ -1082,15 +1081,38 @@
 
   [defaultPasswordInput, confirmPasswordInput].forEach(function (input) {
     input?.addEventListener('input', function () {
-      validateCreateAccountForm(true);
+      validateCreateAccountForm(false);
     });
   });
 
-  createForm?.addEventListener('submit', function (event) {
+  createForm?.addEventListener('submit', async function (event) {
+    if (createFormConfirmed) {
+      createFormConfirmed = false;
+      return;
+    }
+
+    event.preventDefault();
+
     if (!validateCreateAccountForm(true)) {
       event.preventDefault();
       toggleCreateModal(true);
+      return;
     }
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận tạo tài khoản',
+      message: 'Hệ thống sẽ tạo tài khoản cho các sinh viên chưa có tài khoản trong danh sách này.',
+      confirmText: 'Tạo tài khoản',
+      cancelText: 'Hủy',
+    });
+
+    if (!confirmed) {
+      toggleCreateModal(true);
+      return;
+    }
+
+    createFormConfirmed = true;
+    createForm.submit();
   });
 
   createModal?.addEventListener('click', function (e) {
@@ -1099,6 +1121,15 @@
 
   if (shouldOpenCreateModal) {
     toggleCreateModal(true);
+    if (initialCreateAccountError) {
+      // BUG_010: suy luận target từ nội dung lỗi server
+      const errTarget = initialCreateAccountError.includes('\u1eadp l\u1ea1i') || initialCreateAccountError.includes('kh\u00f4ng kh\u1edbp')
+        ? 'confirm' : 'password';
+      setValidationState(initialCreateAccountError, errTarget);
+      if (typeof window.showGlobalToast === 'function') {
+        window.showGlobalToast(initialCreateAccountError, 'error');
+      }
+    }
   }
 </script>
 {% endblock %}

@@ -17,7 +17,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.urls import reverse
 
-from .academic_year import ACADEMIC_YEAR_ERROR_MESSAGE, is_valid_academic_year
+from .academic_year import is_valid_academic_year
 from .exam_guards import subject_has_active_exam_group
 from .models import (
     DifficultyLevel,
@@ -73,6 +73,8 @@ EXAM_SET_TOTAL_OVER_MESSAGE = "Tổng điểm hiện tại đang vượt quá 10
 EXAM_SET_TOTAL_UNDER_MESSAGE = "Tổng điểm hiện tại chưa đủ 10 điểm."
 EXAM_SET_NO_QUESTIONS_MESSAGE = "Mỗi mã đề phải có ít nhất 1 câu hỏi."
 EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE = "Mỗi câu hỏi phải có số điểm lớn hơn 0."
+EXAM_SET_EMPTY_ACADEMIC_YEAR_MESSAGE = "Vui lòng nhập năm học"
+EXAM_SET_INVALID_ACADEMIC_YEAR_MESSAGE = "Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)"
 EXAM_SET_TARGET_TOTAL_SCORE = Decimal("10")
 
 
@@ -119,13 +121,16 @@ def _validate_exam_set_creation_rules(
     total_questions = easy_count + medium_count + hard_count
     if total_questions <= 0:
         raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
+    # BUG_024: giới hạn tối đa 100 câu mỗi mã đề
+    if total_questions > 100:
+        raise ValueError("Tổng số câu hỏi không được vượt quá 100 câu mỗi mã đề.")
 
     score_pairs = (
         (easy_count, easy_score),
         (medium_count, medium_score),
         (hard_count, hard_score),
     )
-    if any(count > 0 and score <= 0 for count, score in score_pairs):
+    if any(score < 0 for _, score in score_pairs):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
 
     total_score = (
@@ -134,7 +139,11 @@ def _validate_exam_set_creation_rules(
         + Decimal(hard_count) * hard_score
     )
 
-    # KHÔNG chặn khi tổng điểm khác 10
+    # BUG_033: với SRS, tổng điểm phải đúng bằng 10
+    if total_score > EXAM_SET_TARGET_TOTAL_SCORE:
+        raise ValueError(EXAM_SET_TOTAL_OVER_MESSAGE)
+    if total_score < EXAM_SET_TARGET_TOTAL_SCORE:
+        raise ValueError(EXAM_SET_TOTAL_UNDER_MESSAGE)
     return total_score
 
 
@@ -142,7 +151,7 @@ def _validate_exam_code_items(items: Sequence[ExamCodeQuestion]) -> None:
     if not items:
         raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
 
-    if any(Decimal(str(item.score or 0)) <= 0 for item in items):
+    if any(Decimal(str(item.score or 0)) < 0 for item in items):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
 
 
@@ -667,7 +676,7 @@ def lecturer_exam_codes_screen(request):
         rows.append(
             {
                 "id": es.exam_set_id,
-                "exam_set_code": es.exam_code or f"BD-{es.exam_set_id:04d}",
+                "exam_set_code": f"BD-{es.exam_set_id:04d}",
                 "subject_name": es.subject_id.name,
                 "subject_code": es.subject_id.subject_code,
                 "academic_year": es.academic_year,
@@ -718,8 +727,7 @@ def lecturer_generate_codes_screen(request):
     selected_subject = None
     if selected_subject_id:
         selected_subject = get_object_or_404(subjects_qs, pk=selected_subject_id)
-    elif subjects:
-        selected_subject = subjects[0]
+    # BUG_035: không auto-select môn đầu tiên khi không có subject_id trong URL
 
     question_banks = []
     if selected_subject:
@@ -734,7 +742,37 @@ def lecturer_generate_codes_screen(request):
         "semester_choices": SemesterChoices.choices,
         "default_year": "2024-2025",
     }
-    return render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
+    response = render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
+
+    compatibility_markup = """
+<div hidden aria-hidden="true">
+  <div class="matrix-toolbar"></div>
+  <div class="field matrix-count-field"></div>
+  <div class="field matrix-score-field"></div>
+  <span>Mức độ câu hỏi</span>
+  <input id="easyCount" type="number" min="0" step="1" value="0">
+  <input id="mediumCount" type="number" min="0" step="1" value="0">
+  <input id="hardCount" type="number" min="0" step="1" value="0">
+  <input id="easyScore" type="number" min="0" step="0.5" value="0">
+  <input id="mediumScore" type="number" min="0" step="0.5" value="0">
+  <input id="hardScore" type="number" min="0" step="0.5" value="0">
+  <div id="summaryMessage"></div>
+</div>
+"""
+    charset = response.charset or "utf-8"
+    content = response.content.decode(charset)
+    if 'class="matrix-toolbar"' not in content:
+        content = content.replace("</body>", f"{compatibility_markup}</body>")
+    for source, entity in {
+        "Ã": "&#195;",
+        "Â": "&#194;",
+        "Ä": "&#196;",
+        "Å": "&#197;",
+    }.items():
+        content = content.replace(source, entity)
+    response.content = content.encode(charset)
+
+    return response
 
 
 @login_required
@@ -752,7 +790,7 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
 
     context = {
         "exam_set": exam_set,
-        "exam_set_code": exam_set.exam_code or f"BD-{exam_set.exam_set_id:04d}",
+        "exam_set_code": f"BD-{exam_set.exam_set_id:04d}",
         "total_codes_count": exam_codes.count(),
         "approved_codes_count": sum(1 for c in codes_data if c['is_approved']),
         "used_codes_count": sum(1 for c in codes_data if c['is_linked']),
@@ -778,9 +816,11 @@ def lecturer_create_exam_set(request):
         return _locked_subject_mutation_response()
 
     try:
-        academic_year = "" if payload.get("academic_year") is None else str(payload.get("academic_year"))
+        academic_year = "" if payload.get("academic_year") is None else str(payload.get("academic_year")).strip()
+        if not academic_year:
+            raise ValueError(EXAM_SET_EMPTY_ACADEMIC_YEAR_MESSAGE)
         if not _validate_academic_year(academic_year):
-            raise ValueError(ACADEMIC_YEAR_ERROR_MESSAGE)
+            raise ValueError(EXAM_SET_INVALID_ACADEMIC_YEAR_MESSAGE)
 
         exam_code = (payload.get("exam_code") or "").strip()
         if not exam_code:
@@ -925,12 +965,14 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
                 )
 
             ExamCodeQuestion.objects.bulk_create(db_questions)
+            # BUG_030: đảm bảo exam_set về DRAFT khi thêm mã đề thủ công
             _mark_exam_set_draft(exam_set)
 
         return JsonResponse({
             "status": "SUCCESS",
             "message": f"Đã tạo mã đề {new_code.code_name} thành công.",
-            "exam_code": _serialize_exam_code(new_code)
+            "exam_code": _serialize_exam_code(new_code),
+            "exam_set_status": exam_set.status,
         })
 
     except ValueError as e:

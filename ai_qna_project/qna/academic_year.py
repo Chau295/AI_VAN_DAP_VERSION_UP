@@ -9,3 +9,8 @@ ACADEMIC_YEAR_ERROR_MESSAGE = "Năm học phải đúng định dạng xxxx-xxxx
 
 def is_valid_academic_year(value: str) -> bool:
     return bool(ACADEMIC_YEAR_PATTERN.fullmatch(str(value or "")))
+
+
+def sanitize_academic_year_for_display(value: str) -> str:
+    cleaned = str(value or "").strip()
+    return cleaned if is_valid_academic_year(cleaned) else ""

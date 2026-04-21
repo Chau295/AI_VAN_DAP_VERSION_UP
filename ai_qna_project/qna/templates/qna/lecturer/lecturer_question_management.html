@@ -227,13 +227,6 @@
     color: #334155;
   }
 
-  .qm2-help-error {
-    min-height: 18px;
-    margin-top: 6px;
-    color: var(--red);
-    font-size: 12px;
-  }
-
   .qm2-subject-bar {
     display: flex;
     align-items: flex-end;
@@ -267,6 +260,12 @@
   .qm2-bank-tile:hover {
     border-color: #b8c9e6;
     background: #f1f6ff;
+  }
+
+  /* BUG_020: prevent layout break on long bank names */
+  .qm2-bank-tile > div:not(.qm2-bank-icon) {
+    min-width: 0;
+    overflow: hidden;
   }
 
   .qm2-bank-icon {
@@ -504,8 +503,6 @@
 
   .qm2-chip.active { color: var(--blue); border-color: var(--blue); background: #eef4ff; }
   .qm2-ai-status { margin-top: 8px; color: var(--blue); font-size: 12px; min-height: 18px; }
-  .qm2-ai-error { margin-top: 8px; color: var(--red); font-size: 12px; min-height: 18px; }
-
   .qm2-question-panel {
     position: relative;
   }
@@ -805,28 +802,6 @@
     border-radius: inherit;
     transition: width 0.3s ease, background-color 0.3s ease;
   }
-
-  .qm2-state-toast {
-    position: fixed;
-    right: 24px;
-    top: 26px;
-    z-index: 80;
-    min-width: 280px;
-    max-width: 360px;
-    padding: 14px 16px;
-    border-radius: 12px;
-    background: #fff;
-    border-left: 4px solid var(--green);
-    box-shadow: 0 18px 36px rgba(15, 23, 42, .12);
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-  }
-
-  .qm2-state-toast.show { display: flex; }
-  .qm2-state-toast.error { border-left-color: var(--red); }
-  .qm2-state-toast.warning { border-left-color: var(--amber); }
 
   .qm2-radio-group {
     display: flex;
@@ -1160,7 +1135,7 @@
           class="qm2-back-delete"
           type="button"
           id="deleteBankBtnTop"
-          onclick="toggleModal('deleteBankModal', true)"
+          onclick="confirmDeleteBank()"
         >
           <i class="far fa-trash-alt"></i>
           <span>Xóa ngân hàng</span>
@@ -1212,7 +1187,6 @@
               <input class="qm2-slider" id="questionCountRange" type="range" min="1" max="100" value="50">
               <div class="qm2-slider-value" id="questionCountValue">50</div>
             </div>
-            <div class="qm2-help-error" id="questionCountError"></div>
 
             <div style="margin-top:18px;">
               <label class="qm2-label">Mức độ</label>
@@ -1229,7 +1203,6 @@
               <span>Tạo câu hỏi</span>
             </button>
             <div class="qm2-ai-status" id="aiGenerateStatus"></div>
-            <div class="qm2-ai-error" id="aiConfigError"></div>
           </div>
         </div>
       </div>
@@ -1291,7 +1264,7 @@
           <button class="qm2-bulk-action" type="button" onclick="toggleModal('changeLevelModal', true)">
             <i class="far fa-copy"></i><span>Thay đổi mức độ</span>
           </button>
-          <button class="qm2-bulk-action danger" type="button" onclick="toggleModal('deleteModal', true)">
+          <button class="qm2-bulk-action danger" type="button" onclick="requestQuestionDeletion()">
             <i class="far fa-trash-alt"></i><span>Xóa</span>
           </button>
           <div class="divider"></div>
@@ -1301,11 +1274,6 @@
     </div>
     {% endif %}
   </div>
-</div>
-
-<div class="qm2-state-toast" id="stateToast">
-  <div id="stateToastMessage">Thành công</div>
-  <button class="qm2-dialog-close" type="button" onclick="hideToast()">×</button>
 </div>
 
 <div class="qm2-modal" id="uploadModal">
@@ -1328,7 +1296,6 @@
           </div>
         </div>
       </div>
-      <div class="qm2-help-error" id="uploadError" style="text-align: center; margin-top: 10px;"></div>
       <div class="qm2-upload-list" id="uploadList"></div>
     </div>
   </div>
@@ -1349,20 +1316,6 @@
     <div class="qm2-dialog-foot">
       <button class="qm2-btn qm2-btn-outline" type="button" onclick="toggleModal('changeLevelModal', false)">Hủy bỏ</button>
       <button class="qm2-btn qm2-btn-green" type="button" id="confirmBulkLevelBtn">Thay đổi</button>
-    </div>
-  </div>
-</div>
-
-<div class="qm2-modal" id="deleteModal">
-  <div class="qm2-dialog sm">
-    <div class="qm2-dialog-body" style="padding-top:34px;text-align:center;">
-      <div style="font-size:34px;color:#dc2626;margin-bottom:14px;"><i class="far fa-trash-alt"></i></div>
-      <h3 style="margin:0;font-size:18px;color:var(--text);">Bạn có chắc chắn muốn xóa câu hỏi?</h3>
-      <p style="margin:10px 0 0;color:var(--muted);">Câu hỏi được xóa sẽ không thể khôi phục lại!</p>
-    </div>
-    <div class="qm2-dialog-foot" style="justify-content:center;padding-top:0;">
-      <button class="qm2-btn qm2-btn-outline" type="button" onclick="toggleModal('deleteModal', false)">Hủy bỏ</button>
-      <button class="qm2-btn qm2-btn-danger" type="button" id="confirmDeleteBtn">Xóa</button>
     </div>
   </div>
 </div>
@@ -1397,7 +1350,6 @@
       <div>
         <label class="qm2-label" style="font-weight: 600; color: #334155; margin-bottom: 10px;">Nội dung câu hỏi <span style="color: var(--red);">*</span></label>
         <textarea class="qm2-editor" id="manualQuestionText" placeholder="Ví dụ: Hãy phân tích quy trình..." style="min-height: 120px; font-size: 15px; line-height: 1.5;"></textarea>
-        <div class="qm2-help-error" id="manualQuestionError"></div>
       </div>
     </div>
     <div class="qm2-dialog-foot">
@@ -1410,56 +1362,14 @@
 <div class="qm2-modal" id="saveBankModal">
   <div class="qm2-dialog sm">
     <div class="qm2-dialog-body" style="padding-top:28px;">
-      <h3 style="margin:0 0 18px;text-align:center;font-size:18px;color:#15803d;">Chọn ngân hàng câu hỏi!</h3>
+      <h3 style="margin:0 0 18px;text-align:center;font-size:18px;color:#15803d;">Đặt tên cho ngân hàng câu hỏi!</h3>
       <input class="qm2-input" type="text" placeholder="Ví dụ: Ngân hàng thi cuối kỳ" id="bankNameInput">
-      <div class="qm2-help-error" id="bankNameError">&nbsp;</div>
     </div>
     <div class="qm2-dialog-foot" style="justify-content:center;padding-top:0;">
       <button class="qm2-btn qm2-btn-outline" type="button" onclick="toggleModal('saveBankModal', false)">Hủy bỏ</button>
       <button class="qm2-btn qm2-btn-green" type="button" id="confirmSaveBankBtn">Lưu</button>
     </div>
 
-  </div>
-</div>
-
-<div class="qm2-modal" id="deleteBankModal">
-  <div class="qm2-dialog sm">
-    <div class="qm2-dialog-head">
-      <div>
-        <h3>Xóa ngân hàng câu hỏi</h3>
-        <p>Vui lòng xác nhận trước khi thực hiện thao tác này</p>
-      </div>
-      <button class="qm2-dialog-close" type="button" onclick="toggleModal('deleteBankModal', false)">×</button>
-    </div>
-
-    <div class="qm2-dialog-body">
-      <div class="qm2-danger-box">
-        <div class="qm2-danger-box-icon">
-          <i class="fas fa-triangle-exclamation"></i>
-        </div>
-        <div class="qm2-danger-box-content">
-          <h4>Bạn có chắc chắn muốn xóa ngân hàng này?</h4>
-          <p>
-            Toàn bộ câu hỏi và dữ liệu liên quan trong ngân hàng này sẽ bị xóa vĩnh viễn
-            và không thể hoàn tác.
-          </p>
-        </div>
-      </div>
-
-      <div class="qm2-danger-note">
-        Hãy chỉ xóa khi bạn chắc chắn ngân hàng này không còn được sử dụng nữa.
-      </div>
-    </div>
-
-    <div class="qm2-dialog-foot centered">
-      <button class="qm2-btn qm2-btn-outline" type="button" onclick="toggleModal('deleteBankModal', false)">
-        Hủy bỏ
-      </button>
-      <button class="qm2-btn qm2-btn-danger" type="button" onclick="confirmDeleteBank()">
-        <i class="far fa-trash-alt"></i>
-        <span>Xóa ngân hàng</span>
-      </button>
-    </div>
   </div>
 </div>
 
@@ -1556,23 +1466,26 @@
     });
   });
 
-  const stateToast = document.getElementById('stateToast');
-  const stateToastMessage = document.getElementById('stateToastMessage');
-
   function showToast(message, type='success') {
-    if (!stateToast) return;
-    stateToastMessage.textContent = message;
-    stateToast.classList.remove('error', 'warning');
-    if (type !== 'success') stateToast.classList.add(type);
-    stateToast.classList.add('show');
-    window.clearTimeout(window.__qm2ToastTimer);
-    window.__qm2ToastTimer = window.setTimeout(hideToast, 5000);
+    if (typeof window.showGlobalToast === 'function' && message) {
+      window.showGlobalToast(message, type);
+    }
   }
 
-  function hideToast() {
-    if (stateToast) stateToast.classList.remove('show');
+  async function showConfirm(options) {
+    if (typeof window.showGlobalConfirm === 'function') {
+      return window.showGlobalConfirm(options);
+    }
+    return true;
   }
-  window.hideToast = hideToast;
+
+  async function confirmUploadFiles(files) {
+    const count = Array.isArray(files) ? files.length : 0;
+    if (!count) {
+      return false;
+    }
+    return true;
+  }
 
   function getSelectedDocIds() {
     return Array.from(document.querySelectorAll('.doc-checkbox:checked')).map(el => Number(el.value));
@@ -1598,8 +1511,14 @@
     const selectedIds = getSelectedDocIds();
     if (selectedIds.length === 0) return;
 
-    const ok = window.confirm(`Bạn có chắc muốn xóa vĩnh viễn ${selectedIds.length} tài liệu đã chọn không?`);
-    if (!ok) return;
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa tài liệu',
+      message: `Bạn có chắc muốn xóa vĩnh viễn ${selectedIds.length} tài liệu đã chọn không?`,
+      confirmText: 'Xóa',
+      cancelText: 'Hủy bỏ',
+      danger: true,
+    });
+    if (!confirmed) return;
 
     try {
       showToast(`Đang xóa ${selectedIds.length} tài liệu...`);
@@ -1688,8 +1607,14 @@
     const materialId = btn.dataset.documentId;
     if (!materialId) return;
 
-    const ok = window.confirm('Bạn có chắc muốn xóa tài liệu này không?');
-    if (!ok) return;
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa tài liệu',
+      message: 'Bạn có chắc muốn xóa tài liệu này không?',
+      confirmText: 'Xóa',
+      cancelText: 'Hủy bỏ',
+      danger: true,
+    });
+    if (!confirmed) return;
 
     if (!apiDeleteMaterialTemplate) {
       showToast('Thiếu cấu hình API xóa tài liệu.', 'error');
@@ -1715,11 +1640,9 @@
 
   function openUploadModal() {
     const uploadList = document.getElementById('uploadList');
-    const uploadError = document.getElementById('uploadError');
     const fileInput = document.getElementById('uploadFileInput');
 
     if (uploadList) uploadList.innerHTML = '';
-    if (uploadError) uploadError.textContent = '';
     if (fileInput) fileInput.value = '';
     toggleModal('uploadModal', true);
   }
@@ -1810,8 +1733,9 @@
     textEl.style.color = 'var(--red)';
     barEl.style.backgroundColor = 'var(--red)';
     barEl.style.width = '100%';
-    errorEl.textContent = message;
-    errorEl.style.display = 'block';
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+    showToast(message, 'error');
   }
 
   function getSelectedQuestionIds() {
@@ -1894,7 +1818,7 @@
             <div class="qm2-question-content">${escapeHtml(q.content)}</div>
             <div class="qm2-question-extra">
               ${draftBadge}
-              <span>${escapeHtml(q.created_at || '')}</span>
+              <span>${escapeHtml(q.updated_at || q.created_at || '')}</span>
             </div>
           </div>
           <div class="qm2-edit-mode" style="display:none;">
@@ -2056,10 +1980,33 @@
 
     document.querySelectorAll('.delete-question-btn').forEach(btn => {
       btn.addEventListener('click', function () {
-        deletingQuestionId = this.dataset.questionId;
-        toggleModal('deleteModal', true);
+        requestQuestionDeletion(this.dataset.questionId);
       });
     });
+  }
+
+  async function requestQuestionDeletion(questionId = null) {
+    const ids = questionId ? [Number(questionId)] : getSelectedQuestionIds();
+    if (!ids.length) {
+      showToast('Bạn chưa chọn câu hỏi.', 'warning');
+      return;
+    }
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa câu hỏi',
+      message: ids.length === 1
+        ? 'Câu hỏi được xóa sẽ không thể khôi phục lại.'
+        : `Bạn có chắc chắn muốn xóa ${ids.length} câu hỏi đã chọn không?`,
+      confirmText: 'Xóa',
+      cancelText: 'Hủy bỏ',
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    deletingQuestionId = questionId ? Number(questionId) : null;
+    await handleBulkDelete();
   }
 
   function updateSummary(summary) {
@@ -2093,7 +2040,10 @@
           showToast(options.successMessage, 'success');
         }
       } else {
-        showToast(data.message || 'Lưu không thành công', 'error');
+        // BUG_012 + BUG_013: silent suppresses error; correct message
+        if (!options.silent) {
+          showToast(data.message || 'Không thể tải danh sách ngân hàng câu hỏi.', 'error');
+        }
       }
     } catch (err) {
       showToast('Lỗi kết nối API', 'error');
@@ -2166,7 +2116,6 @@
 
   function validateGenerateConfig() {
     const questionCountRange = document.getElementById('questionCountRange');
-    const questionCountError = document.getElementById('questionCountError');
     const generateAiBtn = document.getElementById('generateAiBtn');
     if (!questionCountRange || !generateAiBtn) return;
 
@@ -2177,7 +2126,8 @@
     if (val < 1 || val > 100) error = 'Số lượng không hợp lệ';
     else if (checkedDocs === 0) error = 'Vui lòng chọn ít nhất 1 tài liệu nguồn';
 
-    questionCountError.textContent = error;
+    generateAiBtn.dataset.validationError = error;
+    generateAiBtn.title = error;
     generateAiBtn.disabled = !!error;
   }
 
@@ -2193,16 +2143,18 @@
 
   async function startGenerateQuestions() {
     const totalCountRange = document.getElementById('questionCountRange');
-    const aiConfigError = document.getElementById('aiConfigError');
     const aiGenerateStatus = document.getElementById('aiGenerateStatus');
     const btn = document.getElementById('generateAiBtn');
     const documentIds = getSelectedDocIds();
     const totalCount = Number(totalCountRange?.value || 0);
 
-    aiConfigError.textContent = '';
     if (aiGenerateStatus) aiGenerateStatus.textContent = '';
+    if (btn?.dataset.validationError) {
+      showToast(btn.dataset.validationError, 'error');
+      return;
+    }
     if (!documentIds.length) {
-      aiConfigError.textContent = 'Vui lòng chọn ít nhất 1 tài liệu.';
+      showToast('Vui lòng chọn ít nhất 1 tài liệu.', 'error');
       return;
     }
 
@@ -2270,7 +2222,7 @@
       await fetchQuestions();
     } catch (err) {
       if (aiGenerateStatus) aiGenerateStatus.textContent = '';
-      aiConfigError.textContent = err.message || 'Tạo câu hỏi thất bại.';
+      showToast(err.message || 'Tạo câu hỏi thất bại.', 'error');
     } finally {
       btn.classList.remove('is-loading');
       btn.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i><span>Tạo câu hỏi</span>';
@@ -2328,18 +2280,17 @@
 
   async function handleManualQuestionSave() {
     const textarea = document.getElementById('manualQuestionText');
-    const errEl = document.getElementById('manualQuestionError');
     const content = textarea?.value?.trim() || '';
     const level = document.querySelector('input[name="questionLevel"]:checked')?.value || 'MEDIUM';
-    errEl.textContent = '';
 
     if (!content) {
-      errEl.textContent = 'Nội dung câu hỏi không được để trống.';
+      showToast('Nội dung câu hỏi không được để trống.', 'error');
       return;
     }
 
     try {
       const isEditing = !!editingQuestionId;
+
       const url = isEditing ? `/api/lecturer/questions/${editingQuestionId}/update/` : apiManualQuestion;
       const bodyData = isEditing
         ? { content, difficulty: level, workspace_id: workspaceId, view_type: viewType }
@@ -2363,7 +2314,7 @@
       showToast(isEditing ? 'Cập nhật thành công' : 'Tạo câu hỏi thành công');
       await fetchQuestions();
     } catch (err) {
-      errEl.textContent = err.message || 'Thao tác thất bại.';
+      showToast(err.message || 'Thao tác thất bại.', 'error');
     }
   }
 
@@ -2423,7 +2374,6 @@
       if (data.status !== 'SUCCESS') throw new Error(data.message || 'Xóa thất bại.');
 
       deletingQuestionId = null;
-      toggleModal('deleteModal', false);
       showToast('Xóa thành công');
       clearQuestionSelection();
       await fetchQuestions();
@@ -2440,9 +2390,6 @@
     }
 
     if (viewType === 'bank') {
-      const ok = window.confirm(`Cập nhật ngân hàng hiện tại?`);
-      if (!ok) return;
-
       try {
         showToast('Đang cập nhật ngân hàng...');
         const saveUrl = apiSaveBankTemplate.replace('999999', String(currentBankId));
@@ -2480,26 +2427,25 @@
       return;
     }
 
+    // BUG_011: trường tên phải trống để user tự nhập
     const bankNameInput = document.getElementById('bankNameInput');
-    if (bankNameInput) bankNameInput.value = `Ngân hàng câu hỏi - ${subjectCode || selectedSubjectId}`;
+    if (bankNameInput) bankNameInput.value = '';
     toggleModal('saveBankModal', true);
   }
   window.handleSaveBank = handleSaveBank;
 
   async function confirmSaveBank() {
     const input = document.getElementById('bankNameInput');
-    const errEl = document.getElementById('bankNameError');
     const name = input?.value?.trim() || '';
-    errEl.textContent = '';
 
     if (!name) {
-      errEl.textContent = 'Tên ngân hàng không được để trống.';
+      showToast('Tên ngân hàng không được để trống.', 'error');
       return;
     }
 
     const ids = getSelectedQuestionIds();
     if (ids.length === 0) {
-      errEl.textContent = 'Vui lòng chọn ít nhất 1 câu hỏi để lưu.';
+      showToast('Vui lòng chọn ít nhất 1 câu hỏi để lưu.', 'warning');
       return;
     }
 
@@ -2543,13 +2489,24 @@
         window.location.href = `${listUrl}?subject_id=${selectedSubjectId}&bank_id=${newBankId}&mode=detail&view=bank`;
       }, 600);
     } catch (err) {
-      errEl.textContent = err.message;
+      showToast(err.message, 'error');
     }
   }
 
   async function confirmDeleteBank() {
     if (!currentBankId) {
       showToast('Không tìm thấy ngân hàng để xóa.', 'error');
+      return;
+    }
+
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa ngân hàng câu hỏi',
+      message: 'Toàn bộ câu hỏi và dữ liệu liên quan trong ngân hàng này sẽ bị xóa vĩnh viễn và không thể hoàn tác.',
+      confirmText: 'Xóa ngân hàng',
+      cancelText: 'Hủy bỏ',
+      danger: true,
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -2578,7 +2535,6 @@
         throw new Error(data.message || 'Xóa ngân hàng thất bại.');
       }
 
-      toggleModal('deleteBankModal', false);
       showToast('Xóa ngân hàng thành công!');
 
       setTimeout(() => {
@@ -2589,8 +2545,6 @@
       showToast(err.message || 'Có lỗi xảy ra khi xóa ngân hàng.', 'error');
     }
   }
-  window.confirmDeleteBank = confirmDeleteBank;
-
   function initSegments() {
     document.querySelectorAll('#levelSegment .qm2-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2661,7 +2615,6 @@
     const uploadFileInput = document.getElementById('uploadFileInput');
     const saveManualQuestionBtn = document.getElementById('saveManualQuestionBtn');
     const confirmBulkLevelBtn = document.getElementById('confirmBulkLevelBtn');
-    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
     const confirmSaveBankBtn = document.getElementById('confirmSaveBankBtn');
     const exportWordBtn = document.getElementById('exportWordBtn');
     const openAddQuestionModalBtn = document.getElementById('openAddQuestionModalBtn');
@@ -2707,8 +2660,13 @@
       dropZone.addEventListener('drop', async (e) => {
         const files = e.dataTransfer.files;
         if (files.length > 0) {
+          const fileList = Array.from(files);
+          const confirmed = await confirmUploadFiles(fileList);
+          if (!confirmed) {
+            return;
+          }
           uploadFileInput.files = files;
-          for (let i = 0; i < files.length; i++) await handleUploadFile(files[i]);
+          for (let i = 0; i < fileList.length; i++) await handleUploadFile(fileList[i]);
           uploadFileInput.value = '';
         }
       }, false);
@@ -2716,7 +2674,13 @@
       uploadFileInput.addEventListener('change', async (e) => {
         const files = e.target.files;
         if (files && files.length > 0) {
-          for (let i = 0; i < files.length; i++) await handleUploadFile(files[i]);
+          const fileList = Array.from(files);
+          const confirmed = await confirmUploadFiles(fileList);
+          if (!confirmed) {
+            uploadFileInput.value = '';
+            return;
+          }
+          for (let i = 0; i < fileList.length; i++) await handleUploadFile(fileList[i]);
           uploadFileInput.value = '';
         }
       });
@@ -2735,7 +2699,6 @@
 
     if (saveManualQuestionBtn) saveManualQuestionBtn.addEventListener('click', handleManualQuestionSave);
     if (confirmBulkLevelBtn) confirmBulkLevelBtn.addEventListener('click', handleBulkLevelChange);
-    if (confirmDeleteBtn) confirmDeleteBtn.addEventListener('click', handleBulkDelete);
     if (confirmSaveBankBtn) confirmSaveBankBtn.addEventListener('click', confirmSaveBank);
 
     // Xử lý nút xuất Word (Có thể giữ hoặc bỏ tùy nhu cầu)

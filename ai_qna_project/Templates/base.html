@@ -286,8 +286,43 @@
         .global-toast.error { border-left-color: #ef4444; }
         .global-toast.warning { border-left-color: #f59e0b; }
         .global-toast.info { border-left-color: #3b82f6; }
+        .global-toast-content { flex: 1; }
+        .global-toast-title { display: block; margin-bottom: 2px; font-size: 14px; font-weight: 700; color: #0f172a; }
+        .global-toast-message { display: block; font-size: 14px; font-weight: 500; line-height: 1.55; color: #334155; }
         .global-toast-close { border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 16px; line-height: 1; padding: 0; }
         .global-toast-close:hover { color: #334155; }
+        .global-confirm-backdrop {
+            position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center;
+            padding: 24px; background: rgba(15, 23, 42, 0.46);
+        }
+        .global-confirm-backdrop.open { display: flex; }
+        .global-confirm-dialog {
+            width: min(520px, 100%); overflow: hidden; border-radius: 22px; background: #fff;
+            border: 1px solid rgba(226, 232, 240, 0.95); box-shadow: 0 28px 60px rgba(15, 23, 42, 0.25);
+        }
+        .global-confirm-body { padding: 28px 28px 20px; }
+        .global-confirm-badge {
+            display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px;
+            border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 800;
+            letter-spacing: .08em; text-transform: uppercase;
+        }
+        .global-confirm-backdrop[data-mode="danger"] .global-confirm-badge { background: #fee2e2; color: #b91c1c; }
+        .global-confirm-title { margin: 18px 0 10px; color: #0f172a; font-size: 26px; font-weight: 800; line-height: 1.25; }
+        .global-confirm-message { margin: 0; color: #475569; font-size: 15px; line-height: 1.7; white-space: pre-line; }
+        .global-confirm-actions {
+            display: flex; justify-content: flex-end; gap: 12px; padding: 18px 28px 24px;
+            background: #f8fafc; border-top: 1px solid #e2e8f0;
+        }
+        .global-confirm-btn {
+            min-width: 132px; padding: 12px 18px; border-radius: 12px; border: 1px solid #cbd5e1;
+            font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s ease;
+        }
+        .global-confirm-btn.cancel { background: #fff; color: #334155; }
+        .global-confirm-btn.cancel:hover { background: #f8fafc; }
+        .global-confirm-btn.confirm { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .global-confirm-btn.confirm:hover { background: #1d4ed8; border-color: #1d4ed8; }
+        .global-confirm-backdrop[data-mode="danger"] .global-confirm-btn.confirm { background: #dc2626; border-color: #dc2626; }
+        .global-confirm-backdrop[data-mode="danger"] .global-confirm-btn.confirm:hover { background: #b91c1c; border-color: #b91c1c; }
 
         @keyframes globalToastIn {
             from { opacity: 0; transform: translateX(24px); }
@@ -297,6 +332,10 @@
         @media (max-width: 640px) {
             .global-toast-stack { top: 16px; left: 16px; right: 16px; }
             .global-toast { min-width: 0; max-width: none; width: 100%; }
+            .global-confirm-backdrop { padding: 16px; }
+            .global-confirm-title { font-size: 22px; }
+            .global-confirm-actions { flex-direction: column-reverse; }
+            .global-confirm-btn { width: 100%; }
         }
     </style>
 </head>
@@ -443,11 +482,33 @@
                             class="global-toast {% if 'error' in message.tags %}error{% elif 'warning' in message.tags %}warning{% elif 'info' in message.tags %}info{% else %}success{% endif %}"
                             data-global-toast
                         >
-                            <div>{{ message }}</div>
+                            <div class="global-toast-content">
+                                <span class="global-toast-message">{{ message }}</span>
+                            </div>
                             <button type="button" class="global-toast-close" aria-label="Đóng">&times;</button>
                         </div>
                     {% endfor %}
                 {% endif %}
+            </div>
+
+            <div class="global-confirm-backdrop" id="globalConfirmBackdrop" data-mode="default" aria-hidden="true">
+                <div
+                    class="global-confirm-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="globalConfirmTitle"
+                    aria-describedby="globalConfirmMessage"
+                >
+                    <div class="global-confirm-body">
+                        <span class="global-confirm-badge" id="globalConfirmBadge">Xác nhận</span>
+                        <h3 class="global-confirm-title" id="globalConfirmTitle">Xác nhận thao tác</h3>
+                        <p class="global-confirm-message" id="globalConfirmMessage"></p>
+                    </div>
+                    <div class="global-confirm-actions">
+                        <button type="button" class="global-confirm-btn cancel" id="globalConfirmCancel">Hủy</button>
+                        <button type="button" class="global-confirm-btn confirm" id="globalConfirmAccept">Xác nhận</button>
+                    </div>
+                </div>
             </div>
 
             {% block content %}{% endblock %}
@@ -737,7 +798,24 @@
                 toast.setAttribute("data-global-toast", "");
 
                 const content = document.createElement("div");
-                content.textContent = message;
+                content.className = "global-toast-content";
+
+                const options =
+                    message && typeof message === "object" && !Array.isArray(message)
+                        ? message
+                        : { message: String(message || "") };
+
+                if (options.title) {
+                    const titleEl = document.createElement("span");
+                    titleEl.className = "global-toast-title";
+                    titleEl.textContent = options.title;
+                    content.appendChild(titleEl);
+                }
+
+                const messageEl = document.createElement("span");
+                messageEl.className = "global-toast-message";
+                messageEl.textContent = options.message || "";
+                content.appendChild(messageEl);
 
                 const closeBtn = document.createElement("button");
                 closeBtn.type = "button";
@@ -754,19 +832,96 @@
                 root.querySelectorAll("[data-global-toast]").forEach(bindToast);
             };
 
-            window.showGlobalToast = function (message, type = "success") {
+            window.clearGlobalToasts = function (type = null) {
+                const selector = type
+                    ? `.global-toast.${normalizeToastType(type)}`
+                    : ".global-toast";
+                document.querySelectorAll(selector).forEach(removeToast);
+            };
+
+            window.showGlobalToast = function (message, type = "success", options = {}) {
                 const stack = document.getElementById("globalToastStack");
-                if (!stack || !message) {
+                const payload =
+                    message && typeof message === "object" && !Array.isArray(message)
+                        ? message
+                        : { ...options, message };
+
+                if (!stack || !payload.message) {
                     return null;
                 }
 
-                const toast = createToast(message, type);
+                const toast = createToast(payload, type);
                 stack.appendChild(toast);
                 bindToast(toast);
                 return toast;
             };
 
             window.initGlobalToasts(document);
+        })();
+
+        (function () {
+            const backdrop = document.getElementById("globalConfirmBackdrop");
+            const titleEl = document.getElementById("globalConfirmTitle");
+            const messageEl = document.getElementById("globalConfirmMessage");
+            const badgeEl = document.getElementById("globalConfirmBadge");
+            const cancelBtn = document.getElementById("globalConfirmCancel");
+            const confirmBtn = document.getElementById("globalConfirmAccept");
+            let activeResolver = null;
+
+            function finishConfirm(result) {
+                if (!backdrop) {
+                    return;
+                }
+
+                backdrop.classList.remove("open");
+                backdrop.setAttribute("aria-hidden", "true");
+                const resolver = activeResolver;
+                activeResolver = null;
+                if (resolver) {
+                    resolver(result);
+                }
+            }
+
+            window.closeGlobalConfirm = function () {
+                finishConfirm(false);
+            };
+
+            window.showGlobalConfirm = function (options = {}) {
+                if (!backdrop) {
+                    return Promise.resolve(false);
+                }
+
+                if (activeResolver) {
+                    finishConfirm(false);
+                }
+
+                const payload = typeof options === "string" ? { message: options } : options;
+                titleEl.textContent = payload.title || "Xác nhận thao tác";
+                messageEl.textContent = payload.message || "";
+                badgeEl.textContent = payload.badge || "Xác nhận";
+                cancelBtn.textContent = payload.cancelText || "Hủy";
+                confirmBtn.textContent = payload.confirmText || "Xác nhận";
+                backdrop.dataset.mode = payload.danger ? "danger" : "default";
+                backdrop.classList.add("open");
+                backdrop.setAttribute("aria-hidden", "false");
+
+                return new Promise((resolve) => {
+                    activeResolver = resolve;
+                });
+            };
+
+            cancelBtn?.addEventListener("click", () => finishConfirm(false));
+            confirmBtn?.addEventListener("click", () => finishConfirm(true));
+            backdrop?.addEventListener("click", (event) => {
+                if (event.target === backdrop) {
+                    finishConfirm(false);
+                }
+            });
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape" && backdrop?.classList.contains("open")) {
+                    finishConfirm(false);
+                }
+            });
         })();
     </script>
 </body>

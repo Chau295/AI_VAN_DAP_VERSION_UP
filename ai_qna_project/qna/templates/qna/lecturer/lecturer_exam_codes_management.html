@@ -312,6 +312,7 @@
     font-weight: 500;
     font-size: 13px;
     transition: 0.2s;
+    text-decoration: none;
   }
 
   .page-btn:hover:not(.disabled):not(.active) { background: #f3f4f6; }
@@ -426,7 +427,7 @@
           <tbody id="examSetTableBody">
             {% if rows %}
               {% for row in rows %}
-                <tr class="qm2-clickable-row exam-row-item" data-detail-url="{{ row.detail_url }}" tabindex="0">
+                <tr class="qm2-clickable-row" data-detail-url="{{ row.detail_url }}" tabindex="0">
                   <td style="padding-left: 32px;">
                     <div class="set-code">{{ row.exam_set_code }}</div>
                   </td>
@@ -486,39 +487,48 @@
         </table>
       </div>
 
-      <div class="pagination-container" id="paginationContainer" {% if not rows %}style="display: none;"{% endif %}>
-        <div id="paginationInfo">
-          Hiển thị <strong style="color: var(--text-main);">0-0</strong> trong số <strong style="color: var(--text-main);">0</strong> bộ đề
-        </div>
-        <div class="page-controls" id="paginationControls">
+      {# BUG_018/BUG_032: Server-side pagination - replaced client-side JS pagination #}
+      <div class="qm2-pagination">
+        <div class="qm2-pagination pagination-container" id="paginationContainer" {% if not rows %}style="display: none;"{% endif %}>
+          <div id="paginationInfo">
+            Hiển thị <strong style="color: var(--text-main);">{% if page_obj %}{{ page_obj.start_index }}-{{ page_obj.end_index }}{% else %}0-0{% endif %}</strong> trong số <strong style="color: var(--text-main);">{{ paginator.count|default:0 }}</strong> bộ đề
           </div>
+          {% if paginator.num_pages > 1 %}
+          <div class="page-controls" id="paginationControls">
+            {% if page_obj.has_previous %}
+              <a href="?{% for key, value in filter_values.items %}{% if key != 'page' %}{{ key }}={{ value }}&amp;{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}" class="page-btn"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+            {% else %}
+              <span class="page-btn disabled"><i class="fas fa-chevron-left" style="font-size:10px;"></i></span>
+            {% endif %}
+            {% for num in paginator.page_range %}
+              {% if num == page_obj.number %}
+                <span class="page-btn active">{{ num }}</span>
+              {% elif num == 1 or num == paginator.num_pages %}
+                <a href="?{% for key, value in filter_values.items %}{% if key != 'page' %}{{ key }}={{ value }}&amp;{% endif %}{% endfor %}page={{ num }}" class="page-btn">{{ num }}</a>
+              {% elif num == page_obj.number|add:"-1" or num == page_obj.number|add:"1" %}
+                <a href="?{% for key, value in filter_values.items %}{% if key != 'page' %}{{ key }}={{ value }}&amp;{% endif %}{% endfor %}page={{ num }}" class="page-btn">{{ num }}</a>
+              {% elif num == page_obj.number|add:"-2" or num == page_obj.number|add:"2" %}
+                <span class="page-btn disabled" style="border:none;">...</span>
+              {% endif %}
+            {% endfor %}
+            {% if page_obj.has_next %}
+              <a href="?{% for key, value in filter_values.items %}{% if key != 'page' %}{{ key }}={{ value }}&amp;{% endif %}{% endfor %}page={{ page_obj.next_page_number }}" class="page-btn"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+            {% else %}
+              <span class="page-btn disabled"><i class="fas fa-chevron-right" style="font-size:10px;"></i></span>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
       </div>
 
     </div>
   </div>
 </div>
 
-<div class="modal-overlay" id="deleteSetModal">
-  <div class="modal-dialog">
-    <i class="far fa-trash-alt modal-icon"></i>
-    <h3 class="modal-title" id="deleteSetTitle">Bạn có chắc chắn muốn xóa?</h3>
-    <p class="modal-desc" id="deleteSetMessage">Cấu hình được xóa sẽ không thể khôi phục lại.</p>
-    <div class="modal-actions">
-      <button type="button" class="modal-btn btn-outline" onclick="closeDeleteSetModal()">Hủy bỏ</button>
-      <button type="button" id="confirmDeleteSetBtn" class="modal-btn btn-danger">Xác nhận xóa</button>
-    </div>
-  </div>
-</div>
-
-<div class="toast-stack" id="toastStack"></div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-  let deleteSetId = null;
-  let deleteAllowed = false;
-
   function getCookie(name) {
     const cookies = document.cookie ? document.cookie.split(';') : [];
     for (const cookie of cookies) {
@@ -531,54 +541,30 @@
   }
 
   function showToast(message, isError=false) {
-    const stack = document.getElementById('toastStack');
-    const toast = document.createElement('div');
-    toast.className = 'toast' + (isError ? ' error' : ' success');
-
-    const icon = isError ? 'fa-exclamation-circle' : 'fa-check-circle';
-    const color = isError ? 'var(--color-danger)' : 'var(--color-success)';
-
-    toast.innerHTML = `
-      <div style="display: flex; gap: 12px; align-items: center;">
-        <i class="fas ${icon}" style="font-size: 18px; color: ${color};"></i>
-        <span>${message}</span>
-      </div>
-      <button class="toast-close" type="button"><i class="fas fa-times"></i></button>
-    `;
-
-    toast.querySelector('.toast-close').onclick = () => toast.remove();
-    stack.appendChild(toast);
-    setTimeout(() => toast.remove(), 5000);
+    if (typeof window.showGlobalToast === 'function' && message) {
+      window.showGlobalToast(message, isError ? 'error' : 'success');
+    }
   }
 
-  function openDeleteSetModal(id, canDelete) {
-    deleteSetId = id;
-    deleteAllowed = !!canDelete;
-    const modal = document.getElementById('deleteSetModal');
-    modal.classList.add('show');
+  async function openDeleteSetModal(id, canDelete) {
+    if (!canDelete) {
+      showToast('Không thể xóa bộ đề này vì đã có mã đề được sử dụng.', true);
+      return;
+    }
 
-    document.getElementById('deleteSetMessage').textContent = canDelete
-      ? 'Toàn bộ mã đề trong bộ đề này sẽ bị xóa vĩnh viễn.'
-      : 'Không thể xóa bộ đề này vì đã có mã đề được sử dụng.';
-
-    document.getElementById('confirmDeleteSetBtn').style.display = canDelete ? 'inline-flex' : 'none';
-  }
-
-  function closeDeleteSetModal() {
-    document.getElementById('deleteSetModal').classList.remove('show');
-    deleteSetId = null;
-  }
-
-  document.getElementById('confirmDeleteSetBtn').addEventListener('click', async () => {
-    if (!deleteSetId || !deleteAllowed) return;
-
-    const btn = document.getElementById('confirmDeleteSetBtn');
-    const originalText = btn.innerText;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang xóa...';
-    btn.disabled = true;
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận xóa bộ đề',
+      message: 'Toàn bộ mã đề trong bộ đề này sẽ bị xóa vĩnh viễn.',
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Hủy bỏ',
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
 
     try {
-        const response = await fetch(`/lecturer/api/exam-sets/${deleteSetId}/delete/`, {
+        const response = await fetch(`/lecturer/api/exam-sets/${id}/delete/`, {
             method: 'POST',
             headers: { 'X-CSRFToken': getCookie('csrftoken') },
         });
@@ -592,18 +578,8 @@
         }
     } catch (error) {
         showToast('Lỗi kết nối máy chủ!', true);
-    } finally {
-        closeDeleteSetModal();
-        btn.innerHTML = originalText;
-        btn.disabled = false;
     }
-  });
-
-  document.getElementById('deleteSetModal').addEventListener('click', (event) => {
-    if (event.target.id === 'deleteSetModal') {
-      closeDeleteSetModal();
-    }
-  });
+  }
 
   document.querySelectorAll('.qm2-clickable-row').forEach((row) => {
     const detailUrl = row.dataset.detailUrl;
@@ -628,75 +604,6 @@
     });
   });
 
-  // --- LOGIC PHÂN TRANG (8 mục/trang) ---
-  document.addEventListener('DOMContentLoaded', () => {
-    const rows = Array.from(document.querySelectorAll('.exam-row-item'));
-    if (rows.length === 0) return;
-
-    const itemsPerPage = 8;
-    let currentPage = 1;
-    const totalPages = Math.ceil(rows.length / itemsPerPage) || 1;
-
-    function renderTablePage(page) {
-        currentPage = page;
-        const start = (page - 1) * itemsPerPage;
-        const end = start + itemsPerPage;
-
-        rows.forEach((row, index) => {
-            row.style.display = (index >= start && index < end) ? '' : 'none';
-        });
-
-        renderPaginationUI();
-    }
-
-    function renderPaginationUI() {
-        const paginationControls = document.getElementById('paginationControls');
-        const paginationInfo = document.getElementById('paginationInfo');
-
-        const startIdx = (currentPage - 1) * itemsPerPage + 1;
-        const endIdx = Math.min(currentPage * itemsPerPage, rows.length);
-        paginationInfo.innerHTML = `Hiển thị <strong style="color: var(--text-main);">${startIdx}-${endIdx}</strong> trong số <strong style="color: var(--text-main);">${rows.length}</strong> bộ đề`;
-
-        paginationControls.innerHTML = '';
-
-        const prevBtn = document.createElement('button');
-        prevBtn.type = 'button';
-        prevBtn.className = `page-btn ${currentPage === 1 ? 'disabled' : ''}`;
-        prevBtn.innerHTML = '<i class="fas fa-chevron-left" style="font-size: 10px;"></i>';
-        if (currentPage > 1) {
-            prevBtn.onclick = () => renderTablePage(currentPage - 1);
-        }
-        paginationControls.appendChild(prevBtn);
-
-        // Hiển thị danh sách trang rút gọn
-        for (let i = 1; i <= totalPages; i++) {
-            if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
-                const pageBtn = document.createElement('button');
-                pageBtn.type = 'button';
-                pageBtn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
-                pageBtn.textContent = i;
-                pageBtn.onclick = () => renderTablePage(i);
-                paginationControls.appendChild(pageBtn);
-            } else if (i === currentPage - 2 || i === currentPage + 2) {
-                const ellipsis = document.createElement('span');
-                ellipsis.className = 'page-btn disabled';
-                ellipsis.style.border = 'none';
-                ellipsis.textContent = '...';
-                paginationControls.appendChild(ellipsis);
-            }
-        }
-
-        const nextBtn = document.createElement('button');
-        nextBtn.type = 'button';
-        nextBtn.className = `page-btn ${currentPage === totalPages ? 'disabled' : ''}`;
-        nextBtn.innerHTML = '<i class="fas fa-chevron-right" style="font-size: 10px;"></i>';
-        if (currentPage < totalPages) {
-            nextBtn.onclick = () => renderTablePage(currentPage + 1);
-        }
-        paginationControls.appendChild(nextBtn);
-    }
-
-    renderTablePage(1);
-  });
+  // --- LOGIC PHÂN TRANG: đã chuyển sang server-side pagination (BUG_018/BUG_032 fix) ---
 </script>
 {% endblock %}

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import base64
@@ -54,7 +54,11 @@ from openai import AuthenticationError, OpenAI
 from openpyxl import Workbook as OpenpyxlWorkbook
 from openpyxl import load_workbook
 
-from .academic_year import ACADEMIC_YEAR_ERROR_MESSAGE, is_valid_academic_year
+from .academic_year import (
+    ACADEMIC_YEAR_ERROR_MESSAGE,
+    is_valid_academic_year,
+    sanitize_academic_year_for_display,
+)
 from .exam_guards import subject_has_active_exam_group
 from .exam_runtime import (
     EXAM_GRADING_STATUS_ERROR,
@@ -2288,28 +2292,31 @@ def api_delete_question_bank(request, bank_id):
     if _subject_has_ongoing_exam_group(bank.subject):
         return _locked_subject_mutation_response()
 
+    # BUG_015: kiểm tra trước khi xóa
+    if bank.exam_sets.exists():
+        return JsonResponse(
+            {
+                "status": "FAIL",
+                "message": "Ngân hàng câu hỏi đang được sử dụng trong bộ đề thi, không thể xóa.",
+            },
+            status=400,
+        )
+
     try:
-        if bank.exam_sets.exists():
-            return JsonResponse(
-                {
-                    "status": "FAIL",
-                    "message": "Ngân hàng câu hỏi đang được sử dụng trong bộ đề thi, không thể xóa.",
-                },
-                status=400,
-            )
+        # BUG_015: bọc trong atomic để tránh partial delete
+        with transaction.atomic():
+            Question.objects.filter(question_bank_id=bank, is_exam_clone=True).update(question_bank_id=None)
+            Question.objects.filter(question_bank_id=bank, is_exam_clone=False).delete()
 
-        Question.objects.filter(question_bank_id=bank, is_exam_clone=True).update(question_bank_id=None)
-        Question.objects.filter(question_bank_id=bank, is_exam_clone=False).delete()
-
-        materials = LectureMaterial.objects.filter(question_bank_id=bank)
-        for material in materials:
-            try:
-                if material.file_path and os.path.exists(material.file_path):
-                    os.remove(material.file_path)
-            except Exception:
-                pass
-        materials.delete()
-        bank.delete()
+            materials = LectureMaterial.objects.filter(question_bank_id=bank)
+            for material in materials:
+                try:
+                    if material.file_path and os.path.exists(material.file_path):
+                        os.remove(material.file_path)
+                except Exception:
+                    pass
+            materials.delete()
+            bank.delete()
         return JsonResponse({"status": "SUCCESS", "message": "Đã xóa ngân hàng câu hỏi thành công."})
     except Exception as exc:
         return JsonResponse({"status": "FAIL", "message": f"Lỗi: {str(exc)}"}, status=500)
@@ -2648,6 +2655,13 @@ def api_update_question_bank_question(request, question_id):
     question_text = (payload.get("content") or payload.get("question_text") or "").strip()
     difficulty = payload.get("difficulty")
 
+    # BUG_014: validate length
+    if question_text and len(question_text) > 5000:
+        return JsonResponse(
+            {"status": "FAIL", "message": "Nội dung câu hỏi không được vượt quá 5000 ký tự."},
+            status=400,
+        )
+
     if question_text and _question_exists_in_subject(question.subject, question_text, exclude_question_id=question.id):
         return JsonResponse(
             {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
@@ -2667,10 +2681,14 @@ def api_update_question_bank_question(request, question_id):
             status=400,
         )
 
+    # BUG_016: trả updated_at = thời điểm cập nhật thực tế
+    _now_str = timezone.localtime(timezone.now()).strftime("%H:%M - %d/%m/%Y")
+    serialized = _serialize_question(question)
+    serialized["updated_at"] = _now_str
     return JsonResponse(
         {
             "status": "SUCCESS",
-            "question": _serialize_question(question),
+            "question": serialized,
             "message": "Cập nhật câu hỏi thành công.",
         }
     )
@@ -4952,7 +4970,7 @@ def lecturer_student_list_management(request, subject_code):
             | Q(original_file_name__icontains=keyword)
             | Q(students__student_code__icontains=keyword)
         ).distinct()
-    if academic_year:
+    if academic_year and is_valid_academic_year(academic_year):
         rosters = rosters.filter(academic_year=academic_year)
     if semester:
         rosters = rosters.filter(semester=semester)
@@ -4961,6 +4979,8 @@ def lecturer_student_list_management(request, subject_code):
 
     paginator = Paginator(rosters, LIST_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
+    for roster_item in page_obj.object_list:
+        roster_item.safe_academic_year = sanitize_academic_year_for_display(roster_item.academic_year)
     roster_summary = _student_roster_summary(rosters)
 
     context = {
@@ -4973,7 +4993,7 @@ def lecturer_student_list_management(request, subject_code):
         ).order_by("-account_created_at")[:8],
         "filters": {
             "q": keyword,
-            "academic_year": academic_year,
+            "academic_year": academic_year if is_valid_academic_year(academic_year) else "",
             "semester": semester,
             "status": status,
         },
@@ -4984,6 +5004,9 @@ def lecturer_student_list_management(request, subject_code):
         "semester_options": SemesterChoices.choices,
         "status_options": StudentListUploadStatus.choices,
     }
+    context["academic_year_options"] = [
+        year for year in context["academic_year_options"] if sanitize_academic_year_for_display(year)
+    ]
     return render(request, "qna/lecturer/lecturer_student_list_management.html", context)
 
 
@@ -5241,9 +5264,24 @@ def lecturer_student_list_create_accounts(request, roster_id):
     existing_rows = []
     pending_rows = []
 
+    def _row_is_created_in_roster(student_row):
+        return (
+            student_row.account_created
+            and student_row.account_status == StudentRosterAccountStatus.CREATED
+        )
+
+    def _row_has_canonical_existing_account(student_row, existing_user):
+        if not student_row.account_created or not existing_user:
+            return False
+        return normalize_student_code(existing_user.username) == normalize_student_code(student_row.student_code)
+
     for student_row in roster.students.select_related("linked_user_id").order_by("row_number"):
-        existing_user = _student_find_user(student_row.student_code)
-        if existing_user:
+        if _row_is_created_in_roster(student_row):
+            continue
+        existing_user = student_row.linked_user_id or _student_find_user(student_row.student_code)
+        if existing_user or student_row.account_status == StudentRosterAccountStatus.EXISTING:
+            if _row_has_canonical_existing_account(student_row, existing_user):
+                continue
             existing_rows.append(
                 {
                     "student_code": student_row.student_code,
@@ -5269,7 +5307,10 @@ def lecturer_student_list_create_accounts(request, roster_id):
     try:
         with transaction.atomic():
             for student_row in roster.students.select_related("linked_user_id").order_by("row_number"):
-                existing_user = _student_find_user(student_row.student_code)
+                if _row_is_created_in_roster(student_row):
+                    continue
+
+                existing_user = student_row.linked_user_id or _student_find_user(student_row.student_code)
                 if existing_user:
                     student_row.linked_user_id = existing_user
                     student_row.account_created = True
@@ -5292,7 +5333,12 @@ def lecturer_student_list_create_accounts(request, roster_id):
                 if created:
                     created_count += 1
 
-            roster.refresh_status()
+            related_rosters = StudentRosterUpload.objects.filter(
+                subject_id=roster.subject_id,
+                original_file_name=roster.original_file_name,
+            )
+            for related_roster in related_rosters:
+                related_roster.refresh_status()
 
     except Exception:
         logger.exception("Batch create student accounts failed for roster_id=%s", roster.id)
