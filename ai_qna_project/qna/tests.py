@@ -5593,6 +5593,132 @@ class LecturerGenerateQuestionsTests(TestCase):
                     self.assertEqual(status_payload["summary"]["medium"], 1)
 
     @patch("qna.views._generate_questions_from_ai")
+    def test_generate_questions_returns_success_when_ai_creates_full_requested_count(self, mock_generate_questions):
+                    mock_generate_questions.return_value = {
+                        "questions": [
+                            {
+                                "content": "Trinh bay quy trinh huan luyen mo hinh.",
+                                "difficulty": "MEDIUM",
+                                "source": "Bai giang chuong 1",
+                            }
+                        ],
+                        "remaining_counts": {"EASY": 0, "MEDIUM": 0, "HARD": 0},
+                        "is_partial": False,
+                        "shortage": {},
+                        "shortage_text": "",
+                    }
+
+                    response = self.client.post(
+                        reverse("qna:api_generate_questions"),
+                        data=json.dumps(
+                            {
+                                "subject_id": self.subject.id,
+                                "document_ids": [self.material.id],
+                                "total_count": 1,
+                                "level_config": {"easy": 0, "medium": 1, "hard": 0},
+                                "workspace_id": "ws_test",
+                            }
+                        ),
+                        content_type="application/json",
+                        HTTP_ACCEPT="application/json",
+                    )
+
+                    self.assertEqual(response.status_code, 200)
+                    payload = response.json()
+                    self.assertEqual(payload["status"], "SUCCESS")
+                    self.assertEqual(payload["created_count"], 1)
+                    self.assertEqual(payload["requested_count"], 1)
+                    self.assertEqual(payload["shortage"], {})
+                    self.assertEqual(payload["shortage_message"], "")
+                    self.assertEqual(Question.objects.filter(subject_id=self.subject).count(), 1)
+
+    @patch("qna.views._generate_questions_from_ai")
+    def test_generate_questions_returns_partial_success_when_ai_creates_only_part_of_requested_count(
+                        self,
+                        mock_generate_questions,
+                ):
+                    mock_generate_questions.return_value = {
+                        "questions": [
+                            {
+                                "content": "Giai thich cach danh gia mo hinh.",
+                                "difficulty": "MEDIUM",
+                                "source": "Bai giang chuong 1",
+                            }
+                        ],
+                        "remaining_counts": {"EASY": 1, "MEDIUM": 0, "HARD": 0},
+                        "is_partial": True,
+                        "shortage": {"EASY": 1},
+                        "shortage_text": "EASY: 1",
+                    }
+
+                    response = self.client.post(
+                        reverse("qna:api_generate_questions"),
+                        data=json.dumps(
+                            {
+                                "subject_id": self.subject.id,
+                                "document_ids": [self.material.id],
+                                "total_count": 2,
+                                "level_config": {"easy": 1, "medium": 1, "hard": 0},
+                                "workspace_id": "ws_test",
+                            }
+                        ),
+                        content_type="application/json",
+                        HTTP_ACCEPT="application/json",
+                    )
+
+                    self.assertEqual(response.status_code, 200)
+                    payload = response.json()
+                    self.assertEqual(payload["status"], "PARTIAL_SUCCESS")
+                    self.assertEqual(payload["created_count"], 1)
+                    self.assertEqual(payload["requested_count"], 2)
+                    self.assertEqual(payload["shortage"], {"EASY": 1})
+                    self.assertIn("AI chỉ tạo được 1/2 câu", payload["shortage_message"])
+                    self.assertEqual(Question.objects.filter(subject_id=self.subject).count(), 1)
+
+                    status_response = self.client.get(
+                        reverse("qna:api_generate_questions_status"),
+                        {"job_id": payload["job_id"]},
+                        HTTP_ACCEPT="application/json",
+                    )
+                    self.assertEqual(status_response.status_code, 200)
+                    status_payload = status_response.json()
+                    self.assertEqual(status_payload["status"], "SUCCESS")
+                    self.assertEqual(status_payload["process_status"], "PARTIAL_SUCCESS")
+                    self.assertEqual(status_payload["shortage"], {"EASY": 1})
+                    self.assertEqual(status_payload["error_message"], payload["shortage_message"])
+
+    @patch("qna.views._generate_questions_from_ai")
+    def test_generate_questions_returns_fail_when_ai_creates_no_valid_questions(self, mock_generate_questions):
+                    mock_generate_questions.return_value = {
+                        "questions": [],
+                        "remaining_counts": {"EASY": 0, "MEDIUM": 1, "HARD": 0},
+                        "is_partial": True,
+                        "shortage": {"MEDIUM": 1},
+                        "shortage_text": "MEDIUM: 1",
+                    }
+
+                    response = self.client.post(
+                        reverse("qna:api_generate_questions"),
+                        data=json.dumps(
+                            {
+                                "subject_id": self.subject.id,
+                                "document_ids": [self.material.id],
+                                "total_count": 1,
+                                "level_config": {"easy": 0, "medium": 1, "hard": 0},
+                                "workspace_id": "ws_test",
+                            }
+                        ),
+                        content_type="application/json",
+                        HTTP_ACCEPT="application/json",
+                    )
+
+                    self.assertEqual(response.status_code, 400)
+                    payload = response.json()
+                    self.assertEqual(payload["status"], "FAIL")
+                    self.assertIn("AI không tạo được câu hỏi hợp lệ", payload["message"])
+                    self.assertEqual(Question.objects.filter(subject_id=self.subject).count(), 0)
+
+    @patch("qna.views._generate_questions_from_ai")
     def test_generate_questions_returns_friendly_message_when_api_key_is_invalid(self,
                                                                                              mock_generate_questions):
                     from httpx import Request, Response

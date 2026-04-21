@@ -1885,6 +1885,40 @@ def _normalize_ai_generated_questions(raw_questions, excluded_question_keys=None
     return normalized_questions
 
 
+class QuestionGenerationEmptyError(Exception):
+    pass
+
+
+def _build_question_shortage(remaining_counts: dict[str, int]) -> tuple[dict[str, int], str]:
+    shortage = {
+        difficulty: int(count or 0)
+        for difficulty, count in (remaining_counts or {}).items()
+        if int(count or 0) > 0
+    }
+    shortage_text = ", ".join(f"{difficulty}: {count}" for difficulty, count in shortage.items())
+    return shortage, shortage_text
+
+
+def _build_question_generation_message(
+        created_count: int,
+        requested_count: int,
+        skipped_duplicates: int = 0,
+        shortage_text: str = "",
+) -> tuple[str, str]:
+    shortage_message = ""
+    if shortage_text:
+        shortage_message = f"AI chỉ tạo được {created_count}/{requested_count} câu."
+        shortage_message = f"{shortage_message} Còn thiếu: {shortage_text}."
+        message = f"Tạo câu hỏi một phần. {shortage_message}"
+    else:
+        message = "Tạo câu hỏi thành công."
+
+    if skipped_duplicates > 0:
+        message = f"{message} Hệ thống đã tự sinh bù {skipped_duplicates} câu bị trùng."
+
+    return message, shortage_message
+
+
 def _generate_questions_from_ai(
         subject: Subject,
         materials,
@@ -2019,16 +2053,15 @@ TÀI LIỆU:
             remaining_counts[difficulty] -= 1
 
     remaining_counts = _remaining_question_counts(target_counts, collected_questions)
-    if sum(remaining_counts.values()) > 0:
-        shortage_parts = [
-            f"{difficulty}: {count}"
-            for difficulty, count in remaining_counts.items()
-            if count > 0
-        ]
-        shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
-        raise Exception(f"AI không tạo đủ câu hỏi theo số lượng yêu cầu ({shortage_text}).")
+    shortage, shortage_text = _build_question_shortage(remaining_counts)
 
-    return collected_questions
+    return {
+        "questions": collected_questions,
+        "remaining_counts": remaining_counts,
+        "is_partial": bool(shortage),
+        "shortage": shortage,
+        "shortage_text": shortage_text,
+    }
 
 
 # =========================================================
@@ -2863,13 +2896,19 @@ def api_generate_questions(request):
             if remaining_total <= 0:
                 break
 
-            ai_questions = _generate_questions_from_ai(
+            generation_result = _generate_questions_from_ai(
                 subject=subject,
                 materials=materials,
                 total_count=remaining_total,
                 level_config=_question_generation_level_config(remaining_counts),
                 excluded_question_texts=retry_excluded_texts,
             )
+            if isinstance(generation_result, dict):
+                ai_questions = generation_result.get("questions", [])
+            else:
+                ai_questions = generation_result
+            if not isinstance(ai_questions, list):
+                ai_questions = []
 
             for item in ai_questions:
                 content_key = normalize_question_text(item["content"])
@@ -2890,14 +2929,12 @@ def api_generate_questions(request):
                 remaining_counts[difficulty] -= 1
 
         remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
-        if sum(remaining_counts.values()) > 0:
-            shortage_parts = [
-                f"{difficulty}: {count}"
-                for difficulty, count in remaining_counts.items()
-                if count > 0
-            ]
-            shortage_text = ", ".join(shortage_parts) or str(sum(remaining_counts.values()))
-            raise Exception(f"AI không tạo đủ câu hỏi hợp lệ theo yêu cầu ({shortage_text}).")
+        shortage, shortage_text = _build_question_shortage(remaining_counts)
+        if not prepared_questions:
+            message = "AI không tạo được câu hỏi hợp lệ từ tài liệu đã chọn."
+            if shortage_text:
+                message = f"{message} Còn thiếu: {shortage_text}."
+            raise QuestionGenerationEmptyError(message)
 
         created_questions = []
         with transaction.atomic():
@@ -2919,31 +2956,68 @@ def api_generate_questions(request):
             "medium": len([q for q in created_questions if q["difficulty"] == "MEDIUM"]),
             "hard": len([q for q in created_questions if q["difficulty"] == "HARD"]),
         }
+        is_partial = bool(shortage)
+        response_status = "PARTIAL_SUCCESS" if is_partial else "SUCCESS"
+        process_status = "PARTIAL_SUCCESS" if is_partial else "COMPLETE"
+        message, shortage_message = _build_question_generation_message(
+            created_count=len(created_questions),
+            requested_count=total_count,
+            skipped_duplicates=skipped_duplicates,
+            shortage_text=shortage_text,
+        )
 
         _save_question_job(
             job_id,
             {
-                "status": "COMPLETE",
+                "status": process_status,
                 "progress": 100,
+                "message": message,
                 "questions": created_questions,
                 "summary": summary,
-                "error_message": "",
+                "error_message": shortage_message if is_partial else "",
+                "shortage": shortage,
+                "shortage_message": shortage_message,
+                "created_count": len(created_questions),
+                "requested_count": total_count,
+                "skipped_duplicates": skipped_duplicates,
             },
         )
 
         return JsonResponse(
             {
-                "status": "SUCCESS",
+                "status": response_status,
                 "job_id": job_id,
-                "message": "Tạo câu hỏi thành công.",
+                "message": message,
                 "questions": created_questions,
                 "summary": summary,
                 "created_count": len(created_questions),
                 "requested_count": total_count,
+                "shortage": shortage,
+                "shortage_message": shortage_message,
                 "skipped_duplicates": skipped_duplicates,
             }
         )
 
+    except QuestionGenerationEmptyError as exc:
+        message = str(exc)
+        logger.warning("Generate questions failed because AI produced no valid questions")
+        _save_question_job(
+            job_id,
+            {
+                "status": "FAIL",
+                "progress": 100,
+                "message": message,
+                "questions": [],
+                "summary": {},
+                "error_message": message,
+                "shortage": {},
+                "shortage_message": "",
+                "created_count": 0,
+                "requested_count": total_count,
+                "skipped_duplicates": 0,
+            },
+        )
+        return JsonResponse({"status": "FAIL", "message": message}, status=400)
     except AuthenticationError:
         message = "OpenAI API key không hợp lệ hoặc đã hết hiệu lực. Vui lòng kiểm tra lại cấu hình OPENAI_API_KEY."
         logger.warning("Generate questions failed due to OpenAI authentication", exc_info=True)
@@ -2952,9 +3026,15 @@ def api_generate_questions(request):
             {
                 "status": "FAIL",
                 "progress": 100,
+                "message": message,
                 "questions": [],
                 "summary": {},
                 "error_message": message,
+                "shortage": {},
+                "shortage_message": "",
+                "created_count": 0,
+                "requested_count": total_count,
+                "skipped_duplicates": 0,
             },
         )
         return JsonResponse({"status": "FAIL", "message": message}, status=400)
@@ -2966,9 +3046,15 @@ def api_generate_questions(request):
             {
                 "status": "FAIL",
                 "progress": 100,
+                "message": message,
                 "questions": [],
                 "summary": {},
                 "error_message": message,
+                "shortage": {},
+                "shortage_message": "",
+                "created_count": 0,
+                "requested_count": total_count,
+                "skipped_duplicates": 0,
             },
         )
         return JsonResponse({"status": "FAIL", "message": message}, status=500)
@@ -2992,9 +3078,15 @@ def api_generate_questions_status(request):
             "status": "SUCCESS",
             "process_status": job.get("status"),
             "progress": job.get("progress", 0),
+            "message": job.get("message", ""),
             "questions": job.get("questions", []),
             "summary": job.get("summary", {}),
             "error_message": job.get("error_message", ""),
+            "shortage": job.get("shortage", {}),
+            "shortage_message": job.get("shortage_message", ""),
+            "created_count": job.get("created_count", 0),
+            "requested_count": job.get("requested_count", 0),
+            "skipped_duplicates": job.get("skipped_duplicates", 0),
         }
     )
 

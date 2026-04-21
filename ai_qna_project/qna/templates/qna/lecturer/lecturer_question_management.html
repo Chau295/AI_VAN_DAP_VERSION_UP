@@ -2218,7 +2218,11 @@
       }
 
       if (aiGenerateStatus) aiGenerateStatus.textContent = '';
-      showToast('Tạo câu hỏi thành công', 'success');
+      const isPartialSuccess = data.status === 'PARTIAL_SUCCESS';
+      showToast(
+        data.message || (isPartialSuccess ? 'Tạo câu hỏi một phần.' : 'Tạo câu hỏi thành công.'),
+        isPartialSuccess ? 'warning' : 'success'
+      );
       await fetchQuestions();
     } catch (err) {
       if (aiGenerateStatus) aiGenerateStatus.textContent = '';
@@ -2260,7 +2264,11 @@
           clearInterval(pollingTimer);
           pollingTimer = null;
           if (aiGenerateStatus) aiGenerateStatus.textContent = '';
-          showToast('Tạo câu hỏi thành công', 'success');
+          const isPartialSuccess = data.process_status === 'PARTIAL_SUCCESS';
+          showToast(
+            data.message || (isPartialSuccess ? 'Tạo câu hỏi một phần.' : 'Tạo câu hỏi thành công.'),
+            isPartialSuccess ? 'warning' : 'success'
+          );
           await fetchQuestions();
         } else if (data.process_status === 'FAIL') {
           clearInterval(pollingTimer);
