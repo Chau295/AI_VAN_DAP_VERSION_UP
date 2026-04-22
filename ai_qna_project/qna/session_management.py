@@ -71,12 +71,28 @@ def _student_default_academic_year():
 
 SESSION_STATUS_CHOICES = [
     ("ALL", "Tất cả"),
-    ("DRAFT", "Lưu nháp"),
     ("SCHEDULED", "Sắp diễn ra"),
     ("ONGOING", "Đang diễn ra"),
     ("COMPLETED", "Đã kết thúc"),
-    ("CANCELLED", "Đã hủy"),
 ]
+
+
+def _session_ui_status(status):
+    if status in {"DRAFT", "SCHEDULED"}:
+        return "SCHEDULED"
+    if status == "ONGOING":
+        return "ONGOING"
+    if status in {"COMPLETED", "CANCELLED"}:
+        return "COMPLETED"
+    return "SCHEDULED"
+
+
+def _session_ui_status_label(status):
+    return {
+        "SCHEDULED": "Sắp diễn ra",
+        "ONGOING": "Đang diễn ra",
+        "COMPLETED": "Đã kết thúc",
+    }.get(_session_ui_status(status), "Sắp diễn ra")
 
 
 def _session_safe_int(value, default=0):
@@ -126,12 +142,10 @@ def _session_get_payload(request):
 
 def _session_status_class(status):
     return {
-        "DRAFT": "draft",
         "SCHEDULED": "scheduled",
         "ONGOING": "ongoing",
         "COMPLETED": "completed",
-        "CANCELLED": "cancelled",
-    }.get(status, "draft")
+    }.get(_session_ui_status(status), "scheduled")
 
 
 def _session_total_score_for_code(exam_code):
@@ -302,7 +316,7 @@ def _build_session_initial_state(subject, exam_group=None):
             "description": exam_group.description or "",
             "exam_password": exam_group.exam_password or "",
             "status": exam_group.status,
-            "status_label": exam_group.status_label,
+            "status_label": _session_ui_status_label(exam_group.computed_status),
             "start_at_timestamp": int(start_at.timestamp()),
             "end_at_timestamp": int(end_at.timestamp()),
             "room_configs": room_configs,
@@ -325,7 +339,7 @@ def _build_session_initial_state(subject, exam_group=None):
         "description": "",
         "exam_password": "",
         "status": "DRAFT",
-        "status_label": "Lưu nháp",
+        "status_label": _session_ui_status_label("DRAFT"),
         "room_configs": [],
         "roster_configs": [],
     }
@@ -910,6 +924,7 @@ def _build_exam_group_detail_context(exam_group):
         "student_count": len(student_rows) or total_expected_students or exam_group.total_students_count,
         "assigned_code_count": len(unique_exam_code_ids),
         "exam_set_count": len(unique_exam_set_ids),
+        "status_label": _session_ui_status_label(exam_group.computed_status),
         "status_class": _session_status_class(exam_group.computed_status),
         "can_delete": exam_group.can_modify,
         "can_edit": exam_group.can_modify,
@@ -986,7 +1001,7 @@ def lecturer_create_exam_group_screen(request):
     exam_group = _save_session_configuration(normalized, request.user)
     messages.success(
         request,
-        "Đã lưu nháp ca thi thành công." if normalized["is_draft"] else "Cấu hình ca thi mới thành công",
+        "Đã lưu thay đổi ca thi thành công." if normalized["is_draft"] else "Cấu hình ca thi mới thành công",
     )
     return JsonResponse(
         {
@@ -1008,6 +1023,8 @@ def lecturer_exam_sessions_list(request):
     subject_id = (request.GET.get("subject_id") or "").strip()
     keyword = (request.GET.get("q") or "").strip().lower()
     status_filter = (request.GET.get("status") or "ALL").strip().upper() or "ALL"
+    if status_filter != "ALL":
+        status_filter = _session_ui_status(status_filter)
     academic_year_filter = (request.GET.get("academic_year") or "").strip()
     semester_filter = (request.GET.get("semester") or "").strip()
 
@@ -1030,10 +1047,9 @@ def lecturer_exam_sessions_list(request):
 
     summary = {
         "total": len(all_groups),
-        "draft": sum(1 for item in all_groups if item.computed_status == "DRAFT"),
-        "scheduled": sum(1 for item in all_groups if item.computed_status == "SCHEDULED"),
+        "scheduled": sum(1 for item in all_groups if _session_ui_status(item.computed_status) == "SCHEDULED"),
         "ongoing": sum(1 for item in all_groups if item.computed_status == "ONGOING"),
-        "completed": sum(1 for item in all_groups if item.computed_status == "COMPLETED"),
+        "completed": sum(1 for item in all_groups if _session_ui_status(item.computed_status) == "COMPLETED"),
     }
 
     filtered_groups = all_groups
@@ -1050,7 +1066,7 @@ def lecturer_exam_sessions_list(request):
         ]
 
     if status_filter != "ALL":
-        filtered_groups = [item for item in filtered_groups if item.computed_status == status_filter]
+        filtered_groups = [item for item in filtered_groups if _session_ui_status(item.computed_status) == status_filter]
 
     year_options = sorted(
         {
@@ -1069,6 +1085,8 @@ def lecturer_exam_sessions_list(request):
     for exam_group in page_obj.object_list:
         exam_group.start_ts = int(exam_group.start_at.timestamp() * 1000) if exam_group.start_at else 0
         exam_group.end_ts = int(exam_group.end_at.timestamp() * 1000) if exam_group.end_at else 0
+        exam_group.ui_status = _session_ui_status(exam_group.computed_status)
+        exam_group.ui_status_label = _session_ui_status_label(exam_group.computed_status)
 
     context = {
         "subjects": subjects,
@@ -1290,7 +1308,7 @@ def lecturer_update_exam_group(request, exam_group_id):
     updated_group = _save_session_configuration(normalized, request.user, exam_group=exam_group)
     messages.success(
         request,
-        "Đã lưu nháp ca thi thành công." if normalized["is_draft"] else "Cập nhật ca thi thành công",
+        "Đã lưu thay đổi ca thi thành công." if normalized["is_draft"] else "Cập nhật ca thi thành công",
     )
     return JsonResponse(
         {

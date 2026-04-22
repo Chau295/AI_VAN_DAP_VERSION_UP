@@ -525,6 +525,22 @@ def _locked_subject_mutation_response(response_style="status"):
     return JsonResponse({"status": "FAIL", "message": message}, status=403)
 
 
+QUESTION_TEXT_MAX_LENGTH = 5000
+QUESTION_TEXT_TOO_LONG_MESSAGE = "Nội dung câu hỏi không được vượt quá 5000 ký tự."
+
+
+def _validate_question_text_length(question_text: str) -> None:
+    if question_text and len(question_text) > QUESTION_TEXT_MAX_LENGTH:
+        raise ValueError(QUESTION_TEXT_TOO_LONG_MESSAGE)
+
+
+def _first_form_error_message(form) -> str:
+    for errors in form.errors.values():
+        if errors:
+            return str(errors[0])
+    return "Dữ liệu không hợp lệ."
+
+
 def _get_room_assignment_for_user(exam_group, user):
     if not exam_group or not user:
         return None, None
@@ -1391,6 +1407,11 @@ def lecturer_create_question(request):
     if not all([subject_id, question_text, difficulty]):
         return JsonResponse({"success": False, "error": "Thiếu thông tin bắt buộc"}, status=400)
 
+    try:
+        _validate_question_text_length(question_text)
+    except ValueError as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
+
     subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
     if _subject_has_ongoing_exam_group(subject):
         return _locked_subject_mutation_response(response_style="legacy")
@@ -1431,6 +1452,11 @@ def lecturer_update_question(request, question_id):
 
     question_text = (request.POST.get("question_text") or "").strip()
     difficulty = request.POST.get("difficulty")
+
+    try:
+        _validate_question_text_length(question_text)
+    except ValueError as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
     if question_text and _question_exists_in_subject(question.subject, question_text, exclude_question_id=question.id):
         return JsonResponse(
@@ -1909,12 +1935,12 @@ def _build_question_generation_message(
     if shortage_text:
         shortage_message = f"AI chỉ tạo được {created_count}/{requested_count} câu."
         shortage_message = f"{shortage_message} Còn thiếu: {shortage_text}."
-        message = f"Tạo câu hỏi một phần. {shortage_message}"
+        message = f"Tạo câu hỏi một phần: {created_count}/{requested_count} câu. {shortage_message}"
     else:
-        message = "Tạo câu hỏi thành công."
+        message = f"Tạo câu hỏi thành công: {created_count}/{requested_count} câu."
 
     if skipped_duplicates > 0:
-        message = f"{message} Hệ thống đã tự sinh bù {skipped_duplicates} câu bị trùng."
+        message = f"{message} (Đã sinh bù {skipped_duplicates} câu trùng.)"
 
     return message, shortage_message
 
@@ -2325,15 +2351,9 @@ def api_delete_question_bank(request, bank_id):
     if _subject_has_ongoing_exam_group(bank.subject):
         return _locked_subject_mutation_response()
 
-    # BUG_015: kiểm tra trước khi xóa
-    if bank.exam_sets.exists():
-        return JsonResponse(
-            {
-                "status": "FAIL",
-                "message": "Ngân hàng câu hỏi đang được sử dụng trong bộ đề thi, không thể xóa.",
-            },
-            status=400,
-        )
+    # Cho phép xóa ngân hàng dù đang dùng trong bộ đề;
+    # frontend hiển thị popup xác nhận trước khi gọi API này.
+    is_used_in_exam_sets = bank.exam_sets.exists()
 
     try:
         # BUG_015: bọc trong atomic để tránh partial delete
@@ -2353,6 +2373,21 @@ def api_delete_question_bank(request, bank_id):
         return JsonResponse({"status": "SUCCESS", "message": "Đã xóa ngân hàng câu hỏi thành công."})
     except Exception as exc:
         return JsonResponse({"status": "FAIL", "message": f"Lỗi: {str(exc)}"}, status=500)
+
+
+@login_required
+@require_GET
+def api_check_question_bank_usage(request, bank_id):
+    """Kiểm tra ngân hàng câu hỏi có đang được dùng trong bộ đề thi không."""
+    _ensure_lecturer(request)
+    bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
+    is_used = bank.exam_sets.exists()
+    exam_set_count = bank.exam_sets.count()
+    return JsonResponse({
+        "status": "SUCCESS",
+        "is_used_in_exam_sets": is_used,
+        "exam_set_count": exam_set_count,
+    })
 
 
 @login_required
@@ -2605,17 +2640,23 @@ def api_create_manual_question(request):
     real_bank_id = payload.get("real_bank_id")
     workspace_id = _get_workspace_id(request, payload)
     view_type = (payload.get("view_type") or "bank").strip()
+    question_text = (payload.get("content") or payload.get("question_text") or "").strip()
+
+    try:
+        _validate_question_text_length(question_text)
+    except ValueError as exc:
+        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
 
     form = LecturerManualQuestionForm(
         {
             "subject_id": subject_id,
-            "question_text": payload.get("content") or payload.get("question_text"),
+            "question_text": question_text,
             "difficulty": payload.get("difficulty"),
         }
     )
 
     if not form.is_valid():
-        return JsonResponse({"status": "FAIL", "message": form.errors.as_json()}, status=400)
+        return JsonResponse({"status": "FAIL", "message": _first_form_error_message(form)}, status=400)
 
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=form.cleaned_data["subject_id"])
     question_text = form.cleaned_data["question_text"]
@@ -2688,10 +2729,11 @@ def api_update_question_bank_question(request, question_id):
     question_text = (payload.get("content") or payload.get("question_text") or "").strip()
     difficulty = payload.get("difficulty")
 
-    # BUG_014: validate length
-    if question_text and len(question_text) > 5000:
+    try:
+        _validate_question_text_length(question_text)
+    except ValueError as exc:
         return JsonResponse(
-            {"status": "FAIL", "message": "Nội dung câu hỏi không được vượt quá 5000 ký tự."},
+            {"status": "FAIL", "message": str(exc)},
             status=400,
         )
 
@@ -5384,7 +5426,11 @@ def lecturer_student_list_create_accounts(request, roster_id):
         else:
             pending_rows.append(student_row)
 
-    if existing_rows and not skip_existing:
+    # Neu chi co existing_rows (khong co pending), tu dong enroll khong can confirm
+    if existing_rows and not pending_rows and not skip_existing:
+        skip_existing = True
+
+    if existing_rows and pending_rows and not skip_existing:
         return _student_account_modal_error(
             request,
             roster,
@@ -5425,6 +5471,7 @@ def lecturer_student_list_create_accounts(request, roster_id):
                 if created:
                     created_count += 1
 
+            # Dong bo trang thai tat ca roster cung subject (cu + moi cua cung file)
             related_rosters = StudentRosterUpload.objects.filter(
                 subject_id=roster.subject_id,
                 original_file_name=roster.original_file_name,

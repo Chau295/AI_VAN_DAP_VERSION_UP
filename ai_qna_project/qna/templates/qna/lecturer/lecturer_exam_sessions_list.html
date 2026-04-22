@@ -111,61 +111,104 @@
     color: #fff;
   }
 
+  /* =========================================================
+     CSS BỘ LỌC ĐỒNG BỘ DUE-EXAM
+     ========================================================= */
   .session-filter-row {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--session-border);
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.2rem;
-    flex-wrap: wrap;
+    gap: 12px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    background: #fff;
+  }
+
+  .session-filter-row::-webkit-scrollbar {
+    display: none;
   }
 
   .session-search {
     position: relative;
-    width: min(100%, 520px);
+    flex: 1 1 auto;
+    min-width: 200px;
   }
 
   .session-search i {
     position: absolute;
+    left: 16px;
     top: 50%;
-    left: 1rem;
     transform: translateY(-50%);
-    color: #a0aec0;
+    color: #9ca3af;
+    font-size: 14px;
   }
 
   .session-search input,
   .session-status {
-    height: 44px;
-    border: 1px solid #dce5f1;
-    border-radius: 14px;
+    height: 40px;
+    border: 1px solid var(--session-border);
+    border-radius: 20px;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4b5563;
     background: #fff;
-    color: var(--session-text);
     outline: none;
-    font-size: 0.95rem;
+    transition: 0.2s;
   }
 
   .session-search input {
     width: 100%;
-    padding: 0 1rem 0 2.35rem;
+    padding-left: 40px;
+    box-sizing: border-box;
+  }
+
+  .session-search input:focus,
+  .session-status:focus {
+    border-color: var(--session-blue);
+    box-shadow: 0 0 0 3px rgba(40, 74, 168, 0.1);
   }
 
   .session-status {
-    min-width: 220px;
-    padding: 0 1rem;
-    font-weight: 600;
+    appearance: none;
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px;
+    cursor: pointer;
+    flex: 0 0 auto;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .session-filter-submit,
   .session-filter-reset {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--session-border);
+    background: #fff;
+    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+    text-decoration: none;
   }
+
+  .session-filter-reset:hover {
+    background: #f3f4f6;
+    color: #111827;
+  }
+
+  /* ========================================================= */
 
   .session-table-wrap {
     border: 1px solid var(--session-border);
@@ -223,30 +266,11 @@
     white-space: nowrap;
   }
 
-  .status-pill.draft {
-    background: #d9e0ea;
-    color: #4b5563;
-  }
-
-  .status-pill.scheduled {
-    background: #feeddc;
-    color: #ef6c1e;
-  }
-
-  .status-pill.ongoing {
-    background: #dbf8e5;
-    color: #16a34a;
-  }
-
-  .status-pill.completed {
-    background: #edf1f5;
-    color: #5b6574;
-  }
-
-  .status-pill.cancelled {
-    background: #fee2e2;
-    color: #b91c1c;
-  }
+  .status-pill.draft { background: #d9e0ea; color: #4b5563; }
+  .status-pill.scheduled { background: #feeddc; color: #ef6c1e; }
+  .status-pill.ongoing { background: #dbf8e5; color: #16a34a; }
+  .status-pill.completed { background: #edf1f5; color: #5b6574; }
+  .status-pill.cancelled { background: #fee2e2; color: #b91c1c; }
 
   .status-stack {
     display: flex;
@@ -262,19 +286,11 @@
     white-space: nowrap;
   }
 
-  .status-note.scheduled {
-    color: #b45309;
-  }
-
-  .status-note.ongoing {
-    color: #15803d;
-  }
-
+  .status-note.scheduled { color: #b45309; }
+  .status-note.ongoing { color: #15803d; }
   .status-note.completed,
   .status-note.draft,
-  .status-note.cancelled {
-    color: var(--session-muted);
-  }
+  .status-note.cancelled { color: var(--session-muted); }
 
   .session-empty {
     padding: 3.2rem 1.5rem;
@@ -282,7 +298,7 @@
     color: var(--session-muted);
   }
 
-  /* CSS PHÂN TRANG MỚI - ĐỒNG BỘ VỚI TRANG TRƯỚC */
+  /* CSS PHÂN TRANG */
   .qm2-pagination {
     display: flex;
     align-items: center;
@@ -358,12 +374,6 @@
       flex-direction: column;
     }
 
-    .session-search,
-    .session-status {
-      width: 100%;
-      min-width: 0;
-    }
-
     .session-table-wrap {
       overflow-x: auto;
     }
@@ -402,24 +412,24 @@
         </a>
       </div>
 
-      <form method="get" id="sessionFilterForm">
-        <input type="hidden" name="page" value="1">
-        <button class="session-filter-submit" type="submit">Lọc</button>
-        <a class="session-filter-reset" href="{% url 'qna:lecturer_exam_sessions_list' %}">Xóa bộ lọc</a>
+      <div class="session-table-wrap">
 
-        <div class="session-filter-row">
-          <label class="session-search">
+        <form method="get" id="sessionFilterForm" class="session-filter-row">
+          <input type="hidden" name="page" value="1">
+          <button type="submit" style="display: none;"></button>
+
+          <div class="session-search">
             <i class="fas fa-search"></i>
             <input
-              type="search"
+              type="text"
               name="q"
               value="{{ filters.q }}"
-              placeholder="Tìm theo tên kỳ thi, môn học, mã môn..."
+              placeholder="Tìm kiếm file..."
             >
-          </label>
+          </div>
 
-          <select class="session-status" name="subject_id" onchange="document.getElementById('sessionFilterForm').submit()">
-            <option value="">Tất cả môn học</option>
+          <select class="session-status" name="subject_id" onchange="this.form.submit()">
+            <option value="">Môn học: Tất cả</option>
             {% for subject in subjects %}
               <option value="{{ subject.id }}" {% if filters.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>
                 {{ subject.name }}
@@ -427,8 +437,8 @@
             {% endfor %}
           </select>
 
-          <select class="session-status" name="academic_year" onchange="document.getElementById('sessionFilterForm').submit()">
-            <option value="">Tất cả năm học</option>
+          <select class="session-status" name="academic_year" onchange="this.form.submit()">
+            <option value="">Năm học: Tất cả</option>
             {% for year in year_options %}
               <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>
                 {{ year }}
@@ -436,8 +446,8 @@
             {% endfor %}
           </select>
 
-          <select class="session-status" name="semester" onchange="document.getElementById('sessionFilterForm').submit()">
-            <option value="">Tất cả học kỳ</option>
+          <select class="session-status" name="semester" onchange="this.form.submit()">
+            <option value="">Học kỳ: Tất cả</option>
             {% for value, label in semester_choices %}
               <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>
                 {{ label }}
@@ -445,17 +455,23 @@
             {% endfor %}
           </select>
 
-          <select class="session-status" name="status" onchange="document.getElementById('sessionFilterForm').submit()">
+          <select class="session-status" name="status" onchange="this.form.submit()">
             {% for value, label in status_choices %}
               <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
-                {{ label }}
+                {% if label == "Tất cả" or not value %}
+                  Trạng thái: Tất cả
+                {% else %}
+                  {{ label }}
+                {% endif %}
               </option>
             {% endfor %}
           </select>
-        </div>
-      </form>
 
-      <div class="session-table-wrap">
+          <a href="window.location.pathname" class="session-filter-reset" title="Làm mới bộ lọc" onclick="event.preventDefault(); window.location.href=window.location.pathname">
+            <i class="fas fa-redo-alt"></i>
+          </a>
+        </form>
+
         {% if page_obj.object_list %}
           <table class="session-table">
             <thead>
@@ -482,8 +498,8 @@
                     <td>{{ exam_group.start_at|date:"H:i" }}-{{ exam_group.end_at|date:"H:i" }}</td>
                     <td>
                       <div class="status-stack">
-                        <span class="status-pill {{ exam_group.computed_status|lower }}">{{ exam_group.status_label }}</span>
-                        <span class="status-note {{ exam_group.computed_status|lower }}" data-status-note></span>
+                        <span class="status-pill {{ exam_group.ui_status|lower }}">{{ exam_group.ui_status_label }}</span>
+                        <span class="status-note {{ exam_group.ui_status|lower }}" data-status-note></span>
                       </div>
                      </td>
                    </tr>
@@ -549,11 +565,9 @@
   const realtimeClockOffsetMs = realtimeServerNowMs ? (realtimeServerNowMs - realtimeClientNowMs) : 0;
 
   const realtimeSessionStatusMeta = {
-    DRAFT: { label: "Lưu nháp", className: "draft" },
     SCHEDULED: { label: "Sắp diễn ra", className: "scheduled" },
     ONGOING: { label: "Đang diễn ra", className: "ongoing" },
     COMPLETED: { label: "Đã kết thúc", className: "completed" },
-    CANCELLED: { label: "Đã hủy", className: "cancelled" },
   };
 
   function parseRealtimeSessionTimestamp(rawTimestamp, fallbackValue) {
@@ -568,17 +582,17 @@
 
   function computeRealtimeSessionStatus(storedStatus, startTs, endTs) {
     if (storedStatus === "CANCELLED") {
-      return "CANCELLED";
+      return "COMPLETED";
     }
 
     const nowTs = Date.now() + realtimeClockOffsetMs;
 
     if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || !startTs || !endTs) {
-      return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+      return "SCHEDULED";
     }
 
     if (nowTs < startTs) {
-      return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
+      return "SCHEDULED";
     }
 
     if (nowTs <= endTs) {
@@ -609,7 +623,7 @@
     const nowTs = Date.now() + realtimeClockOffsetMs;
 
     if (!startTs || !endTs) {
-      return status === "DRAFT" ? "Ca thi đang ở trạng thái nháp" : "Đang chờ lịch thi";
+      return "Đang chờ lịch thi";
     }
 
     if (status === "SCHEDULED") {
@@ -624,11 +638,7 @@
       return "Đã hết thời gian thi";
     }
 
-    if (status === "CANCELLED") {
-      return "Ca thi đã hủy";
-    }
-
-    return "Ca thi đang ở trạng thái nháp";
+    return "Đang chờ lịch thi";
   }
 
   function updateRealtimeSessionRows() {
@@ -645,7 +655,7 @@
         startTs,
         endTs,
       );
-      const meta = realtimeSessionStatusMeta[status] || realtimeSessionStatusMeta.DRAFT;
+      const meta = realtimeSessionStatusMeta[status] || realtimeSessionStatusMeta.SCHEDULED;
       pill.className = `status-pill ${meta.className}`;
       pill.textContent = meta.label;
       if (note) {

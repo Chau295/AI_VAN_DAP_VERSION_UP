@@ -1349,7 +1349,7 @@
       </div>
       <div>
         <label class="qm2-label" style="font-weight: 600; color: #334155; margin-bottom: 10px;">Nội dung câu hỏi <span style="color: var(--red);">*</span></label>
-        <textarea class="qm2-editor" id="manualQuestionText" placeholder="Ví dụ: Hãy phân tích quy trình..." style="min-height: 120px; font-size: 15px; line-height: 1.5;"></textarea>
+        <textarea class="qm2-editor" id="manualQuestionText" placeholder="Ví dụ: Hãy phân tích quy trình..." style="min-height: 120px; font-size: 15px; line-height: 1.5;" maxlength="5000"></textarea>
       </div>
     </div>
     <div class="qm2-dialog-foot">
@@ -1380,12 +1380,6 @@
   const app = qm2App;
   const hasActiveExam = String(app?.dataset?.hasActiveExam || 'false').toLowerCase() === 'true';
 
-  window.addEventListener('beforeunload', function (e) {
-    if (hasUnsavedGeneratedQuestions) {
-      e.preventDefault();
-      e.returnValue = 'Bạn có các câu hỏi vừa tạo chưa được lưu. Bạn có chắc chắn muốn thoát?';
-    }
-  });
 
   const pageMode = app?.dataset.pageMode || 'list';
   let viewType = app?.dataset.viewType || 'bank';
@@ -1419,15 +1413,7 @@
   let editingQuestionId = null;
   let deletingQuestionId = null;
 
-  // Cảnh báo thoát trang nếu có câu hỏi nháp chưa lưu
-  window.addEventListener('beforeunload', function (e) {
-      const drafts = document.querySelectorAll('.draft-row');
-      if (drafts.length > 0) {
-          const msg = "Bạn có câu hỏi nháp chưa được lưu vào ngân hàng. Bạn có chắc chắn muốn thoát?";
-          e.returnValue = msg;
-          return msg;
-      }
-  });
+  // Cảnh báo thoát trang đã bị tắt để tránh phiền người dùng
 
   function getCookie(name) {
     let cookieValue = null;
@@ -1822,7 +1808,7 @@
             </div>
           </div>
           <div class="qm2-edit-mode" style="display:none;">
-            <textarea class="qm2-inline-edit-textarea">${escapeHtml(q.content)}</textarea>
+            <textarea class="qm2-inline-edit-textarea" maxlength="5000">${escapeHtml(q.content)}</textarea>
           </div>
         </div>
 
@@ -1950,6 +1936,12 @@
 
         if (!content) {
             showToast('Nội dung không được để trống', 'error');
+            return;
+        }
+
+        if (content.length > 5000) {
+            showToast('Nội dung câu hỏi không được vượt quá 5000 ký tự.', 'error');
+            textarea?.focus();
             return;
         }
 
@@ -2296,6 +2288,12 @@
       return;
     }
 
+    if (content.length > 5000) {
+      showToast('Nội dung câu hỏi không được vượt quá 5000 ký tự.', 'error');
+      textarea?.focus();
+      return;
+    }
+
     try {
       const isEditing = !!editingQuestionId;
 
@@ -2507,9 +2505,25 @@
       return;
     }
 
+    // Kiểm tra xem ngân hàng có đang được dùng trong bộ đề không
+    let isUsedInExamSets = false;
+    try {
+      const checkRes = await fetch(`/api/lecturer/question-banks/${currentBankId}/check-usage/`);
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        isUsedInExamSets = checkData.is_used_in_exam_sets === true;
+      }
+    } catch (_) {
+      // Nếu không check được, vẫn cho tiếp tục
+    }
+
+    const confirmMessage = isUsedInExamSets
+      ? 'Ngân hàng câu hỏi này đang được sử dụng trong bộ đề thi. Toàn bộ câu hỏi và dữ liệu liên quan sẽ bị xóa vĩnh viễn và không thể hoàn tác. Liên kết với bộ đề thi sẽ bị mất.'
+      : 'Toàn bộ câu hỏi và dữ liệu liên quan trong ngân hàng này sẽ bị xóa vĩnh viễn và không thể hoàn tác.';
+
     const confirmed = await window.showGlobalConfirm({
       title: 'Xác nhận xóa ngân hàng câu hỏi',
-      message: 'Toàn bộ câu hỏi và dữ liệu liên quan trong ngân hàng này sẽ bị xóa vĩnh viễn và không thể hoàn tác.',
+      message: confirmMessage,
       confirmText: 'Xóa ngân hàng',
       cancelText: 'Hủy bỏ',
       danger: true,

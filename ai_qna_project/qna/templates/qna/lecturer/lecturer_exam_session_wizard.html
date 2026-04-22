@@ -154,6 +154,28 @@
   .es-room-students-list { display: grid; gap: 0.45rem; max-height: 362px; overflow-y: auto; padding-right: 0.25rem; }
   .es-room-students-list::-webkit-scrollbar { width: 8px; }
   .es-room-students-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+  .session-btn-delete {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+  .session-btn-delete:hover:not([disabled]) {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+  .session-btn-delete[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 
   @media (max-width: 1024px) {
     .es-page { margin: -1.5rem; }
@@ -180,7 +202,12 @@
 </style>
 
 <div class="es-page">
-  <div class="top-header">Quản lý ca thi</div>
+  <div class="top-header">
+    <div>Quản lý ca thi</div>
+    <a href="{% url 'qna:lecturer_exam_sessions_list' %}" style="background: #6b7280; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s;">
+      <i class="fas fa-arrow-left"></i> Quay lại danh sách ca thi
+    </a>
+  </div>
   <div class="es-breadcrumb">Quản lý ca thi &nbsp;&gt;&nbsp; {{ screen_mode_label }}</div>
 
   <div class="es-shell">
@@ -189,10 +216,6 @@
         <h1>{{ screen_mode_label }}</h1>
         <p>Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.</p>
       </div>
-      <a class="es-btn es-btn-secondary" href="{% url 'qna:lecturer_exam_sessions_list' %}">
-        <i class="fas fa-arrow-left"></i>
-        Quay lại danh sách ca thi
-      </a>
     </div>
 
     {% if screen_mode == "view" %}
@@ -258,15 +281,6 @@
                 {% else %}
                   <input class="es-input" type="text" value="{{ selected_subject.name }}" readonly>
                 {% endif %}
-          </div>
-
-          <div class="es-field es-col-6">
-            <label for="sessionSubjectCode">Mã môn học</label>
-            {% if screen_mode == "create" %}
-              <input id="sessionSubjectCode" class="es-input" type="text" value="{{ selected_subject.subject_code }}" readonly>
-            {% else %}
-              <input class="es-input" type="text" value="{{ selected_subject.subject_code }}" readonly>
-            {% endif %}
           </div>
 
           <div class="es-field es-col-6">
@@ -343,7 +357,7 @@
                 <th>Số lượng SV</th>
                 <th>Mật khẩu phòng</th>
                 <th>Bộ đề thi gán cho phòng</th>
-                <th>Thao tác</th>
+                <th style="text-align: center;"></th> </tr>
               </tr>
             </thead>
             <tbody id="roomTableBody"></tbody>
@@ -482,22 +496,11 @@
   const sessionListUrl = "{% url 'qna:lecturer_exam_sessions_list' %}";
   const createSessionUrl = "{% url 'qna:lecturer_create_exam_group_screen' %}";
   const updateSessionUrlTemplate = "{% url 'qna:lecturer_update_exam_group' 0 %}";
+
   const subjectSelect = document.getElementById("sessionSubjectSelect");
-  const subjectCodeInput = document.getElementById("sessionSubjectCode");
 
   if (subjectSelect && sessionMode === "create") {
-    const syncSubjectCode = () => {
-      const selectedOption = subjectSelect.options[subjectSelect.selectedIndex];
-      if (subjectCodeInput) {
-        subjectCodeInput.value = selectedOption ? selectedOption.dataset.code || "" : "";
-      }
-    };
-
-    syncSubjectCode();
-
     subjectSelect.addEventListener("change", () => {
-      syncSubjectCode();
-
       const subjectId = subjectSelect.value;
       if (!subjectId) return;
 
@@ -581,6 +584,18 @@
       output += alphabet[Math.floor(Math.random() * alphabet.length)];
     }
     return output;
+  }
+
+  function generateRoomName() {
+    // Tao ten phong ngau nhien 3 chu so (100-999)
+    const existing = new Set(wizardState.roomConfigs.map(r => r.room_name));
+    let candidate;
+    let attempts = 0;
+    do {
+      candidate = String(Math.floor(100 + Math.random() * 900));
+      attempts += 1;
+    } while (existing.has(candidate) && attempts < 20);
+    return candidate;
   }
 
   const realtimeSessionStatusMeta = {
@@ -668,12 +683,6 @@
     const titleDescription = document.querySelector(".es-title p");
     if (titleDescription) {
       titleDescription.textContent = "Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.";
-    }
-
-    const backLink = document.querySelector('.es-header a.es-btn-secondary');
-    if (backLink) {
-      backLink.classList.add("es-header-back");
-      backLink.innerHTML = '<i class="fas fa-arrow-left"></i>Quay lại danh sách ca thi';
     }
 
     const banner = document.querySelector(".es-banner");
@@ -1243,7 +1252,7 @@
     if (!room) {
       return;
     }
-    const normalizedCount = Math.max(0, Number(nextValue || 0));
+    const normalizedCount = Math.max(1, Number(nextValue || 0));
     room.student_count = normalizedCount;
     if (room.assignments.length > normalizedCount) {
       room.assignments = room.assignments.slice(0, normalizedCount).map((assignment, index) => ({
@@ -1258,8 +1267,8 @@
     const suggestion = suggestions[wizardState.roomConfigs.length % Math.max(suggestions.length, 1)] || {};
     wizardState.roomConfigs.push({
       client_id: `room-${Date.now()}-${wizardState.roomConfigs.length + 1}`,
-      room_name: suggestion.room_name || `Phòng ${wizardState.roomConfigs.length + 1}`,
-      student_count: suggestion.capacity || 0,
+      room_name: suggestion.room_name || generateRoomName(),
+      student_count: suggestion.capacity || 1,
       password: generateRoomPassword(),
       exam_set_id: null,
       exam_set_name: "",
@@ -1347,7 +1356,7 @@
           <td><input class="es-input" type="text" value="${escapeHtml(room.room_name)}" data-room-field="room_name" data-room-index="${index}" ${isViewMode() ? "readonly" : ""}></td>
           <td>
             <div class="es-field es-room-count-field">
-              <input class="es-input es-room-count-input" type="number" min="0" step="1" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" inputmode="numeric" ${isViewMode() ? "readonly" : ""}>
+              <input class="es-input es-room-count-input" type="number" min="1" step="1" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" inputmode="numeric" ${isViewMode() ? "readonly" : ""}>
             </div>
           </td>
           <td>
@@ -1402,8 +1411,8 @@
         }
         if (target.dataset.roomField === "student_count") {
           const rawValue = String(target.value || "").trim();
-          const parsedValue = rawValue === "" ? 0 : Number(rawValue);
-          room.student_count = Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : 0;
+          const parsedValue = rawValue === "" ? 1 : Number(rawValue);
+          room.student_count = Number.isFinite(parsedValue) ? Math.max(1, parsedValue) : 1;
           renderDistribution();
           return;
         }

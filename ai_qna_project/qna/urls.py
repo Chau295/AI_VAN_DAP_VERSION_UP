@@ -1,4 +1,4 @@
-﻿from django.conf import settings
+from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path
 from . import views
@@ -101,6 +101,8 @@ urlpatterns = [
          name="api_save_question_bank_questions"),
     path("api/lecturer/question-banks/<int:bank_id>/delete/", views.api_delete_question_bank,
          name="api_delete_question_bank"),
+    path("api/lecturer/question-banks/<int:bank_id>/check-usage/", views.api_check_question_bank_usage,
+         name="api_check_question_bank_usage"),
 
     path("api/lecturer/materials/presign/", views.api_material_presign, name="api_material_presign"),
     path("api/lecturer/materials/upload-complete/", views.api_material_upload_complete,

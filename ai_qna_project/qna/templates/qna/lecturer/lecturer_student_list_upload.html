@@ -699,7 +699,7 @@
           </div>
           <div class="qm2-file-actions ml-4">
             ${item.status === 'error' ? `<button type="button" class="text-blue-600 text-xs font-bold whitespace-nowrap mr-2" data-retry="${item.id}"><i class="fas fa-redo mr-1"></i> Thử lại</button>` : ''}
-            ${item.status === 'invalid' ? `<button type="button" class="text-blue-600 text-xs font-bold whitespace-nowrap mr-2" data-browse="1">Chọn file khác</button>` : ''}
+            ${item.status === 'invalid' ? `<button type="button" class="text-blue-600 text-xs font-bold whitespace-nowrap mr-2" data-browse="1">Chọn tệp tin khác</button>` : ''}
             ${isSuccess ? `<i class="fas fa-check text-green-500 mr-2"></i>` : ''}
             <button type="button" class="qm2-icon-btn" data-remove="${item.id}"><i class="fas fa-trash-alt"></i></button>
           </div>
@@ -715,7 +715,13 @@
     const browseAltBtn = event.target.closest('[data-browse]');
     if (removeBtn) removeItem(removeBtn.dataset.remove);
     if (retryBtn) retryItem(retryBtn.dataset.retry);
-    if (browseAltBtn) openPicker();
+    if (browseAltBtn) {
+      // FIX: Xóa item invalid VÀ ready cũ khi user chọn lại file,
+      // cho phép upload lại cùng file mà không bị chặn bởi duplicate check.
+      filesState = filesState.filter(item => item.status !== 'invalid' && item.status !== 'ready');
+      render();
+      openPicker();
+    }
   });
 
   form.addEventListener('submit', async event => {

@@ -23,6 +23,7 @@ from .models import (
     DifficultyLevel,
     ExamCode,
     ExamCodeQuestion,
+    ExamSessionRoom,
     ExamSet,
     ExamSetStatus,
     Question,
@@ -76,6 +77,8 @@ EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE = "Mỗi câu hỏi phải có số đi�
 EXAM_SET_EMPTY_ACADEMIC_YEAR_MESSAGE = "Vui lòng nhập năm học"
 EXAM_SET_INVALID_ACADEMIC_YEAR_MESSAGE = "Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)"
 EXAM_SET_TARGET_TOTAL_SCORE = Decimal("10")
+EXAM_QUESTION_TEXT_MAX_LENGTH = 5000
+EXAM_QUESTION_TEXT_TOO_LONG_MESSAGE = "Nội dung câu hỏi không được vượt quá 5000 ký tự."
 
 
 def _parse_int_field(raw_value, field_label: str) -> int:
@@ -90,6 +93,15 @@ def _parse_decimal_field(raw_value, field_label: str) -> Decimal:
         return Decimal(str(raw_value).strip())
     except (InvalidOperation, AttributeError, TypeError, ValueError) as exc:
         raise ValueError(f"{field_label} không hợp lệ.") from exc
+
+
+def _validate_exam_question_text(content: str) -> str:
+    normalized_content = (content or "").strip()
+    if not normalized_content:
+        raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
+    if len(normalized_content) > EXAM_QUESTION_TEXT_MAX_LENGTH:
+        raise ValueError(EXAM_QUESTION_TEXT_TOO_LONG_MESSAGE)
+    return normalized_content
 
 
 def _parse_exam_set_code_keyword(keyword: str) -> int | None:
@@ -139,11 +151,8 @@ def _validate_exam_set_creation_rules(
         + Decimal(hard_count) * hard_score
     )
 
-    # BUG_033: với SRS, tổng điểm phải đúng bằng 10
-    if total_score > EXAM_SET_TARGET_TOTAL_SCORE:
-        raise ValueError(EXAM_SET_TOTAL_OVER_MESSAGE)
-    if total_score < EXAM_SET_TARGET_TOTAL_SCORE:
-        raise ValueError(EXAM_SET_TOTAL_UNDER_MESSAGE)
+    # Cho phép tạo bộ đề ngay cả khi tổng điểm != 10;
+    # cảnh báo được hiển thị phía frontend trước khi tạo.
     return total_score
 
 
@@ -187,6 +196,24 @@ def _mark_exam_set_draft(exam_set: ExamSet | None) -> None:
     if exam_set and exam_set.status != ExamSetStatus.DRAFT:
         exam_set.status = ExamSetStatus.DRAFT
         exam_set.save(update_fields=["status", "updated_at"])
+
+
+def _sync_exam_set_status_from_codes(exam_set: ExamSet | None) -> None:
+    """Rule 3: trang thai bo de suy ra tu ma de.
+    Tat ca ma de da duyet => APPROVED; con bat ky ma chua duyet => DRAFT.
+    Neu chua co ma de nao => DRAFT.
+    """
+    if not exam_set:
+        return
+    codes = exam_set.exam_codes.all()
+    if codes.exists() and not codes.filter(is_approved=False).exists():
+        new_status = ExamSetStatus.APPROVED
+    else:
+        new_status = ExamSetStatus.DRAFT
+    if exam_set.status != new_status:
+        exam_set.status = new_status
+        exam_set.save(update_fields=["status", "updated_at"])
+
 
 
 def _difficulty_meta():
@@ -247,6 +274,74 @@ def _exam_set_summary(exam_set: ExamSet) -> dict:
         "approved_codes_count": approved_count,
         "used_codes_count": used_count,
     }
+
+
+# ==============================================================================
+# STATUS UI CHO CA THI (3 trạng thái: Sắp / Đang / Đã kết thúc)
+# ==============================================================================
+SESSION_STATUS_UI_CHOICES = (
+    ("SCHEDULED", "Sắp diễn ra"),
+    ("ONGOING", "Đang diễn ra"),
+    ("COMPLETED", "Đã kết thúc"),
+)
+
+
+def _normalize_session_status_for_ui(raw_status: str | None) -> str:
+    if raw_status == "ONGOING":
+        return "ONGOING"
+    if raw_status == "COMPLETED" or raw_status == "CANCELLED":
+        return "COMPLETED"
+    return "SCHEDULED"
+
+
+def _session_status_ui_label(status_code: str) -> str:
+    """Dùng riêng cho UI CA THI."""
+    labels = dict(SESSION_STATUS_UI_CHOICES)
+    return labels.get(status_code, labels["SCHEDULED"])
+
+
+def _exam_set_ui_status(exam_set: ExamSet) -> str:
+    """Dùng nội bộ cho logic ca thi – KHÔNG dùng để render UI bộ đề."""
+    raw_statuses = []
+    for code in exam_set.exam_codes.all():
+        for room in code.session_rooms.all():
+            group = room.exam_session_group_id
+            if group is not None:
+                raw_statuses.append(getattr(group, "computed_status", None))
+
+    if not raw_statuses:
+        return "SCHEDULED"
+
+    normalized = {_normalize_session_status_for_ui(item) for item in raw_statuses}
+    if "ONGOING" in normalized:
+        return "ONGOING"
+    if "SCHEDULED" in normalized:
+        return "SCHEDULED"
+    return "COMPLETED"
+
+
+# ==============================================================================
+# STATUS UI CHO BỘ ĐỀ (2 trạng thái: Chưa duyệt / Đã duyệt)
+# ==============================================================================
+EXAM_SET_UI_STATUS_CHOICES = (
+    ("APPROVED", "Đã duyệt"),
+    ("UNAPPROVED", "Chưa duyệt"),
+)
+
+
+def _exam_set_approval_status(exam_set: ExamSet) -> str:
+    """Trả về UI status bộ đề: APPROVED hoặc UNAPPROVED.
+    Mapping từ backend internal: ExamSetStatus.APPROVED → APPROVED, mọi trạng thái khác → UNAPPROVED.
+    """
+    if exam_set.status == ExamSetStatus.APPROVED:
+        return "APPROVED"
+    return "UNAPPROVED"
+
+
+def _exam_set_approval_label(exam_set: ExamSet) -> str:
+    """Trả về nhãn UI bộ đề: 'Đã duyệt' hoặc 'Chưa duyệt'."""
+    labels = dict(EXAM_SET_UI_STATUS_CHOICES)
+    return labels.get(_exam_set_approval_status(exam_set), "Chưa duyệt")
 
 
 def _ordered_items(code: ExamCode):
@@ -463,7 +558,7 @@ def _replace_exam_code_items(code: ExamCode, new_blueprint: dict):
 
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
-    _mark_exam_set_draft(code.exam_set_id)
+    _sync_exam_set_status_from_codes(code.exam_set_id)
 
 
 def _collect_used_original_question_ids(exam_set: ExamSet, exclude_code_id: int | None = None):
@@ -577,9 +672,7 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
             raise ValueError("Dữ liệu câu hỏi không hợp lệ.")
 
         seen_item_ids.add(existing.id)
-        content = (incoming.get("content") or "").strip()
-        if not content:
-            raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
+        content = _validate_exam_question_text(incoming.get("content"))
 
         normalized_content = normalize_question_text(content)
         if normalized_content in seen_normalized_contents:
@@ -603,7 +696,7 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
 
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
-    _mark_exam_set_draft(code.exam_set_id)
+    _sync_exam_set_status_from_codes(code.exam_set_id)
 
 
 def _prefetch_exam_sets(qs):
@@ -616,7 +709,10 @@ def _prefetch_exam_sets(qs):
                     "exam_code_questions",
                     queryset=ExamCodeQuestion.objects.select_related("question_id").order_by("display_order", "pk"),
                 ),
-                "session_rooms",
+                Prefetch(
+                    "session_rooms",
+                    queryset=ExamSessionRoom.objects.select_related("exam_session_group_id"),
+                ),
             ),
         ),
     )
@@ -649,8 +745,18 @@ def lecturer_exam_codes_screen(request):
         exam_sets = exam_sets.filter(academic_year=academic_year)
     if semester:
         exam_sets = exam_sets.filter(semester=semester)
-    if status_filter:
-        exam_sets = exam_sets.filter(status=status_filter)
+
+    # UI bộ đề chỉ có 2 trạng thái: APPROVED / UNAPPROVED
+    valid_exam_set_status_filters = {k for k, _ in EXAM_SET_UI_STATUS_CHOICES}
+    if status_filter not in valid_exam_set_status_filters:
+        status_filter = ""
+
+    # Áp dụng filter trạng thái bộ đề trực tiếp trên queryset (hiệu quả hơn)
+    if status_filter == "APPROVED":
+        exam_sets = exam_sets.filter(status=ExamSetStatus.APPROVED)
+    elif status_filter == "UNAPPROVED":
+        exam_sets = exam_sets.exclude(status=ExamSetStatus.APPROVED)
+
     if keyword:
         search_filter = Q(name__icontains=keyword) | Q(
             Q(name="") | Q(name__isnull=True),
@@ -667,6 +773,9 @@ def lecturer_exam_codes_screen(request):
     for es in exam_sets:
         summary = _exam_set_summary(es)
         used_codes_count = summary["used_codes_count"]
+        # UI bộ đề: chỉ dùng approval status, KHÔNG dùng session ui status
+        approval_status = _exam_set_approval_status(es)
+        approval_label = _exam_set_approval_label(es)
 
         if linked_filter == "USED" and used_codes_count <= 0:
             continue
@@ -684,7 +793,8 @@ def lecturer_exam_codes_screen(request):
                 "version_count": summary["total_codes_count"],
                 "approved_codes_count": summary["approved_codes_count"],
                 "used_codes_count": used_codes_count,
-                "status": es.status,
+                "approval_status": approval_status,
+                "approval_label": approval_label,
                 "is_linked": used_codes_count > 0,
                 "can_delete": used_codes_count == 0,
                 "created_at": es.created_at,
@@ -708,7 +818,8 @@ def lecturer_exam_codes_screen(request):
         "rows": list(page_obj.object_list),
         "year_options": year_options,
         "semester_choices": SemesterChoices.choices,
-        "status_choices": ExamSetStatus.choices,
+        # exam_set_status_choices chỉ có 2 trạng thái bộ đề
+        "exam_set_status_choices": EXAM_SET_UI_STATUS_CHOICES,
         "filter_values": request.GET,
         "page_obj": page_obj,
         "paginator": paginator,
@@ -787,9 +898,15 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
 
     exam_codes = exam_set.exam_codes.all().order_by('code_number', 'exam_code_id')
     codes_data = [_serialize_exam_code(code) for code in exam_codes]
+    # UI bộ đề: dùng approval status (Chưa duyệt / Đã duyệt), KHÔNG dùng session status
+    approval_status = _exam_set_approval_status(exam_set)
+    approval_label = _exam_set_approval_label(exam_set)
 
     context = {
         "exam_set": exam_set,
+        # exam_set_approval_status: APPROVED hoặc UNAPPROVED – chỉ dùng cho UI bộ đề
+        "exam_set_approval_status": approval_status,
+        "exam_set_approval_label": approval_label,
         "exam_set_code": f"BD-{exam_set.exam_set_id:04d}",
         "total_codes_count": exam_codes.count(),
         "approved_codes_count": sum(1 for c in codes_data if c['is_approved']),
@@ -911,12 +1028,6 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
     if _subject_has_ongoing_exam_group(exam_set.subject_id):
         return _locked_subject_mutation_response()
 
-    if exam_set.is_linked:
-        return JsonResponse(
-            {"status": "FAIL", "message": "Bộ đề đã được sử dụng, không thể tạo thêm mã đề."},
-            status=400
-        )
-
     try:
         data = json.loads(request.body)
         payload_items = data.get("items", [])
@@ -937,9 +1048,7 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
 
             db_questions = []
             for item in payload_items:
-                content = (item.get("content") or "").strip()
-                if not content:
-                    raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
+                content = _validate_exam_question_text(item.get("content"))
 
                 if _question_exists_in_subject(exam_set.subject_id, content):
                     raise ValueError(f"Câu hỏi '{content[:30]}...' đã tồn tại trong ngân hàng.")
@@ -965,8 +1074,8 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
                 )
 
             ExamCodeQuestion.objects.bulk_create(db_questions)
-            # BUG_030: đảm bảo exam_set về DRAFT khi thêm mã đề thủ công
-            _mark_exam_set_draft(exam_set)
+            # Bug 2+3: tinh lai trang thai bo de tu ma de (khong force DRAFT, de auto-detect)
+            _sync_exam_set_status_from_codes(exam_set)
 
         return JsonResponse({
             "status": "SUCCESS",
@@ -1122,7 +1231,7 @@ def lecturer_delete_exam_code(request, exam_code_id: int):
         for eq in code.exam_code_questions.all():
             _delete_exam_clone(eq.question_id)
         code.delete()
-        _mark_exam_set_draft(exam_set)
+        _sync_exam_set_status_from_codes(exam_set)
 
     return JsonResponse({"status": "SUCCESS", "message": "Đã xóa mã đề thành công."})
 
@@ -1161,7 +1270,7 @@ def lecturer_save_exam_set_draft(request, exam_set_id: int):
     if _subject_has_ongoing_exam_group(exam_set.subject_id):
         return _locked_subject_mutation_response()
     exam_set.save(update_fields=["updated_at"])
-    return JsonResponse({"status": "SUCCESS", "message": "Đã lưu bản nháp."})
+    return JsonResponse({"status": "SUCCESS", "message": "Đã lưu thay đổi."})
 
 
 @login_required

@@ -24,50 +24,32 @@
 
     .main-content {
         padding: 0;
-        min-height: 100vh;
+        /* Kéo giãn khung sát viền để đồng bộ với các trang khác */
+        margin: -2.5rem;
+        min-height: calc(100vh + 5rem);
         background-color: var(--bg-body);
     }
 
-    /* HEADER */
+    /* HEADER SÁT GÓC TRÊN */
     .top-header {
         background: #fff;
         padding: 16px 32px;
         font-size: 20px;
-        font-weight: bold;
+        font-weight: 800;
         border-bottom: 1px solid var(--border-dark);
         display: flex;
         align-items: center;
         justify-content: space-between;
+        margin-top: 0;
     }
 
     /* SUB-HEADER & ACTIONS */
     .content-wrapper {
-        padding: 24px 32px;
+        padding: 32px;
         max-width: 1400px;
         margin: 0 auto;
         position: relative;
     }
-
-    .top-action-bar {
-        display: flex;
-        justify-content: flex-end;
-        margin-bottom: 16px;
-    }
-
-    .btn-back {
-        background: #6b7280;
-        color: white;
-        padding: 8px 16px;
-        border-radius: 6px;
-        text-decoration: none;
-        font-size: 14px;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        transition: 0.2s;
-    }
-
-    .btn-back:hover { background: #4b5563; color: white; }
 
     .subject-info-row {
         display: flex;
@@ -90,15 +72,15 @@
         color: var(--text-muted);
     }
 
-    .badge-draft-large {
-        background: #ffedd5;
-        color: #f59e0b;
+    .badge-exam-set {
         padding: 4px 12px;
         border-radius: 20px;
         font-weight: bold;
         font-size: 11px;
         text-transform: uppercase;
     }
+    .badge-exam-set.badge-approved { background: #dcfce7; color: #16a34a; }
+    .badge-exam-set.badge-unapproved { background: #ffedd5; color: #f59e0b; }
 
     .subject-actions { display: flex; gap: 12px; align-items: center; }
 
@@ -153,15 +135,19 @@
 
     .filter-hint { color: #9ca3af; font-size: 13px; }
 
-    /* THIẾT KẾ CARD */
+    /* ========================================================
+       THIẾT KẾ CARD: GRID 6 CỘT TỰ ĐỘNG SO-LE HÀNG CUỐI
+       ======================================================== */
     .exam-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+        grid-template-columns: repeat(6, 1fr); /* 6 cột để chia lưới so-le */
         gap: 24px;
         margin-bottom: 40px;
     }
 
     .card {
+        grid-column: span 2; /* Mỗi card chiếm 2 cột => 3 card/hàng */
+        width: 100%;
         background: white;
         border-radius: 12px;
         border: 1px solid var(--border-dark);
@@ -173,6 +159,16 @@
         position: relative;
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
+
+    /* CÔNG THỨC SO-LE: Đẩy card 7 và 8 vào giữa nếu chúng là 2 card cuối cùng */
+    .card:nth-child(3n + 1):nth-last-child(2) {
+        grid-column: 2 / 4; /* Card số 7 sẽ đẩy vào giữa cột 2 và 4 */
+    }
+    .card:nth-child(3n + 2):nth-last-child(1) {
+        grid-column: 4 / 6; /* Card số 8 sẽ đẩy vào giữa cột 4 và 6 */
+    }
+
+    /* ======================================================== */
 
     .card:hover {
         border-color: #9ca3af;
@@ -454,11 +450,40 @@
     .question-editor-textarea[readonly] { background: #f3f4f6; border-color: var(--border-dark); color: #6b7280; box-shadow: none; }
 
     .hidden-summary { display: none; }
+
+    /* RESPONSIVE CHO GRID */
+    @media (max-width: 1024px) {
+        .main-content { margin: -1.5rem; }
+        .exam-grid {
+            grid-template-columns: repeat(4, 1fr); /* Tablet: Chuyển về 2 thẻ / hàng */
+        }
+        /* Hủy chế độ so-le trên tablet */
+        .card,
+        .card:nth-child(3n + 1):nth-last-child(2),
+        .card:nth-child(3n + 2):nth-last-child(1) {
+            grid-column: span 2;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .exam-grid {
+            grid-template-columns: 1fr; /* Mobile: Chuyển về 1 thẻ / hàng */
+        }
+        /* Hủy chế độ so-le trên mobile */
+        .card,
+        .card:nth-child(3n + 1):nth-last-child(2),
+        .card:nth-child(3n + 2):nth-last-child(1) {
+            grid-column: span 1;
+        }
+    }
 </style>
 
 <div class="main-content">
     <div class="top-header">
-        Quản lý đề thi
+        <div>Quản lý đề thi</div>
+        <a href="{% url 'qna:lecturer_exam_codes_screen' %}" style="background: #6b7280; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s;">
+            <i class="fas fa-arrow-left"></i> Quay lại danh sách bộ đề
+        </a>
     </div>
 
     <div class="content-wrapper">
@@ -468,17 +493,13 @@
             <span id="summaryUsedCodes">0</span>
         </div>
 
-        <div class="top-action-bar">
-            <a href="{% url 'qna:lecturer_exam_codes_screen' %}" class="btn-back"><i class="fas fa-arrow-left"></i> Quay lại danh sách bộ đề</a>
-        </div>
-
         <div class="subject-info-row">
             <div class="subject-title">
                 <h2>Môn học: {{ exam_set.subject.name|default:"Kho và khai phá dữ liệu" }}</h2>
                 <div class="subject-meta">
                     <span><i class="far fa-calendar-alt"></i> Năm học: {{ exam_set.academic_year|default:"2024-2025" }}</span>
                     <span><i class="fas fa-graduation-cap"></i> Học kỳ: {{ exam_set.semester|default:"1" }}</span>
-                    <span class="badge-draft-large">{{ exam_set.get_status_display|default:"CHƯA DUYỆT" }}</span>
+                    <span class="badge-exam-set{% if exam_set_approval_status == 'APPROVED' %} badge-approved{% else %} badge-unapproved{% endif %}">{{ exam_set_approval_label|default:"Chưa duyệt" }}</span>
                 </div>
             </div>
             <div class="subject-actions">
@@ -545,7 +566,6 @@
 
 {% endblock %}
 
-
 {% block extra_js %}
 <script>
   const examSetId = {{ exam_set.id }};
@@ -563,14 +583,14 @@
   };
 
   function getScoreForDifficulty(difficulty) {
-    // BUG_031: examSetScores đã là điểm/câu, không cần chia thêm
     const diff = difficulty.toLowerCase();
     const score = examSetScores[diff];
     if (score == null || score === 0) return null;
     return parseFloat(score).toFixed(1);
   }
 
-  let examSetStatus = "{{ exam_set.status }}";
+  // exam_set_approval_status: APPROVED hoặc UNAPPROVED – chỉ cho UI bộ đề
+  let examSetApprovalStatus = "{{ exam_set_approval_status }}";
   let examCodes = {{ exam_codes_json|safe }};
   let currentCodeId = null;
   let selectedCodeIds = new Set();
@@ -658,7 +678,6 @@
     }
   }
 
-  // RENDER PAGINATION (BUG_036: thêm ellipsis khi nhiều trang)
   function renderPagination() {
       const totalPages = Math.ceil(examCodes.length / itemsPerPage) || 1;
       const paginationContainer = document.getElementById('paginationContainer');
@@ -699,7 +718,6 @@
       paginationContainer.appendChild(nextBtn);
   }
 
-  // RENDER CARDS
   function renderCards() {
     const grid = document.getElementById('cardGrid');
     grid.innerHTML = '';
@@ -714,7 +732,6 @@
 
       const isChecked = selectedCodeIds.has(code.id) ? 'checked' : '';
 
-      // KHÓA CHECKBOX NẾU ĐÃ DÙNG
       const isDisabled = code.is_linked ? 'disabled title="Mã đề đã dùng không thể chọn"' : '';
       const checkboxHtml = `<div class="checkbox-container" data-ignore-card-click>
                               <input type="checkbox" data-select-code ${isChecked} ${isDisabled}>
@@ -754,12 +771,11 @@
           cb.addEventListener('change', () => {
               if (cb.checked) {
                   selectedCodeIds.add(code.id);
-                  card.classList.add('is-selected'); // Thêm hiệu ứng tức thì không cần load lại lưới
+                  card.classList.add('is-selected');
               } else {
                   selectedCodeIds.delete(code.id);
                   card.classList.remove('is-selected');
               }
-              // Chỉ cập nhật trạng thái summary thay vì load lại toàn bộ Grid
               updateExamSetSummary();
           });
       }
@@ -844,7 +860,7 @@
                             <span class="score-badge">Điểm: ${scoreNum}</span>
                         </div>
                     </div>
-                    <textarea class="question-editor-textarea" data-difficulty="${diff.toUpperCase()}" data-display-order="${index}" placeholder="Nhập nội dung câu hỏi..."></textarea>
+                    <textarea class="question-editor-textarea" data-difficulty="${diff.toUpperCase()}" data-display-order="${index}" placeholder="Nhập nội dung câu hỏi..." maxlength="5000"></textarea>
                 `;
                 container.appendChild(block); index++;
             }
@@ -871,7 +887,7 @@
                         <span class="score-badge">Điểm: ${scoreNum}</span>
                     </div>
                 </div>
-                <textarea class="question-editor-textarea" data-item-id="${item.id}" data-difficulty="${item.difficulty}" data-display-order="${index + 1}" ${code.is_linked ? 'readonly' : ''}>${escapeHtml(item.content)}</textarea>
+                <textarea class="question-editor-textarea" data-item-id="${item.id}" data-difficulty="${item.difficulty}" data-display-order="${index + 1}" maxlength="5000" ${code.is_linked ? 'readonly' : ''}>${escapeHtml(item.content)}</textarea>
             `;
             container.appendChild(block);
         });
@@ -967,6 +983,12 @@
 
     const textareas = Array.from(document.querySelectorAll('#questionEditorList textarea'));
     if (textareas.some(ta => !ta.value.trim())) { showToast("Vui lòng nhập đủ nội dung câu hỏi!", true); return false; }
+    const oversizedTextarea = textareas.find(ta => ta.value.trim().length > 5000);
+    if (oversizedTextarea) {
+      showToast("Nội dung câu hỏi không được vượt quá 5000 ký tự.", true);
+      oversizedTextarea.focus();
+      return false;
+    }
 
     if (!options.skipConfirm) {
       const confirmed = await window.showGlobalConfirm({
@@ -998,12 +1020,6 @@
             currentCodeId = data.exam_code.id;
             isCreatingNewCode = false;
 
-            // BUG_030: cập nhật examSetStatus nếu server trả về
-            if (data.exam_set_status) {
-                examSetStatus = data.exam_set_status;
-            }
-
-            // BUG_036: sau khi tạo mưới chuyển đến trang cuối
             if (wasCreating) {
                 currentPage = Math.ceil(examCodes.length / itemsPerPage);
             }
@@ -1158,7 +1174,6 @@
   }
 
   document.getElementById('selectAllCodes').addEventListener('change', (e) => {
-    // Chỉ tick chọn những mã đề chưa được dùng
     const ids = examCodes.filter(c => !c.is_linked).map(c => c.id);
     if (e.target.checked) selectedCodeIds = new Set(ids); else selectedCodeIds.clear();
     renderCards();

@@ -81,21 +81,6 @@
     color: var(--text-muted);
   }
 
-  .btn-back {
-    background: #6b7280;
-    color: white;
-    padding: 10px 16px;
-    border-radius: var(--radius-control);
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    transition: 0.2s;
-  }
-  .btn-back:hover { background: #4b5563; }
-
   /* PANELS CHỨA CÁC BƯỚC */
   .panel {
     background: #fff;
@@ -405,7 +390,10 @@
 
 <div class="main-content">
   <div class="top-header">
-    Quản lý đề thi
+    <div>Quản lý đề thi</div>
+    <a href="{% url 'qna:lecturer_exam_codes_screen' %}" style="background: #6b7280; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s;">
+      <i class="fas fa-arrow-left"></i> Quay lại danh sách bộ đề
+    </a>
   </div>
 
   <div class="content-wrapper">
@@ -414,9 +402,6 @@
         <h1>Tạo đề thi</h1>
         <p>Thiết lập các tham số để tạo đề thi chất lượng cao từ ngân hàng câu hỏi của bạn.</p>
       </div>
-      <a href="{% url 'qna:lecturer_exam_codes_screen' %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="btn-back">
-        <i class="fas fa-arrow-left"></i> Quay lại danh sách bộ đề
-      </a>
     </div>
 
     <div class="panel">
@@ -645,17 +630,15 @@
     totalOver: 'Tổng điểm hiện tại đang vượt quá 10 điểm.',
     totalUnder: 'Tổng điểm hiện tại chưa đủ 10 điểm.',
     noQuestions: 'Mỗi mã đề phải có ít nhất 1 câu hỏi.',
-    invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm không âm.',
+    invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm lớn hơn 0.',
     invalidVersionCount: 'Số lượng mã đề phải lớn hơn 0.',
-    emptyAcademicYear: 'Vui lòng nhập năm học',
-    invalidAcademicYear: 'Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)',
+    invalidAcademicYear: 'Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.',
     examCodeRequired: 'Vui lòng nhập mã bộ đề.',
     examCodeTooLong: 'Mã bộ đề không được vượt quá 50 ký tự.',
   };
 
   const ACADEMIC_YEAR_REGEX = /^\d{4}-\d{4}$/;
   let pendingCreatePayload = null;
-  let academicYearTouched = false;
 
   function parseSafeInt(value) {
     const parsed = parseInt(String(value ?? '').trim(), 10);
@@ -674,23 +657,10 @@
   function validateAcademicYearField() {
     const input = document.getElementById('academicYear');
     if (!input) return true;
-    const rawValue = String(input.value ?? '');
-    const value = rawValue.trim();
-    const isUntouched = !academicYearTouched;
-    if (isUntouched) {
-      input.setCustomValidity('');
-      return { valid: true, state: 'untouched', message: '' };
-    }
-    if (!value) {
-      input.setCustomValidity(EXAM_SET_MESSAGES.emptyAcademicYear);
-      return { valid: false, state: 'empty', message: EXAM_SET_MESSAGES.emptyAcademicYear };
-    }
-    if (!ACADEMIC_YEAR_REGEX.test(value)) {
-      input.setCustomValidity(EXAM_SET_MESSAGES.invalidAcademicYear);
-      return { valid: false, state: 'invalid_format', message: EXAM_SET_MESSAGES.invalidAcademicYear };
-    }
-    input.setCustomValidity('');
-    return { valid: true, state: 'valid', message: '' };
+
+    const isValid = ACADEMIC_YEAR_REGEX.test(String(input.value ?? ''));
+    input.setCustomValidity(isValid ? '' : EXAM_SET_MESSAGES.invalidAcademicYear);
+    return isValid;
   }
 
   function getMatrixConfig() {
@@ -775,7 +745,6 @@
   function updateSummary() {
     const config = getMatrixConfig();
     const validation = getConfigValidation(config);
-    const academicYearValidation = validateAcademicYearField();
     const summaryBox = document.getElementById('summaryBox');
     const btn = document.getElementById('btnSubmit');
 
@@ -787,12 +756,11 @@
     }
 
     if (btn) {
-      const disableSubmit = !validation.valid || !academicYearValidation.valid;
-      btn.disabled = disableSubmit;
-      btn.title = !academicYearValidation.valid ? academicYearValidation.message : (validation.valid ? '' : validation.message);
+      btn.disabled = !validation.valid;
+      btn.title = validation.valid ? '' : validation.message;
     }
 
-    return { config, validation, academicYearValidation };
+    return { config, validation };
   }
 
   async function openConfirmCreateModal(message, payload) {
@@ -852,14 +820,8 @@
   document.getElementById('easyScore').addEventListener('input', updateSummary);
   document.getElementById('mediumScore').addEventListener('input', updateSummary);
   document.getElementById('hardScore').addEventListener('input', updateSummary);
-  document.getElementById('academicYear').addEventListener('input', () => {
-    academicYearTouched = true;
-    updateSummary();
-  });
-  document.getElementById('academicYear').addEventListener('blur', () => {
-    academicYearTouched = true;
-    updateSummary();
-  });
+  document.getElementById('academicYear').addEventListener('input', validateAcademicYearField);
+  document.getElementById('academicYear').addEventListener('blur', validateAcademicYearField);
   ['easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
     document.getElementById(id).addEventListener('blur', () => normalizeScoreInput(id, true));
   });
@@ -878,7 +840,7 @@
     const versionCount = parseSafeInt(document.getElementById('numberOfVersions').value);
     const examCodeInput = document.getElementById('examSetName');
     const examCode = (examCodeInput.value || '').trim();
-    const { config, validation, academicYearValidation } = updateSummary();
+    const { config, validation } = updateSummary();
 
     // BUG_022: kiểm tra số lượng nguồn chọn - tối đa 10
     if (sourceBanks.length > 10) {
@@ -908,8 +870,9 @@
       return;
     }
 
-    if (!academicYearValidation.valid) {
-      showToast(academicYearValidation.message);
+    if (!validateAcademicYearField()) {
+      // BUG_034: dùng toast thay vì reportValidity() (browser native)
+      showToast(EXAM_SET_MESSAGES.invalidAcademicYear);
       academicYearInput.focus();
       return;
     }

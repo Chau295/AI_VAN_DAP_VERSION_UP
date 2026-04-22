@@ -374,35 +374,34 @@
         <select name="subject_id" class="filter-select" onchange="this.form.submit()">
           <option value="">Môn học: Tất cả</option>
           {% for subject in subjects %}
-            <option value="{{ subject.id }}" {% if filter_values.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>Môn: {{ subject.name }}</option>
+            <option value="{{ subject.id }}" {% if filter_values.subject_id == subject.id|stringformat:'s' %}selected{% endif %}> {{ subject.name }}</option>
           {% endfor %}
         </select>
 
         <select name="academic_year" class="filter-select" onchange="this.form.submit()">
           <option value="">Năm học: Tất cả</option>
           {% for year in year_options %}
-            <option value="{{ year }}" {% if filter_values.academic_year == year %}selected{% endif %}>Năm: {{ year }}</option>
+            <option value="{{ year }}" {% if filter_values.academic_year == year %}selected{% endif %}>{{ year }}</option>
           {% endfor %}
         </select>
 
         <select name="semester" class="filter-select" onchange="this.form.submit()">
           <option value="">Học kỳ: Tất cả</option>
           {% for value, label in semester_choices %}
-            <option value="{{ value }}" {% if filter_values.semester == value %}selected{% endif %}>HK: {{ label }}</option>
+            <option value="{{ value }}" {% if filter_values.semester == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
 
         <select name="status" class="filter-select" onchange="this.form.submit()">
           <option value="">Trạng thái: Tất cả</option>
-          {% for value, label in status_choices %}
-            <option value="{{ value }}" {% if filter_values.status == value %}selected{% endif %}>TT: {{ label }}</option>
-          {% endfor %}
+          <option value="APPROVED" {% if filter_values.status == 'APPROVED' %}selected{% endif %}> Đã duyệt</option>
+          <option value="UNAPPROVED" {% if filter_values.status == 'UNAPPROVED' %}selected{% endif %}> Chưa duyệt</option>
         </select>
 
         <select name="linked" class="filter-select" onchange="this.form.submit()">
           <option value="">Liên kết: Tất cả</option>
-          <option value="USED" {% if filter_values.linked == 'USED' %}selected{% endif %}>Liên kết: Đã dùng</option>
-          <option value="UNUSED" {% if filter_values.linked == 'UNUSED' %}selected{% endif %}>Liên kết: Chưa dùng</option>
+          <option value="USED" {% if filter_values.linked == 'USED' %}selected{% endif %}>Đã dùng</option>
+          <option value="UNUSED" {% if filter_values.linked == 'UNUSED' %}selected{% endif %}>Chưa dùng</option>
         </select>
 
         <a href="window.location.pathname" class="btn-reset" title="Làm mới bộ lọc" onclick="event.preventDefault(); window.location.href=window.location.pathname">
@@ -427,7 +426,7 @@
           <tbody id="examSetTableBody">
             {% if rows %}
               {% for row in rows %}
-                <tr class="qm2-clickable-row" data-detail-url="{{ row.detail_url }}" tabindex="0">
+                <tr class="qm2-clickable-row exam-row-item" data-detail-url="{{ row.detail_url }}" tabindex="0">
                   <td style="padding-left: 32px;">
                     <div class="set-code">{{ row.exam_set_code }}</div>
                   </td>
