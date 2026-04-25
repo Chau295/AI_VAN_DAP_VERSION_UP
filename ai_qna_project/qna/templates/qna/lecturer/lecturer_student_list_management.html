@@ -546,7 +546,8 @@
       </div>
 
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
+        <a href="{% url 'qna:lecturer_subject_workspace' subject.subject_code %}"
+           class="qm2-btn qm2-btn-secondary">
           <i class="fas fa-arrow-left"></i>
           Quay lại
         </a>

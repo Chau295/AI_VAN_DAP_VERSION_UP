@@ -23,7 +23,7 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
         <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
             <div class="flex items-center justify-between">
                 <div>
@@ -47,9 +47,33 @@
                 </div>
             </div>
         </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-amber-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Ca thi sắp tới</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ upcoming_groups_page_obj.paginator.count|default:upcoming_groups|length }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <i class="fas fa-calendar-alt text-amber-500 text-3xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Mã đề đã duyệt</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ approved_codes }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <i class="fas fa-file-signature text-purple-500 text-3xl"></i>
+                </div>
+            </div>
+        </div>
     </div>
 
-<div class="bg-white rounded-xl shadow-md p-6 mb-8">
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8">
         <h3 class="text-xl font-bold text-gray-800 mb-4">Hành động nhanh</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
             <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}"
@@ -66,17 +90,5 @@
             </a>
         </div>
     </div>
-
-                <span class="px-3 py-1 rounded bg-blue-600 text-white">{{ upcoming_groups_page_obj.number }}</span>
-
-                {% if upcoming_groups_page_obj.has_next %}
-                    <a href="?upcoming_page={{ upcoming_groups_page_obj.next_page_number }}" class="px-3 py-1 rounded border bg-white hover:bg-gray-100">Sau</a>
-                    <a href="?upcoming_page={{ upcoming_groups_page_obj.paginator.num_pages }}" class="px-3 py-1 rounded border bg-white hover:bg-gray-100">Cuối</a>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-    </div>
-    {% endif %}
 </div>
 {% endblock %}

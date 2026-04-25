@@ -39,6 +39,23 @@
     gap: 24px;
   }
 
+  .qm2-page-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
+
+  .qm2-page-topbar .qm2-btn {
+    background: #6b7280;
+    color: #fff;
+  }
+
+  .qm2-page-topbar .qm2-btn:hover {
+    background: #4b5563;
+    color: #fff;
+  }
+
   .qm2-header {
     display: flex;
     align-items: flex-start;
@@ -313,6 +330,12 @@
 
 <div class="qm2-page">
   <div class="qm2-shell">
+    <div class="qm2-page-topbar">
+      <a href="{% url 'qna:lecturer_subject_list' %}" class="qm2-btn qm2-btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Quay lại danh sách môn
+      </a>
+    </div>
 
     <div class="qm2-header">
       <div>
@@ -325,10 +348,6 @@
         <p class="qm2-subtitle">Chọn năm học và tải tệp Excel hoặc CSV chứa thông tin sinh viên để cập nhật hệ thống.</p>
         <p class="qm2-subtitle"><strong>Lưu ý:</strong> Hệ thống hiện sẽ cảnh báo và bỏ qua các dòng thiếu MSSV, thiếu họ tên hoặc trùng MSSV trong cùng tệp; hiện chưa có luồng gửi email tự động cho sinh viên sau khi tải lên.</p>
       </div>
-
-      <a href="{% url 'qna:lecturer_student_list_management' subject.subject_code %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-btn qm2-btn-secondary">
-        <i class="fas fa-arrow-left"></i> Quay lại danh sách lớp
-      </a>
     </div>
 
     <form method="post" enctype="multipart/form-data" id="uploadForm" class="qm2-panel">
@@ -423,6 +442,19 @@
   const allowed = ['xlsx', 'xls', 'csv'];
 
   let filesState = [];
+  let hasUploadedSuccess = false;
+  let redirectScheduled = false;
+
+  function maybeRedirectAfterUploadsComplete() {
+    if (redirectScheduled || !hasUploadedSuccess) return;
+    const hasUploading = filesState.some(item => item.status === 'uploading');
+    const hasReady = filesState.some(item => item.status === 'ready');
+    if (hasUploading || hasReady) return;
+    redirectScheduled = true;
+    setTimeout(() => {
+      window.location.href = "{% url 'qna:lecturer_student_list_management' subject.subject_code %}";
+    }, 900);
+  }
 
   const esc = value => String(value || '')
     .replace(/&/g, '&amp;')
@@ -537,7 +569,7 @@
         error: '',
         warningMessages: [],
         meta: `${sizeText(file.size)} • Đã sẵn sàng`,
-        note: 'Sẵn sàng tải lên',
+        note: 'Chờ xác nhận tải lên',
       });
     });
 
@@ -552,6 +584,7 @@
     }
     filesState = filesState.filter(entry => entry.id !== id);
     render();
+    maybeRedirectAfterUploadsComplete();
   }
 
   function uploadItem(item) {
@@ -583,6 +616,7 @@
       item.note = item.progress > 0 ? 'Mất kết nối giữa chừng' : 'Không thể xử lý file';
       render();
       toast('Tải file thất bại', message);
+      maybeRedirectAfterUploadsComplete();
     };
 
     xhr.addEventListener('load', () => {
@@ -618,6 +652,9 @@
             'warning'
           );
         }
+
+        hasUploadedSuccess = true;
+        maybeRedirectAfterUploadsComplete();
         return;
       }
 
@@ -735,20 +772,17 @@
       return;
     }
 
-    isQueueUploading = true;
-    syncButton();
-
-    try {
-      await uploadItemsSequentially(readyFiles);
-    } finally {
-      isQueueUploading = false;
-      syncButton();
-    }
-  });
+    const confirmed = await window.showGlobalConfirm({
+      title: 'Xác nhận tải lên danh sách sinh viên',
+      message: 'Hệ thống sẽ tải các file hợp lệ hiện có lên và bắt đầu xử lý dữ liệu.',
+      confirmText: 'Xác nhận tải lên',
+      cancelText: 'Hủy',
+    });
     if (!confirmed) {
       return;
     }
 
+    redirectScheduled = false;
     readyFiles.forEach(uploadItem);
     syncButton();
   });
