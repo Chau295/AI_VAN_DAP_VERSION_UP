@@ -556,7 +556,12 @@
       </div>
     </div>
 
-    <div class="page-footer">
+    <div id="createExamSetSuccessBar" style="display:none; margin-bottom: 18px; padding: 14px 16px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; border-radius: 10px; font-size: 14px; font-weight: 600; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+    <div id="createExamSetSuccessText">Tạo bộ đề thành công.</div>
+    <a id="createExamSetSuccessLink" href="#" class="btn-submit" style="padding: 10px 16px; text-decoration: none; background: #1d4ed8;">Xem bộ đề vừa tạo</a>
+  </div>
+
+  <div class="page-footer">
       <div class="footer-note">* Vui lòng kiểm tra kỹ ma trận trước khi sinh đề. Quá trình có thể mất 10-30 giây.</div>
       <button type="button" id="btnSubmit" class="btn-submit" onclick="submitCreateExamSet()">
         <i class="fas fa-bolt"></i> Tiến hành tạo đề thi
@@ -781,6 +786,34 @@
     }
   }
 
+
+  function showCreatedExamSetSuccess(detailUrl, message) {
+    const bar = document.getElementById('createExamSetSuccessBar');
+    const textEl = document.getElementById('createExamSetSuccessText');
+    const linkEl = document.getElementById('createExamSetSuccessLink');
+    if (!bar || !textEl || !linkEl) return;
+    textEl.textContent = message || EXAM_SET_MESSAGES.success;
+    linkEl.href = detailUrl || '{% url "qna:lecturer_exam_codes_screen" %}';
+    bar.style.display = 'flex';
+  }
+
+  function resetCreateExamSetForm() {
+    ['easyCount', 'mediumCount', 'hardCount', 'easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.value = '0';
+    });
+    const codeInput = document.getElementById('examCode');
+    if (codeInput) codeInput.value = '';
+    const select = document.getElementById('sourceBanks');
+    if (select && window.jQuery && window.jQuery(select).data('select2')) {
+      window.jQuery(select).val(null).trigger('change');
+    } else if (select) {
+      Array.from(select.options).forEach((opt) => { opt.selected = false; });
+    }
+    updateSummary();
+  }
+
   async function performCreateExamSet(payload) {
     const btn = document.getElementById('btnSubmit');
     const originalText = '<i class="fas fa-bolt"></i> Tiến hành tạo đề thi';
@@ -806,10 +839,11 @@
         return;
       }
 
-      showToast(EXAM_SET_MESSAGES.success, true);
-      setTimeout(() => {
-        window.location.href = data.detail_url || '{% url "qna:lecturer_exam_codes_screen" %}';
-      }, 500);
+      showToast(data.message || EXAM_SET_MESSAGES.success, true);
+      showCreatedExamSetSuccess(data.detail_url, data.message || EXAM_SET_MESSAGES.success);
+      resetCreateExamSetForm();
+      btn.innerHTML = originalText;
+      updateSummary();
     } catch (error) {
       showToast('Lỗi kết nối máy chủ!');
       btn.innerHTML = originalText;

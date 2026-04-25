@@ -133,7 +133,6 @@ def _validate_exam_set_creation_rules(
     total_questions = easy_count + medium_count + hard_count
     if total_questions <= 0:
         raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
-    # BUG_024: giới hạn tối đa 100 câu mỗi mã đề
     if total_questions > 100:
         raise ValueError("Tổng số câu hỏi không được vượt quá 100 câu mỗi mã đề.")
 
@@ -142,7 +141,11 @@ def _validate_exam_set_creation_rules(
         (medium_count, medium_score),
         (hard_count, hard_score),
     )
+
     if any(score < 0 for _, score in score_pairs):
+        raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
+
+    if any(count > 0 and score <= 0 for count, score in score_pairs):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
 
     total_score = (
@@ -151,16 +154,13 @@ def _validate_exam_set_creation_rules(
         + Decimal(hard_count) * hard_score
     )
 
-    # Cho phép tạo bộ đề ngay cả khi tổng điểm != 10;
-    # cảnh báo được hiển thị phía frontend trước khi tạo.
     return total_score
-
 
 def _validate_exam_code_items(items: Sequence[ExamCodeQuestion]) -> None:
     if not items:
         raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
 
-    if any(Decimal(str(item.score or 0)) < 0 for item in items):
+    if any(Decimal(str(item.score or 0)) <= 0 for item in items):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
 
 
@@ -853,37 +853,7 @@ def lecturer_generate_codes_screen(request):
         "semester_choices": SemesterChoices.choices,
         "default_year": "2024-2025",
     }
-    response = render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
-
-    compatibility_markup = """
-<div hidden aria-hidden="true">
-  <div class="matrix-toolbar"></div>
-  <div class="field matrix-count-field"></div>
-  <div class="field matrix-score-field"></div>
-  <span>Mức độ câu hỏi</span>
-  <input id="easyCount" type="number" min="0" step="1" value="0">
-  <input id="mediumCount" type="number" min="0" step="1" value="0">
-  <input id="hardCount" type="number" min="0" step="1" value="0">
-  <input id="easyScore" type="number" min="0" step="0.5" value="0">
-  <input id="mediumScore" type="number" min="0" step="0.5" value="0">
-  <input id="hardScore" type="number" min="0" step="0.5" value="0">
-  <div id="summaryMessage"></div>
-</div>
-"""
-    charset = response.charset or "utf-8"
-    content = response.content.decode(charset)
-    if 'class="matrix-toolbar"' not in content:
-        content = content.replace("</body>", f"{compatibility_markup}</body>")
-    for source, entity in {
-        "Ã": "&#195;",
-        "Â": "&#194;",
-        "Ä": "&#196;",
-        "Å": "&#197;",
-    }.items():
-        content = content.replace(source, entity)
-    response.content = content.encode(charset)
-
-    return response
+    return render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
 
 
 @login_required
@@ -1008,9 +978,15 @@ def lecturer_create_exam_set(request):
             _validate_exam_code_items(items)
             ExamCodeQuestion.objects.bulk_create(items)
 
+    success_message = EXAM_SET_SUCCESS_MESSAGE
+    if total_score > EXAM_SET_TARGET_TOTAL_SCORE:
+        success_message = EXAM_SET_TOTAL_OVER_MESSAGE
+    elif total_score < EXAM_SET_TARGET_TOTAL_SCORE:
+        success_message = EXAM_SET_TOTAL_UNDER_MESSAGE
+
     return JsonResponse({
         "status": "SUCCESS",
-        "message": EXAM_SET_SUCCESS_MESSAGE,
+        "message": success_message,
         "exam_set_id": es.exam_set_id,
         "detail_url": reverse("qna:lecturer_exam_set_detail_screen", kwargs={"exam_set_id": es.exam_set_id}),
     })

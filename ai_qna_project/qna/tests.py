@@ -518,7 +518,10 @@ class LecturerStudentRosterUploadTests(TestCase):
         session = self.client.session
         self.assertIn("student_account_modal", session)
         self.assertTrue(session["student_account_modal"]["open"])
-        self.assertEqual(session["student_account_modal"]["error"], "")
+        self.assertEqual(
+            session["student_account_modal"]["error"],
+            "Mật khẩu xác nhận không khớp."
+        )
 
         detail_response = self.client.get(
             reverse("qna:lecturer_student_list_detail", args=[roster.id])
@@ -529,6 +532,76 @@ class LecturerStudentRosterUploadTests(TestCase):
         roster.refresh_from_db()
         self.assertEqual(roster.status, "PENDING")
         self.assertFalse(roster.students.get(student_code="SV001").account_created)
+
+    def test_ajax_upload_rejects_duplicate_file_when_name_and_all_student_codes_match(self):
+        self._upload_roster([
+            "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com",
+            "SV002,Tran Thi B,Nu,24/08/2003,CNT01,sv002@example.com",
+        ], file_name="Danh_sach_L01.csv")
+
+        duplicate_upload = SimpleUploadedFile(
+            "Danh_sach_L01.csv",
+            (
+                "student_code,full_name,gender,date_of_birth,class_name,email\n"
+                "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com\n"
+                "SV002,Tran Thi B,Nu,24/08/2003,CNT01,sv002@example.com\n"
+            ).encode("utf-8-sig"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
+            {
+                "academic_year": "2024-2025",
+                "semester": "HK1",
+                "files": duplicate_upload,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["uploaded_count"], 0)
+        self.assertEqual(StudentRosterUpload.objects.filter(subject_id=self.subject).count(), 1)
+        self.assertEqual(len(payload["errors"]), 1)
+        self.assertIn("Phát hiện file bị trùng với", payload["errors"][0]["message"])
+        self.assertIn("Danh_sach_L01.csv", payload["errors"][0]["message"])
+
+    def test_ajax_upload_does_not_add_generic_warning_just_because_same_scope_already_has_rosters(self):
+        self._upload_roster([
+            "SV001,Nguyen Van A,Nam,12/05/2003,CNT01,sv001@example.com",
+        ], file_name="Danh_sach_L01.csv")
+
+        second_upload = SimpleUploadedFile(
+            "Danh_sach_L02.csv",
+            (
+                "student_code,full_name,gender,date_of_birth,class_name,email\n"
+                "SV003,Le Van C,Nam,10/10/2003,CNT02,sv003@example.com\n"
+            ).encode("utf-8-sig"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("qna:lecturer_student_list_upload", args=[self.subject.subject_code]),
+            {
+                "academic_year": "2024-2025",
+                "semester": "HK1",
+                "files": second_upload,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["uploaded_count"], 1)
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["warnings"], [])
 
 
 class LecturerRedirectTests(TestCase):
@@ -743,7 +816,7 @@ class LecturerQuestionManagementTests(TestCase):
             name="Machine Learning",
             subject_code="ML401",
         )
-        self.lecturer_profile.subjects_taught.add(other_subject)
+        self.profile.subjects_taught.add(other_subject)
         other_bank = QuestionBank.objects.create(
             subject=other_subject,
             name="ML Bank",
@@ -1361,7 +1434,7 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["status"], "FAIL")
-        self.assertEqual(payload["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(payload["message"], "Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)")
         self.assertEqual(ExamSet.objects.count(), 0)
 
     def test_create_exam_set_rejects_academic_year_with_wrong_separator(self):
@@ -1370,30 +1443,28 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["status"], "FAIL")
-        self.assertEqual(payload["message"], "Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.")
+        self.assertEqual(payload["message"], "Vui lòng nhập đúng định dạng năm học (ex: 2025-2026)")
         self.assertEqual(ExamSet.objects.count(), 0)
 
-    def test_create_exam_set_rejects_total_score_greater_than_ten(self):
+    def test_create_exam_set_allows_total_score_greater_than_ten_before_publish(self):
         response = self._create_exam_set_response(hard_score=6)
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["status"], "SUCCESS")
         self.assertEqual(payload["message"], "Tổng điểm hiện tại đang vượt quá 10 điểm.")
-        self.assertEqual(ExamSet.objects.count(), 0)
-        self.assertEqual(ExamCode.objects.count(), 0)
-        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+        self.assertEqual(ExamSet.objects.count(), 1)
+        self.assertGreater(ExamSet.objects.first().total_score, 10)
 
-    def test_create_exam_set_rejects_total_score_less_than_ten(self):
+    def test_create_exam_set_allows_total_score_less_than_ten_before_publish(self):
         response = self._create_exam_set_response(hard_score=4)
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(payload["status"], "SUCCESS")
         self.assertEqual(payload["message"], "Tổng điểm hiện tại chưa đủ 10 điểm.")
-        self.assertEqual(ExamSet.objects.count(), 0)
-        self.assertEqual(ExamCode.objects.count(), 0)
-        self.assertEqual(ExamCodeQuestion.objects.count(), 0)
+        self.assertEqual(ExamSet.objects.count(), 1)
+        self.assertLess(ExamSet.objects.first().total_score, 10)
 
     def test_create_exam_set_rejects_zero_total_questions(self):
         response = self._create_exam_set_response(easy_count=0, medium_count=0, hard_count=0)
@@ -1527,7 +1598,7 @@ class LecturerExamManagementTests(TestCase):
             response.context["rows"][0]["detail_url"],
             reverse("qna:lecturer_exam_set_detail_screen", args=[exam_set.id]),
         )
-        self.assertContains(response, 'class="qm2-clickable-row"')
+        self.assertContains(response, 'class="qm2-clickable-row exam-row-item"')
         self.assertContains(response, f'data-detail-url="/lecturer/exam-codes/{exam_set.id}/"')
         self.assertNotContains(response, "fa-pen")
 
@@ -1594,8 +1665,8 @@ class LecturerExamManagementTests(TestCase):
         self.assertEqual(len(response.context["rows"]), 1)
         self.assertContains(response, 'class="qm2-pagination"')
         self.assertContains(response, "1-1")
-        self.assertContains(response, f"BD-{first_exam_set.id:04d}")
-        self.assertNotContains(response, f"BD-{second_exam_set.id:04d}")
+        self.assertContains(response, f"BD-{used_exam_set.id:04d}")
+        self.assertNotContains(response, f"BD-{unused_exam_set.id:04d}")
 
     def test_exam_set_list_pagination_page_number(self):
         for i in range(25):
@@ -5308,7 +5379,7 @@ class LecturerGenerateQuestionsTests(TestCase):
                     self.assertEqual(payload["created_count"], 2)
                     self.assertEqual(payload["requested_count"], 2)
                     self.assertEqual(payload["skipped_duplicates"], 1)
-                    self.assertIn("tự sinh bù 1 câu bị trùng", payload["message"])
+                    self.assertIn("Đã sinh bù 1 câu trùng.", payload["message"])
 
 
 class StudentEnrollmentTests(TestCase):

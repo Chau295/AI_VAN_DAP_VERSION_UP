@@ -34,6 +34,7 @@ from .models import (
     ExamSet,
     ExamSetStatus,
     SemesterChoices,
+    StudentListUploadStatus,
     StudentRosterStudent,
     StudentRosterUpload,
     Subject,
@@ -217,9 +218,13 @@ def _build_session_catalog(subject):
         .order_by("-created_at")
     )
     rosters = (
-        StudentRosterUpload.objects.filter(subject_id=subject)
+        StudentRosterUpload.objects.filter(
+            subject_id=subject,
+            status=StudentListUploadStatus.CREATED,
+            account_created_at__isnull=False,
+        )
         .prefetch_related("students__linked_user_id")
-        .order_by("-created_at")
+        .order_by("-account_created_at", "-created_at", "-pk")
     )
     room_suggestions = list(
         ExamRoom.objects.all().order_by("room_name").values("room_name", "room_code", "capacity")
@@ -232,7 +237,7 @@ def _build_session_catalog(subject):
 
     return {
         "subject": {
-            "id": subject.pk, # Changed to pk
+            "id": subject.pk,
             "name": subject.name,
             "subject_code": subject.subject_code,
         },
@@ -399,11 +404,23 @@ def _normalize_session_configuration(request, payload, exam_group=None):
             errors.append("Không thể đặt thời gian bắt đầu nhỏ hơn thời điểm hiện tại.")
 
     roster_ids = [_session_safe_int(item) for item in payload.get("roster_ids") or [] if _session_safe_int(item)]
+
     roster_qs = (
-        StudentRosterUpload.objects.filter(subject_id=subject, pk__in=roster_ids) # Changed to pk__in
+        StudentRosterUpload.objects.filter(
+            subject_id=subject,
+            pk__in=roster_ids,
+            status=StudentListUploadStatus.CREATED,
+            account_created_at__isnull=False,
+        )
         .prefetch_related("students__linked_user_id")
-        .order_by("-created_at")
+        .order_by("-account_created_at", "-created_at", "-pk")
     )
+
+    valid_roster_ids = set(roster_qs.values_list("pk", flat=True))
+    invalid_roster_ids = [roster_id for roster_id in roster_ids if roster_id not in valid_roster_ids]
+    if invalid_roster_ids:
+        errors.append("Chỉ được chọn các danh sách đã tạo xong tài khoản sinh viên.")
+
     roster_students_by_id = {}
     roster_students_by_code = {}
     roster_configs = []

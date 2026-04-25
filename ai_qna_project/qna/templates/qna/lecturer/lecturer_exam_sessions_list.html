@@ -111,9 +111,6 @@
     color: #fff;
   }
 
-  /* =========================================================
-     CSS BỘ LỌC ĐỒNG BỘ DUE-EXAM
-     ========================================================= */
   .session-filter-row {
     padding: 20px 24px;
     border-bottom: 1px solid var(--session-border);
@@ -208,8 +205,6 @@
     color: #111827;
   }
 
-  /* ========================================================= */
-
   .session-table-wrap {
     border: 1px solid var(--session-border);
     border-radius: 18px;
@@ -279,26 +274,12 @@
     gap: 0.35rem;
   }
 
-  .status-note {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--session-muted);
-    white-space: nowrap;
-  }
-
-  .status-note.scheduled { color: #b45309; }
-  .status-note.ongoing { color: #15803d; }
-  .status-note.completed,
-  .status-note.draft,
-  .status-note.cancelled { color: var(--session-muted); }
-
   .session-empty {
     padding: 3.2rem 1.5rem;
     text-align: center;
     color: var(--session-muted);
   }
 
-  /* CSS PHÂN TRANG */
   .qm2-pagination {
     display: flex;
     align-items: center;
@@ -352,35 +333,15 @@
   }
 
   @media (max-width: 1024px) {
-    .session-page {
-      margin: -1.5rem;
-    }
-
-    .session-shell {
-      border-left: 0;
-      border-right: 0;
-    }
+    .session-page { margin: -1.5rem; }
+    .session-shell { border-left: 0; border-right: 0; }
   }
 
   @media (max-width: 768px) {
-    .top-header,
-    .session-breadcrumb,
-    .session-body {
-      padding-left: 1rem;
-      padding-right: 1rem;
-    }
-
-    .session-head {
-      flex-direction: column;
-    }
-
-    .session-table-wrap {
-      overflow-x: auto;
-    }
-
-    .session-table {
-      min-width: 860px;
-    }
+    .top-header, .session-breadcrumb, .session-body { padding-left: 1rem; padding-right: 1rem; }
+    .session-head { flex-direction: column; }
+    .session-table-wrap { overflow-x: auto; }
+    .session-table { min-width: 860px; }
   }
 </style>
 
@@ -398,76 +359,53 @@
         <div>
           <h1 class="session-title">Danh sách ca thi</h1>
           <div class="session-subject">
-            {% if selected_subject %}
-              {{ selected_subject.name }}
-            {% else %}
-              Tất cả môn học
-            {% endif %}
+            {% if selected_subject %}{{ selected_subject.name }}{% else %}Tất cả môn học{% endif %}
           </div>
           <div class="session-description">Quản lý tập trung toàn bộ ca thi của giảng viên trong hệ thống</div>
         </div>
         <a class="session-btn-primary" href="{% url 'qna:lecturer_create_session_screen' %}">
-          <i class="fas fa-plus"></i>
-          Tạo ca thi mới
+          <i class="fas fa-plus"></i> Tạo ca thi mới
         </a>
       </div>
 
       <div class="session-table-wrap">
-
         <form method="get" id="sessionFilterForm" class="session-filter-row">
           <input type="hidden" name="page" value="1">
-          <button type="submit" style="display: none;"></button>
-
           <div class="session-search">
             <i class="fas fa-search"></i>
-            <input
-              type="text"
-              name="q"
-              value="{{ filters.q }}"
-              placeholder="Tìm kiếm file..."
-            >
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="Tìm kiếm file...">
           </div>
 
           <select class="session-status" name="subject_id" onchange="this.form.submit()">
             <option value="">Môn học: Tất cả</option>
             {% for subject in subjects %}
-              <option value="{{ subject.id }}" {% if filters.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>
-                {{ subject.name }}
-              </option>
+              <option value="{{ subject.id }}" {% if filters.subject_id == subject.id|stringformat:'s' %}selected{% endif %}>{{ subject.name }}</option>
             {% endfor %}
           </select>
 
           <select class="session-status" name="academic_year" onchange="this.form.submit()">
             <option value="">Năm học: Tất cả</option>
             {% for year in year_options %}
-              <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>
-                {{ year }}
-              </option>
+              <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>{{ year }}</option>
             {% endfor %}
           </select>
 
           <select class="session-status" name="semester" onchange="this.form.submit()">
             <option value="">Học kỳ: Tất cả</option>
             {% for value, label in semester_choices %}
-              <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>
-                {{ label }}
-              </option>
+              <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
 
           <select class="session-status" name="status" onchange="this.form.submit()">
             {% for value, label in status_choices %}
               <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
-                {% if label == "Tất cả" or not value %}
-                  Trạng thái: Tất cả
-                {% else %}
-                  {{ label }}
-                {% endif %}
+                {% if label == "Tất cả" or not value %}Trạng thái: Tất cả{% else %}{{ label }}{% endif %}
               </option>
             {% endfor %}
           </select>
 
-          <a href="window.location.pathname" class="session-filter-reset" title="Làm mới bộ lọc" onclick="event.preventDefault(); window.location.href=window.location.pathname">
+          <a href="#" class="session-filter-reset" title="Làm mới bộ lọc" onclick="event.preventDefault(); window.location.href=window.location.pathname">
             <i class="fas fa-redo-alt"></i>
           </a>
         </form>
@@ -488,7 +426,14 @@
             </thead>
             <tbody>
                {% for exam_group in page_obj.object_list %}
-                  <tr class="lecturer-exam-row" data-start="{{ exam_group.start_at|date:'c' }}" data-end="{{ exam_group.end_at|date:'c' }}" data-start-ts="{{ exam_group.start_at|date:'U' }}" data-end-ts="{{ exam_group.end_at|date:'U' }}" data-status="{{ exam_group.status }}" onclick="window.location.href='{% url 'qna:lecturer_exam_session_detail_screen' exam_group.id %}'" style="cursor: pointer;">
+                  <tr class="lecturer-exam-row"
+                      data-start="{{ exam_group.start_at|date:'c' }}"
+                      data-end="{{ exam_group.end_at|date:'c' }}"
+                      data-start-ts="{{ exam_group.start_at|date:'U' }}"
+                      data-end-ts="{{ exam_group.end_at|date:'U' }}"
+                      data-status="{{ exam_group.status }}"
+                      onclick="window.location.href='{% url 'qna:lecturer_exam_session_detail_screen' exam_group.id %}'"
+                      style="cursor: pointer;">
                    <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
                    <td class="session-name">{{ exam_group.group_name }}</td>
                    <td>{{ exam_group.subject.name }}</td>
@@ -499,7 +444,6 @@
                     <td>
                       <div class="status-stack">
                         <span class="status-pill {{ exam_group.ui_status|lower }}">{{ exam_group.ui_status_label }}</span>
-                        <span class="status-note {{ exam_group.ui_status|lower }}" data-status-note></span>
                       </div>
                      </td>
                    </tr>
@@ -508,9 +452,7 @@
           </table>
         {% else %}
           <div class="session-empty">
-            <div style="font-size: 2.8rem; color: #c6d0df; margin-bottom: 0.65rem;">
-              <i class="fas fa-calendar-alt"></i>
-            </div>
+            <div style="font-size: 2.8rem; color: #c6d0df; margin-bottom: 0.65rem;"><i class="fas fa-calendar-alt"></i></div>
             <div style="font-size: 1.08rem; font-weight: 700; color: var(--session-text);">Chưa có ca thi nào phù hợp</div>
             <div style="margin-top: 0.4rem;">Tạo ca thi mới để bắt đầu cấu hình phòng thi, bộ đề và phân bổ sinh viên.</div>
           </div>
@@ -518,21 +460,10 @@
       </div>
 
       <div class="qm2-pagination">
-        <div>
-          Hiển thị
-          {% if page_obj.paginator.count %}
-            <strong style="color: var(--session-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
-          {% else %}
-            <strong style="color: var(--session-text);">0</strong>
-          {% endif %}
-          trong số <strong style="color: var(--session-text);">{{ page_obj.paginator.count }}</strong> ca thi
-        </div>
-
+        <div>Hiển thị {% if page_obj.paginator.count %}<strong style="color: var(--session-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>{% else %}<strong style="color: var(--session-text);">0</strong>{% endif %} trong số <strong style="color: var(--session-text);">{{ page_obj.paginator.count }}</strong> ca thi</div>
         <div class="qm2-page-controls">
           {% if page_obj.has_previous %}
-            <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}">
-              <i class="fas fa-chevron-left" style="font-size: 12px;"></i>
-            </a>
+            <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.previous_page_number }}"><i class="fas fa-chevron-left" style="font-size: 12px;"></i></a>
           {% else %}
             <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 12px;"></i></span>
           {% endif %}
@@ -546,15 +477,12 @@
           {% endfor %}
 
           {% if page_obj.has_next %}
-            <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}">
-              <i class="fas fa-chevron-right" style="font-size: 12px;"></i>
-            </a>
+            <a class="qm2-page-btn" href="?subject_id={{ filters.subject_id|urlencode }}&academic_year={{ filters.academic_year|urlencode }}&semester={{ filters.semester|urlencode }}&q={{ filters.q|urlencode }}&status={{ filters.status|urlencode }}&page={{ page_obj.next_page_number }}"><i class="fas fa-chevron-right" style="font-size: 12px;"></i></a>
           {% else %}
             <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 12px;"></i></span>
           {% endif %}
         </div>
       </div>
-
     </div>
   </div>
 </div>
@@ -572,102 +500,39 @@
 
   function parseRealtimeSessionTimestamp(rawTimestamp, fallbackValue) {
     const numericValue = Number(rawTimestamp || 0);
-    if (Number.isFinite(numericValue) && numericValue > 0) {
-      return numericValue * 1000;
-    }
-
+    if (Number.isFinite(numericValue) && numericValue > 0) return numericValue * 1000;
     const parsedValue = new Date(fallbackValue || "").getTime();
     return Number.isFinite(parsedValue) ? parsedValue : 0;
   }
 
   function computeRealtimeSessionStatus(storedStatus, startTs, endTs) {
-    if (storedStatus === "CANCELLED") {
-      return "COMPLETED";
-    }
-
+    if (storedStatus === "CANCELLED") return "COMPLETED";
     const nowTs = Date.now() + realtimeClockOffsetMs;
-
-    if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || !startTs || !endTs) {
-      return "SCHEDULED";
-    }
-
-    if (nowTs < startTs) {
-      return "SCHEDULED";
-    }
-
-    if (nowTs <= endTs) {
-      return "ONGOING";
-    }
-
+    if (!startTs || !endTs) return "SCHEDULED";
+    if (nowTs < startTs) return "SCHEDULED";
+    if (nowTs <= endTs) return "ONGOING";
     return "COMPLETED";
-  }
-
-  function formatRealtimeCountdown(msRemaining) {
-    const totalSeconds = Math.max(0, Math.floor(msRemaining / 1000));
-    const days = Math.floor(totalSeconds / 86400);
-    const hours = Math.floor((totalSeconds % 86400) / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const hh = String(hours).padStart(2, "0");
-    const mm = String(minutes).padStart(2, "0");
-    const ss = String(seconds).padStart(2, "0");
-
-    if (days > 0) {
-      return `${days}d ${hh}:${mm}:${ss}`;
-    }
-
-    return `${hh}:${mm}:${ss}`;
-  }
-
-  function buildRealtimeSessionNote(status, startTs, endTs) {
-    const nowTs = Date.now() + realtimeClockOffsetMs;
-
-    if (!startTs || !endTs) {
-      return "Đang chờ lịch thi";
-    }
-
-    if (status === "SCHEDULED") {
-      return `Bắt đầu sau ${formatRealtimeCountdown(startTs - nowTs)}`;
-    }
-
-    if (status === "ONGOING") {
-      return `Còn ${formatRealtimeCountdown(endTs - nowTs)}`;
-    }
-
-    if (status === "COMPLETED") {
-      return "Đã hết thời gian thi";
-    }
-
-    return "Đang chờ lịch thi";
   }
 
   function updateRealtimeSessionRows() {
     document.querySelectorAll(".lecturer-exam-row").forEach((row) => {
       const pill = row.querySelector(".status-pill");
-      const note = row.querySelector("[data-status-note]");
-      if (!pill) {
-        return;
-      }
+      if (!pill) return;
+
       const startTs = parseRealtimeSessionTimestamp(row.dataset.startTs, row.dataset.start);
       const endTs = parseRealtimeSessionTimestamp(row.dataset.endTs, row.dataset.end);
-      const status = computeRealtimeSessionStatus(
-        row.dataset.status || "",
-        startTs,
-        endTs,
-      );
+      const status = computeRealtimeSessionStatus(row.dataset.status || "", startTs, endTs);
+
       const meta = realtimeSessionStatusMeta[status] || realtimeSessionStatusMeta.SCHEDULED;
       pill.className = `status-pill ${meta.className}`;
       pill.textContent = meta.label;
-      if (note) {
-        note.className = `status-note ${meta.className}`;
-        note.textContent = buildRealtimeSessionNote(status, startTs, endTs);
-      }
     });
   }
 
   updateRealtimeSessionRows();
   if (document.querySelectorAll(".lecturer-exam-row").length) {
-    window.setInterval(updateRealtimeSessionRows, 1000);
+    // Cập nhật mỗi 10 giây vì không còn đếm ngược từng giây nữa
+    window.setInterval(updateRealtimeSessionRows, 10000);
   }
 </script>
 {% endblock %}

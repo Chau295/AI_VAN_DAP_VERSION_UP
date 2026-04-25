@@ -499,7 +499,7 @@
                 <div class="subject-meta">
                     <span><i class="far fa-calendar-alt"></i> Năm học: {{ exam_set.academic_year|default:"2024-2025" }}</span>
                     <span><i class="fas fa-graduation-cap"></i> Học kỳ: {{ exam_set.semester|default:"1" }}</span>
-                    <span class="badge-exam-set{% if exam_set_approval_status == 'APPROVED' %} badge-approved{% else %} badge-unapproved{% endif %}">{{ exam_set_approval_label|default:"Chưa duyệt" }}</span>
+                    <span id="examSetApprovalBadge" class="badge-exam-set{% if exam_set_approval_status == 'APPROVED' %} badge-approved{% else %} badge-unapproved{% endif %}">{{ exam_set_approval_label|default:"Chưa duyệt" }}</span>
                 </div>
             </div>
             <div class="subject-actions">
@@ -588,6 +588,31 @@
     if (score == null || score === 0) return null;
     return parseFloat(score).toFixed(1);
   }
+
+
+  function computeExamSetApprovalStatus() {
+    const total = examCodes.length;
+    if (!total) return 'UNAPPROVED';
+    const approved = examCodes.filter((code) => code.is_approved).length;
+    return approved === total ? 'APPROVED' : 'UNAPPROVED';
+  }
+
+  function syncExamSetApprovalBadge() {
+    const badge = document.getElementById('examSetApprovalBadge');
+    if (!badge) return;
+
+    examSetApprovalStatus = computeExamSetApprovalStatus();
+    const isApproved = examSetApprovalStatus === 'APPROVED';
+    badge.classList.toggle('badge-approved', isApproved);
+    badge.classList.toggle('badge-unapproved', !isApproved);
+    badge.textContent = isApproved ? 'Đã duyệt' : 'Chưa duyệt';
+  }
+
+  function markSelectedCodesApproved(ids) {
+    const selectedIds = new Set((ids || []).map(Number));
+    examCodes = examCodes.map((code) => selectedIds.has(Number(code.id)) ? { ...code, is_approved: true } : code);
+  }
+
 
   // exam_set_approval_status: APPROVED hoặc UNAPPROVED – chỉ cho UI bộ đề
   let examSetApprovalStatus = "{{ exam_set_approval_status }}";
@@ -803,7 +828,8 @@
     if(domUsed) domUsed.textContent = used;
 
     const pub = document.getElementById('btnPublishExamSet');
-    if (pub) pub.disabled = examSetIsLinked || !total || approved !== total;
+    if (pub) pub.disabled = examSetIsLinked || !total || approved !== total || computeExamSetApprovalStatus() === 'APPROVED';
+    syncExamSetApprovalBadge();
     updateSelectionState();
   }
 
@@ -1020,6 +1046,10 @@
             currentCodeId = data.exam_code.id;
             isCreatingNewCode = false;
 
+            if (data.exam_code && data.exam_code.is_approved === false) {
+                examSetApprovalStatus = 'UNAPPROVED';
+            }
+
             if (wasCreating) {
                 currentPage = Math.ceil(examCodes.length / itemsPerPage);
             }
@@ -1068,8 +1098,9 @@
             closeDrawer();
 
             if (data.exam_set_published) {
+                examSetApprovalStatus = 'APPROVED';
+                updateExamSetSummary();
                 showToast("Tất cả mã đề đã duyệt, bộ đề tự động chuyển sang Đã duyệt.");
-                setTimeout(() => location.reload(), 1500);
             }
         } else {
             showToast(data.message, true);
@@ -1097,8 +1128,20 @@
       return;
     }
 
-    const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/approve-codes/`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify({ exam_code_ids: Array.from(selectedCodeIds) }) });
-    if (res.ok) { location.reload(); }
+    const idsToApprove = Array.from(selectedCodeIds);
+    const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/approve-codes/`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify({ exam_code_ids: idsToApprove }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status !== 'SUCCESS') {
+      showToast(data.message || 'Không thể duyệt các mã đề đã chọn.', true);
+      return;
+    }
+    markSelectedCodesApproved(idsToApprove);
+    if (data.exam_set_published) {
+      examSetApprovalStatus = 'APPROVED';
+    }
+    clearCodeSelection();
+    renderCards();
+    showToast(data.message || 'Đã duyệt các mã đề đã chọn.');
   }
 
   async function deleteCurrentCode() {
@@ -1167,7 +1210,9 @@
     const res = await fetch(`/lecturer/api/exam-sets/${examSetId}/publish/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.status === 'SUCCESS') {
-      window.location.href = data.redirect_url;
+      examSetApprovalStatus = 'APPROVED';
+      updateExamSetSummary();
+      showToast(data.message || 'Đã lưu thay đổi.');
       return;
     }
     showToast(data.message || 'Không thể lưu bộ đề.', true);

@@ -1142,7 +1142,7 @@
         </button>
         {% endif %}
 
-        <a href="{% url 'qna:lecturer_questions_screen' %}{% if selected_subject %}?subject_id={{ selected_subject.id }}{% endif %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-back">
+        <a href="{% url 'qna:lecturer_questions_screen' %}{% if selected_subject %}?subject_id={{ selected_subject.id }}{% endif %}" class="qm2-back">
           <i class="fas fa-arrow-left"></i>
           <span>Quay lại</span>
         </a>
@@ -1211,14 +1211,14 @@
         <div class="qm2-card qm2-question-panel">
           <div class="qm2-question-head-main">
             <div class="qm2-question-head-text">
-              <h2 style="margin:0;font-size:20px;">
+              <h2 id="questionPanelTitle" style="margin:0;font-size:20px;">
                 {% if view_type == 'bank' %}
                   {{ selected_bank_name }}
                 {% else %}
                   Ngân hàng câu hỏi
                 {% endif %}
               </h2>
-              <p>
+              <p id="questionPanelSubtitle">
                 {% if view_type == 'bank' %}
                   Xem, chỉnh sửa và cập nhật thêm câu hỏi vào ngân hàng này
                 {% else %}
@@ -1403,7 +1403,7 @@
   const apiDeleteBankTemplate = app?.dataset.apiDeleteBankTemplate || '';
   const apiBanks = app?.dataset.apiBanks || '';
 
-  const currentBankId = app?.dataset.selectedBankId || new URLSearchParams(window.location.search).get('bank_id') || '';
+  let currentBankId = app?.dataset.selectedBankId || new URLSearchParams(window.location.search).get('bank_id') || '';
 
   let activeTab = 'ALL';
   let selectedGenerateLevel = 'MEDIUM';
@@ -2042,6 +2042,92 @@
     }
   }
 
+
+  function syncQuestionPanelHeader() {
+    const titleEl = document.getElementById('questionPanelTitle');
+    const subtitleEl = document.getElementById('questionPanelSubtitle');
+    const deleteBtn = document.getElementById('deleteBankBtnTop');
+    const isBankView = viewType === 'bank';
+    const bankTile = currentBankId
+      ? document.querySelector(`.bank-tile[data-detail-url*="bank_id=${currentBankId}"] .qm2-doc-title`)
+      : null;
+    const bankName = bankTile?.textContent?.trim() || 'Ngân hàng câu hỏi';
+
+    if (titleEl) {
+      titleEl.textContent = isBankView ? bankName : 'Ngân hàng câu hỏi';
+    }
+    if (subtitleEl) {
+      subtitleEl.textContent = isBankView
+        ? 'Xem, chỉnh sửa và cập nhật thêm câu hỏi vào ngân hàng này'
+        : 'Tạo câu hỏi nháp cho phiên làm việc hiện tại trước khi lưu thành ngân hàng';
+    }
+    if (deleteBtn) {
+      deleteBtn.style.display = isBankView && currentBankId ? 'inline-flex' : 'none';
+    }
+  }
+
+  function updateQuestionScreenUrl() {
+    const url = new URL(window.location);
+    if (selectedSubjectId) {
+      url.searchParams.set('subject_id', selectedSubjectId);
+      url.searchParams.set('mode', 'detail');
+      url.searchParams.set('view', viewType);
+    }
+    if (currentBankId && viewType === 'bank') {
+      url.searchParams.set('bank_id', currentBankId);
+      url.searchParams.delete('workspace_id');
+    } else if (viewType === 'generate' && workspaceId) {
+      url.searchParams.set('workspace_id', workspaceId);
+      url.searchParams.delete('bank_id');
+    } else {
+      url.searchParams.delete('bank_id');
+      url.searchParams.delete('workspace_id');
+    }
+    window.history.replaceState({}, '', url);
+  }
+
+  async function switchToBankView(bankId, options = {}) {
+    currentBankId = String(bankId || '');
+    viewType = 'bank';
+    workspaceId = '';
+    if (app) {
+      app.dataset.selectedBankId = currentBankId;
+      app.dataset.viewType = 'bank';
+      app.dataset.workspaceId = '';
+    }
+    updateQuestionScreenUrl();
+    await loadBanks(selectedSubjectId, { silent: true, updateUrl: false });
+    clearQuestionSelection();
+    await fetchDocs();
+    await fetchQuestions();
+    syncQuestionPanelHeader();
+    if (options.successMessage) {
+      showToast(options.successMessage, 'success');
+    }
+  }
+
+  async function clearDeletedBankState(successMessage) {
+    currentBankId = '';
+    viewType = 'bank';
+    workspaceId = '';
+    if (app) {
+      app.dataset.selectedBankId = '';
+      app.dataset.viewType = 'bank';
+      app.dataset.workspaceId = '';
+    }
+    updateQuestionScreenUrl();
+    await loadBanks(selectedSubjectId, { silent: true, updateUrl: false });
+    renderDocs([]);
+    renderQuestions([]);
+    updateSummary({ all: 0, easy: 0, medium: 0, hard: 0 });
+    clearQuestionSelection();
+    hasUnsavedGeneratedQuestions = false;
+    syncQuestionPanelHeader();
+    if (successMessage) {
+      showToast(successMessage, 'success');
+    }
+  }
+
   function renderBanks(banks) {
     const container = document.getElementById('bankListContainer');
     if (!container) return;
@@ -2426,7 +2512,7 @@
         clearQuestionSelection();
         await fetchQuestions();
         await fetchDocs();
-        showToast(`Cập nhật thành công. Ngân hàng hiện có ${saveData.question_count || 0} câu hỏi.`);
+        showToast(`Cập nhật thành công.`);
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -2490,10 +2576,14 @@
 
       toggleModal('saveBankModal', false);
       hasUnsavedGeneratedQuestions = false;
-      showToast('Lưu thành công');
-      setTimeout(() => {
-        window.location.href = `${listUrl}?subject_id=${selectedSubjectId}&bank_id=${newBankId}&mode=detail&view=bank`;
-      }, 600);
+
+      sessionStorage.setItem('question_bank_create_success', 'Lưu ngân hàng thành công!');
+
+      const targetUrl = selectedSubjectId
+        ? `${listUrl}?subject_id=${encodeURIComponent(selectedSubjectId)}`
+        : listUrl;
+
+      window.location.href = targetUrl;
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -2505,7 +2595,6 @@
       return;
     }
 
-    // Kiểm tra xem ngân hàng có đang được dùng trong bộ đề không
     let isUsedInExamSets = false;
     try {
       const checkRes = await fetch(`/api/lecturer/question-banks/${currentBankId}/check-usage/`);
@@ -2514,7 +2603,7 @@
         isUsedInExamSets = checkData.is_used_in_exam_sets === true;
       }
     } catch (_) {
-      // Nếu không check được, vẫn cho tiếp tục
+      // Không check được thì vẫn cho tiếp tục
     }
 
     const confirmMessage = isUsedInExamSets
@@ -2545,24 +2634,24 @@
       });
 
       const contentType = res.headers.get('content-type') || '';
-
       if (!contentType.includes('application/json')) {
-        const text = await res.text();
         throw new Error('Server không trả về JSON.');
       }
 
       const data = await res.json();
-
       if (!res.ok || data.status !== 'SUCCESS') {
         throw new Error(data.message || 'Xóa ngân hàng thất bại.');
       }
 
-      showToast('Xóa ngân hàng thành công!');
+      sessionStorage.setItem('question_bank_delete_success', 'Xóa ngân hàng thành công!');
 
-      setTimeout(() => {
-        window.location.href = `${listUrl}?subject_id=${selectedSubjectId}`;
-      }, 1200);
+      const backLink = document.querySelector('.qm2-topbar-actions .qm2-back');
+      const fallbackUrl = selectedSubjectId
+        ? `${listUrl}?subject_id=${encodeURIComponent(selectedSubjectId)}`
+        : listUrl;
 
+      const targetUrl = backLink?.getAttribute('href') || fallbackUrl;
+      window.location.href = targetUrl;
     } catch (err) {
       showToast(err.message || 'Có lỗi xảy ra khi xóa ngân hàng.', 'error');
     }
@@ -2595,6 +2684,18 @@
   }
 
   function initListMode() {
+    const createSuccessMessage = sessionStorage.getItem('question_bank_create_success');
+    if (createSuccessMessage) {
+      sessionStorage.removeItem('question_bank_create_success');
+      showToast(createSuccessMessage, 'success');
+    }
+
+    const deleteSuccessMessage = sessionStorage.getItem('question_bank_delete_success');
+    if (deleteSuccessMessage) {
+      sessionStorage.removeItem('question_bank_delete_success');
+      showToast(deleteSuccessMessage, 'success');
+    }
+
     const subjectSelect = document.getElementById('subjectSelect');
     const goDetailBtn = document.getElementById('goDetailBtn');
 

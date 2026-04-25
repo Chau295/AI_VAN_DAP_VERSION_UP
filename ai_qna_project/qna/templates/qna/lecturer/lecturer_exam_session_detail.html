@@ -538,7 +538,7 @@
         </a>
       </div>
 
-      <div class="detail-status {{ detail.status_class }}" id="detailStatusBadge" data-stored-status="{{ exam_group.status }}" data-start-ts="{{ exam_group.start_at|date:'U' }}" data-end-ts="{{ exam_group.end_at|date:'U' }}">{{ detail.status_label }}</div>
+      <div class="detail-status {{ detail.status_class }}" id="detailStatusBadge" data-stored-status="{{ exam_group.status }}" data-start-ts="{{ exam_group.start_at|date:'U' }}" data-end-ts="{{ exam_group.end_at|date:'U' }}">{{ exam_group.status_label }}</div>
 
       <div class="detail-panel">
         <div class="detail-info-grid">
@@ -690,23 +690,25 @@
     const detailClockOffsetTs = detailServerNowTs ? (detailServerNowTs - detailClientNowTs) : 0;
 
     const detailStatusMeta = {
+      DRAFT: { label: "Lưu nháp", className: "draft" },
       SCHEDULED: { label: "Sắp diễn ra", className: "scheduled" },
       ONGOING: { label: "Đang diễn ra", className: "ongoing" },
       COMPLETED: { label: "Đã kết thúc", className: "completed" },
+      CANCELLED: { label: "Đã hủy", className: "cancelled" },
     };
 
     function computeRealtimeDetailStatus(storedStatus, startTs, endTs) {
       if (storedStatus === "CANCELLED") {
-        return "COMPLETED";
+        return "CANCELLED";
       }
 
       const nowTs = (Date.now() / 1000) + detailClockOffsetTs;
       if (!startTs || !endTs) {
-        return "SCHEDULED";
+        return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
       }
 
       if (nowTs < startTs) {
-        return "SCHEDULED";
+        return storedStatus === "DRAFT" ? "DRAFT" : "SCHEDULED";
       }
 
       if (nowTs <= endTs) {
@@ -727,13 +729,13 @@
         Number(badge.dataset.startTs || 0),
         Number(badge.dataset.endTs || 0),
       );
-      const meta = detailStatusMeta[status] || detailStatusMeta.SCHEDULED;
+      const meta = detailStatusMeta[status] || detailStatusMeta.DRAFT;
       badge.className = `detail-status ${meta.className}`;
       badge.textContent = meta.label;
 
       const actionBar = document.getElementById("detailActionBar");
       if (actionBar) {
-        const isLocked = ["ONGOING", "COMPLETED"].includes(status);
+        const isLocked = ["ONGOING", "COMPLETED", "CANCELLED"].includes(status);
         actionBar.classList.toggle("is-locked", isLocked);
 
         actionBar.querySelectorAll(".detail-danger-btn").forEach((button) => {

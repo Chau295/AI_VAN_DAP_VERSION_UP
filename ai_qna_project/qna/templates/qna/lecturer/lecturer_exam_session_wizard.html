@@ -208,12 +208,12 @@
       <i class="fas fa-arrow-left"></i> Quay lại danh sách ca thi
     </a>
   </div>
-  <div class="es-breadcrumb">Quản lý ca thi &nbsp;&gt;&nbsp; {{ screen_mode_label }}</div>
+  <div class="es-breadcrumb">Kho và khai phá dữ liệu &nbsp;&gt;&nbsp; Quản lý ca thi</div>
 
   <div class="es-shell">
     <div class="es-header">
       <div class="es-title">
-        <h1>{{ screen_mode_label }}</h1>
+        <h1 id="wizardScreenTitle">{{ screen_mode_label }}</h1>
         <p>Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.</p>
       </div>
     </div>
@@ -244,7 +244,7 @@
     <section class="es-card" data-step-panel="1">
       <div class="es-card-head">
         <h2 class="es-card-title">Thông tin chung</h2>
-        <div class="es-card-subtitle">Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.</div>
+        <div id="wizardStatusMessage" class="es-card-subtitle">Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.</div>
       </div>
       <div class="es-card-body">
         <div class="es-grid">
@@ -297,7 +297,7 @@
           </div>
           <div class="es-field es-col-6">
             <label for="sessionDuration">Thời gian làm bài (phút) <span class="es-required">*</span></label>
-            <input id="sessionDuration" class="es-input" type="number" min="1" step="1" placeholder="Ví dụ: 90">
+            <input id="sessionDuration" class="es-input" type="number" readonly placeholder="Tự động tính từ giờ thi" style="background-color: #f8fafc; cursor: not-allowed; color: var(--es-text); font-weight: bold;">
           </div>
 
           <div class="es-field es-col-6 is-optional-hidden">
@@ -320,13 +320,14 @@
     <section class="es-card es-hidden" data-step-panel="2">
       <div class="es-card-head">
         <h2 class="es-card-title">Phòng thi &amp; Trộn</h2>
-        <div class="es-card-subtitle">Mỗi phòng có thể gán một bộ đề và nhiều mã đề đã duyệt.</div>
+        <div class="es-card-subtitle">Cấu hình từng phòng thi, số lượng sinh viên, mật khẩu và bộ đề - mã đề tương ứng.</div>
       </div>
       <div class="es-card-body">
         <div class="es-summary-grid">
           <div class="es-summary-item">
-            <small>Môn học</small>
-            <strong>{{ selected_subject.name }}</strong>
+            <small>Kỳ thi & Môn học</small>
+            <strong id="summaryExamName" style="font-size: 1.15rem; line-height: 1.4; margin-top: 0.3rem;">-</strong>
+            <small style="margin-top:0.4rem;">Môn: {{ selected_subject.name }} ({{ selected_subject.subject_code }})</small>
           </div>
           <div class="es-summary-item">
             <small>Số phòng thi</small>
@@ -341,10 +342,10 @@
         <div class="es-section-note" style="margin-top: 1.3rem;">
           <div>
             <strong>Danh sách phân phòng và cấu hình bảo mật</strong><br>
-            <span>Thêm phòng, số lượng sinh viên, mật khẩu phòng và gán bộ đề - mã đề cho từng phòng.</span>
+            <span>Mỗi phòng có thể được gán bộ đề riêng và một hoặc nhiều mã đề đã duyệt.</span>
           </div>
           <button type="button" id="addRoomButton" class="es-btn es-btn-ghost">
-            <i class="fas fa-plus"></i>
+            <i class="fas fa-plus-circle"></i>
             Thêm phòng thi
           </button>
         </div>
@@ -369,66 +370,79 @@
     <section class="es-card es-hidden" data-step-panel="3">
       <div class="es-card-head">
         <h2 class="es-card-title">Phân bố sinh viên</h2>
-        <div class="es-card-subtitle">Chọn nguồn danh sách lớp và random sinh viên vào các phòng theo sức chứa đã cấu hình.</div>
+        <div class="es-card-subtitle">Chọn nguồn danh sách lớp và random sinh viên vào từng phòng theo cấu hình đã thiết lập.</div>
       </div>
       <div class="es-card-body">
-        <div class="es-summary-grid">
-          <div class="es-summary-item">
-            <small>Số phòng thi</small>
-            <strong id="assignRoomCount">0</strong>
+        <div class="es-summary-item es-subject-card">
+          <small>Môn học</small>
+          <strong>{{ selected_subject.name }}</strong>
+          <small>Mã môn: {{ selected_subject.subject_code }}</small>
+        </div>
+
+        <div class="es-hidden">
+          <span id="assignRoomCount">0</span>
+          <span id="assignStudentCount">0</span>
+        </div>
+
+        <div class="es-assign-layout">
+          <div class="es-config-card">
+            <div class="es-config-card-head">Cấu hình phòng thi</div>
+            <div class="es-config-card-body">
+              <div class="es-config-stat">
+                <span>Số lượng phòng thi</span>
+                <strong id="assignRoomCountSide">0</strong>
+              </div>
+              <div class="es-config-stat">
+                <span>Sức chứa tối đa</span>
+                <strong id="assignCapacityCount">0</strong>
+              </div>
+            </div>
           </div>
-          <div class="es-summary-item">
-            <small>Tổng sức chứa</small>
-            <strong id="assignCapacityCount">0</strong>
-          </div>
-          <div class="es-summary-item">
-            <small>Tổng sinh viên đã chọn</small>
-            <strong id="assignStudentCount">0</strong>
+
+          <div class="es-card" style="box-shadow:none;">
+            <div class="es-card-head">
+              <div class="es-section-note" style="margin:0;">
+                <h3 class="es-card-title" style="font-size: 1.3rem;">Nguồn danh sách SV</h3>
+                <span id="assignStudentCountChip" class="es-source-count">0 SV</span>
+              </div>
+            </div>
+            <div class="es-card-body">
+              <div class="es-grid" style="align-items: end; margin-bottom: 1rem;">
+                <div class="es-field es-col-9">
+                  <label for="rosterPicker">Chọn danh sách lớp</label>
+                  <select id="rosterPicker" class="es-select"></select>
+                </div>
+                <div class="es-col-3">
+                  <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="width: 100%;">
+                    <i class="fas fa-plus"></i>
+                    Thêm nguồn
+                  </button>
+                </div>
+              </div>
+
+              <div class="es-table-wrap">
+                <table class="es-table">
+                  <thead>
+                    <tr>
+                      <th>Tên file</th>
+                      <th>Năm học</th>
+                      <th>Học kỳ</th>
+                      <th>Số SV</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="selectedRosterTableBody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="es-card" style="box-shadow:none; margin-top: 1.3rem;">
-          <div class="es-card-head">
-            <h3 class="es-card-title" style="font-size: 1.3rem;">Nguồn danh sách SV</h3>
-            <div class="es-card-subtitle">Mỗi file đã upload có thể được dùng làm nguồn phục vụ phân bố sinh viên.</div>
-          </div>
-          <div class="es-card-body">
-            <div class="es-grid" style="align-items: end;">
-              <div class="es-field es-col-9">
-                <label for="rosterPicker">Chọn danh sách lớp</label>
-                <select id="rosterPicker" class="es-select"></select>
-              </div>
-              <div class="es-col-3">
-                <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="width: 100%;">
-                  <i class="fas fa-plus"></i>
-                  Thêm nguồn
-                </button>
-              </div>
-            </div>
-
-            <div class="es-table-wrap" style="margin-top: 1rem;">
-              <table class="es-table">
-                <thead>
-                  <tr>
-                    <th>Tên file</th>
-                    <th>Năm học</th>
-                    <th>Học kỳ</th>
-                    <th>Số SV</th>
-                    <th>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody id="selectedRosterTableBody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="es-card" style="box-shadow:none; margin-top: 1.3rem;">
+        <div class="es-card" style="box-shadow:none;">
           <div class="es-card-head">
             <div class="es-section-note" style="margin: 0;">
               <div>
                 <h3 class="es-card-title" style="font-size: 1.3rem;">Phân bố sinh viên theo phòng</h3>
-                <div class="es-card-subtitle">Hệ thống sẽ random sinh viên từ nguồn đã chọn và gán mã đề theo vòng tròn trong từng phòng.</div>
               </div>
               <button type="button" id="randomAssignButton" class="es-btn es-btn-ghost">
                 <i class="fas fa-random"></i>
@@ -450,9 +464,10 @@
         Quay lại
       </button>
       <div class="es-actions-right">
-        <a class="es-btn es-btn-secondary" href="{% url 'qna:lecturer_exam_sessions_list' %}">
+        <button type="button" id="btnCancelWizard" class="es-btn es-btn-secondary">
           Hủy bỏ
-        </a>
+        </button>
+
         {% if screen_mode != "view" %}
           <button type="button" id="saveDraftButton" class="es-btn es-btn-secondary">
             Lưu nháp
@@ -474,11 +489,9 @@
   </div>
 </div>
 
-<div id="examPickerBackdrop" class="es-modal-backdrop">
-  </div>
+<div id="examPickerBackdrop" class="es-modal-backdrop"></div>
 
 <script>
-  // BUG FIX: getCookie not defined
   function getCookie(name) {
     const cookies = document.cookie ? document.cookie.split(';') : [];
     for (const cookie of cookies) {
@@ -492,7 +505,7 @@
 
   const sessionCatalog = {{ catalog_json|safe }};
   const sessionInitialState = {{ initial_state_json|safe }};
-  const sessionMode = "{{ screen_mode }}";
+  let sessionMode = "{{ screen_mode }}";
   const sessionListUrl = "{% url 'qna:lecturer_exam_sessions_list' %}";
   const createSessionUrl = "{% url 'qna:lecturer_create_exam_group_screen' %}";
   const updateSessionUrlTemplate = "{% url 'qna:lecturer_update_exam_group' 0 %}";
@@ -549,6 +562,49 @@
     rosterIds: (sessionInitialState.roster_configs || []).map((item) => item.id),
   };
 
+
+  function updateWizardScreenMeta(message = '') {
+    const titleEl = document.getElementById('wizardScreenTitle');
+    const subtitleEl = document.getElementById('wizardStatusMessage');
+    if (titleEl) {
+      titleEl.textContent = sessionMode === 'create' ? 'Tạo ca thi' : (sessionMode === 'edit' ? 'Chỉnh sửa ca thi' : 'Xem ca thi');
+    }
+    if (subtitleEl && message) {
+      subtitleEl.textContent = message;
+    }
+  }
+
+  function persistWizardUrlState() {
+    const nextUrl = new URL(window.location.href);
+    const currentSubjectId = subjectSelect?.value || sessionCatalog?.subject?.id || '';
+    if (currentSubjectId) {
+      nextUrl.searchParams.set('subject_id', currentSubjectId);
+    }
+    nextUrl.searchParams.set('mode', sessionMode === 'view' ? 'view' : 'edit');
+    if (wizardState.sessionId) {
+      nextUrl.searchParams.set('session_id', wizardState.sessionId);
+    }
+    window.history.replaceState({}, '', nextUrl.toString());
+  }
+
+  function applyWizardSaveSuccess(payload, submitAction) {
+    if (payload?.exam_group_id) {
+      wizardState.sessionId = payload.exam_group_id;
+    }
+    sessionMode = 'edit';
+    wizardState.statusLabel = submitAction === 'CONFIRM' ? 'Sắp diễn ra' : 'Lưu nháp';
+    if (subjectSelect) {
+      subjectSelect.disabled = true;
+    }
+    persistWizardUrlState();
+    updateStatusLabel();
+    updateWizardScreenMeta(
+      submitAction === 'CONFIRM'
+        ? 'Ca thi đã được lưu thành công. Bạn đang ở chế độ chỉnh sửa và UI đã được cập nhật ngay trên màn hình.'
+        : 'Bản nháp đã được lưu thành công. Bạn có thể tiếp tục chỉnh sửa ngay trên màn hình này.'
+    );
+  }
+
   function buildAcademicYearOptions(baseYear) {
     const options = [];
     const safeBaseYear = Number(baseYear) || new Date().getFullYear();
@@ -586,17 +642,6 @@
     return output;
   }
 
-  function generateRoomName() {
-    // Tao ten phong ngau nhien 3 chu so (100-999)
-    const existing = new Set(wizardState.roomConfigs.map(r => r.room_name));
-    let candidate;
-    let attempts = 0;
-    do {
-      candidate = String(Math.floor(100 + Math.random() * 900));
-      attempts += 1;
-    } while (existing.has(candidate) && attempts < 20);
-    return candidate;
-  }
 
   const realtimeSessionStatusMeta = {
     DRAFT: { label: "Lưu nháp" },
@@ -634,6 +679,7 @@
   let pickerSearch;
   let pickerSelectAll;
   let pickerSelectionMeta;
+
   function bindDomRefs() {
     stepPanels = document.querySelectorAll("[data-step-panel]");
     stepMarkers = document.querySelectorAll("[data-step-marker]");
@@ -675,185 +721,10 @@
   }
 
   function upgradeWizardMarkup() {
-    const breadcrumb = document.querySelector(".es-breadcrumb");
-    if (breadcrumb) {
-      breadcrumb.innerHTML = "Kho và khai phá dữ liệu &nbsp;&gt;&nbsp; Quản lý ca thi";
-    }
-
-    const titleDescription = document.querySelector(".es-title p");
-    if (titleDescription) {
-      titleDescription.textContent = "Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.";
-    }
-
-    const banner = document.querySelector(".es-banner");
-    if (banner) {
-      banner.textContent = "Ca thi này đang ở chế độ xem. Nếu ca thi đã được sử dụng hoặc đã tới giờ thi, hệ thống sẽ khóa chỉnh sửa để tránh sai lệch dữ liệu.";
-    }
-
-    const stepLabels = document.querySelectorAll(".es-step-label");
-    if (stepLabels.length >= 3) {
-      stepLabels[0].textContent = "Thông tin chung";
-      stepLabels[1].textContent = "Phòng thi & Trộn";
-      stepLabels[2].textContent = "Phân bố sinh viên";
-    }
-
-    const panelOne = document.querySelector('[data-step-panel="1"]');
-    if (panelOne) {
-      panelOne.querySelector(".es-card-title").textContent = "Thông tin chung";
-      panelOne.querySelector(".es-card-subtitle").textContent = "Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.";
-    }
-
-    const panelTwo = document.querySelector('[data-step-panel="2"]');
-    if (panelTwo) {
-      panelTwo.querySelector(".es-card-title").textContent = "Phòng thi & Trộn";
-      panelTwo.querySelector(".es-card-subtitle").textContent = "Cấu hình từng phòng thi, số lượng sinh viên, mật khẩu và bộ đề - mã đề tương ứng.";
-      const summaryItem = panelTwo.querySelector(".es-summary-item");
-      if (summaryItem) {
-        summaryItem.innerHTML = `
-          <small>Kỳ thi & Môn học</small>
-          <strong id="summaryExamName" style="font-size: 1.15rem; line-height: 1.4; margin-top: 0.3rem;">${escapeHtml(wizardState.groupName) || "(Chưa nhập tên kỳ thi)"}</strong>
-          <small style="margin-top:0.4rem;">Môn: ${escapeHtml(sessionCatalog.subject.name)} (${escapeHtml(sessionCatalog.subject.subject_code)})</small>
-        `;
-      }
-      const noteStrong = panelTwo.querySelector(".es-section-note strong");
-      const noteSpan = panelTwo.querySelector(".es-section-note span");
-      if (noteStrong) {
-        noteStrong.textContent = "Danh sách phân phòng và cấu hình bảo mật";
-      }
-      if (noteSpan) {
-        noteSpan.textContent = "Mỗi phòng có thể được gán bộ đề riêng và một hoặc nhiều mã đề đã duyệt.";
-      }
-      const addRoom = document.getElementById("addRoomButton");
-      if (addRoom) {
-        addRoom.innerHTML = '<i class="fas fa-plus-circle"></i>Thêm phòng thi';
-      }
-    }
-
-    const panelThree = document.querySelector('[data-step-panel="3"]');
-    if (panelThree) {
-      panelThree.innerHTML = `
-        <div class="es-card-head">
-          <h2 class="es-card-title">Phân bố sinh viên</h2>
-          <div class="es-card-subtitle">Chọn nguồn danh sách lớp và random sinh viên vào từng phòng theo cấu hình đã thiết lập.</div>
-        </div>
-        <div class="es-card-body">
-          <div class="es-summary-item es-subject-card">
-            <small>Môn học</small>
-            <strong>${escapeHtml(sessionCatalog.subject.name)}</strong>
-            <small>Mã môn: ${escapeHtml(sessionCatalog.subject.subject_code)}</small>
-          </div>
-
-          <div class="es-hidden">
-            <span id="assignRoomCount">0</span>
-            <span id="assignStudentCount">0</span>
-          </div>
-
-          <div class="es-assign-layout">
-            <div class="es-config-card">
-              <div class="es-config-card-head">Cấu hình phòng thi</div>
-              <div class="es-config-card-body">
-                <div class="es-config-stat">
-                  <span>Số lượng phòng thi</span>
-                  <strong id="assignRoomCountSide">0</strong>
-                </div>
-                <div class="es-config-stat">
-                  <span>Sức chứa tối đa</span>
-                  <strong id="assignCapacityCount">0</strong>
-                </div>
-              </div>
-            </div>
-
-            <div class="es-card" style="box-shadow:none;">
-              <div class="es-card-head">
-                <div class="es-section-note" style="margin:0;">
-                  <h3 class="es-card-title" style="font-size: 1.3rem;">Nguồn danh sách SV</h3>
-                  <span id="assignStudentCountChip" class="es-source-count">0 SV</span>
-                </div>
-              </div>
-              <div class="es-card-body">
-                <div class="es-grid" style="align-items: end; margin-bottom: 1rem;">
-                  <div class="es-field es-col-9">
-                    <label for="rosterPicker">Chọn danh sách lớp</label>
-                    <select id="rosterPicker" class="es-select"></select>
-                  </div>
-                  <div class="es-col-3">
-                    <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="width: 100%;">
-                      <i class="fas fa-plus"></i>
-                      Thêm nguồn
-                    </button>
-                  </div>
-                </div>
-
-                <div class="es-table-wrap">
-                  <table class="es-table">
-                    <thead>
-                      <tr>
-                        <th>Tên file</th>
-                        <th>Năm học</th>
-                        <th>Học kỳ</th>
-                        <th>Số SV</th>
-                        <th>Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody id="selectedRosterTableBody"></tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="es-card" style="box-shadow:none;">
-            <div class="es-card-head">
-              <div class="es-section-note" style="margin: 0;">
-                <div>
-                  <h3 class="es-card-title" style="font-size: 1.3rem;">Phân bố sinh viên theo phòng</h3>
-                </div>
-                <button type="button" id="randomAssignButton" class="es-btn es-btn-ghost">
-                  <i class="fas fa-random"></i>
-                  Random lại toàn bộ
-                </button>
-              </div>
-            </div>
-            <div class="es-card-body">
-              <div id="distributionSummary" style="margin-bottom: 1rem; color: var(--es-muted);"></div>
-              <div id="roomAssignmentsGrid" class="es-room-grid"></div>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    const cancelLink = document.querySelector('.es-actions-right a.es-btn-secondary');
-    if (cancelLink) {
-      cancelLink.textContent = "Hủy bỏ";
-    }
-
-    const draftButton = document.getElementById("saveDraftButton");
-    if (draftButton) {
-      draftButton.textContent = "Lưu nháp";
-    }
-
-    const nextButton = document.getElementById("wizardNextButton");
-    if (nextButton) {
-      nextButton.innerHTML = 'Tiếp theo <i class="fas fa-arrow-right"></i>';
-    }
-
-    const submitButton = document.getElementById("wizardSubmitButton");
-    if (submitButton) {
-      submitButton.textContent = "Xác nhận";
-    }
-
-    const viewBackButton = document.getElementById("wizardViewBackButton");
-    if (viewBackButton) {
-      viewBackButton.textContent = "Quay lại danh sách";
-    }
-
-    // --- BẮT ĐẦU CẬP NHẬT TEMPLATE MODAL CHO GIỐNG IMAGE_E96588.PNG ---
     const examPickerBackdropElement = document.getElementById("examPickerBackdrop");
     if (examPickerBackdropElement) {
       examPickerBackdropElement.innerHTML = `
         <div class="es-modal" style="width: 1000px; max-width: 95vw; border-radius: 20px; display: flex; flex-direction: column;">
-
           <div class="es-modal-head" style="border-bottom: 1px solid #edf2f8; padding: 20px 32px; display: flex; gap: 16px; align-items: center;">
             <div style="width: 42px; height: 42px; border-radius: 10px; background: #eef4ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
               <i class="far fa-clipboard"></i>
@@ -866,7 +737,6 @@
           </div>
 
           <div class="es-modal-body" style="padding: 24px 32px 16px; overflow-y: auto;">
-
             <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; background: #fff;">
               <div style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #475569;">
                 <i class="fas fa-door-open" style="color: #94a3b8; width: 16px;"></i>
@@ -902,7 +772,6 @@
             </div>
 
             <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px 8px; margin-bottom: 24px; background: #fff;">
-
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
                 <div style="position: relative; width: 400px;">
                   <i class="fas fa-search" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
@@ -937,7 +806,6 @@
               <strong style="font-size: 14px; color: #1e293b;">Mã đề đã chọn:</strong>
               <div class="es-selected-tags" id="pickerSelectedTags" style="margin-top: 0; display: flex; gap: 8px;"></div>
             </div>
-
           </div>
 
           <div class="es-modal-actions" style="border-top: 1px solid #edf2f8; padding: 16px 32px; background: #fff; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px;">
@@ -947,8 +815,6 @@
         </div>
       `;
     }
-    // --- KẾT THÚC CẬP NHẬT TEMPLATE MODAL ---
-
   }
 
   function clearToasts(type = null) {
@@ -1119,8 +985,10 @@
       startField.min = minNowTime;
       if (wizardState.startTime && wizardState.startTime < minNowTime) {
         wizardState.startTime = minNowTime;
+        // Do thời gian làm bài bị read-only, nếu startTime bị đẩy lên minNowTime,
+        // ta cũng nên update lại Duration theo endTime (nếu có).
         startField.value = wizardState.startTime;
-        syncEndTimeFromDuration();
+        syncDurationFromTimes();
       }
     } else {
       startField.removeAttribute("min");
@@ -1134,6 +1002,7 @@
     }
   }
 
+  // [YÊU CẦU 2]: Tính toán thời gian làm bài từ Giờ bắt đầu và Giờ kết thúc
   function syncDurationFromTimes() {
     const startMinutes = timeToMinutes(wizardState.startTime);
     const endMinutes = timeToMinutes(wizardState.endTime);
@@ -1144,16 +1013,6 @@
     document.getElementById("sessionDuration").value = wizardState.durationMinutes;
   }
 
-  function syncEndTimeFromDuration() {
-    const startMinutes = timeToMinutes(wizardState.startTime);
-    const duration = Number(wizardState.durationMinutes || 0);
-    if (startMinutes === null || duration <= 0) {
-      return;
-    }
-    wizardState.endTime = minutesToTime(startMinutes + duration);
-    document.getElementById("sessionEndTime").value = wizardState.endTime;
-  }
-
   function bindGeneralFields() {
     const nameField = document.getElementById("sessionGroupName");
     const yearField = document.getElementById("sessionAcademicYear");
@@ -1161,7 +1020,6 @@
     const dateField = document.getElementById("sessionExamDate");
     const startField = document.getElementById("sessionStartTime");
     const endField = document.getElementById("sessionEndTime");
-    const durationField = document.getElementById("sessionDuration");
     const passwordField = document.getElementById("sessionPassword");
     const descriptionField = document.getElementById("sessionDescription");
 
@@ -1184,9 +1042,11 @@
       wizardState.examDate = dateField.value;
       syncDateTimeConstraints();
     });
+
+    // [YÊU CẦU 2]: Cập nhật Duration thay vì cập nhật End Time
     startField.addEventListener("change", () => {
       wizardState.startTime = startField.value;
-      syncEndTimeFromDuration();
+      syncDurationFromTimes();
       syncDateTimeConstraints();
     });
     endField.addEventListener("change", () => {
@@ -1194,11 +1054,7 @@
       syncDurationFromTimes();
       syncDateTimeConstraints();
     });
-    durationField.addEventListener("input", () => {
-      wizardState.durationMinutes = Number(durationField.value || 0);
-      syncEndTimeFromDuration();
-      syncDateTimeConstraints();
-    });
+
     passwordField.addEventListener("input", () => { wizardState.examPassword = passwordField.value; });
     descriptionField.addEventListener("input", () => { wizardState.description = descriptionField.value; });
   }
@@ -1239,14 +1095,6 @@
       .map((item) => item.code_name);
   }
 
-  function buildDefaultRoomPassword(index, roomCode = "") {
-    const compactRoomCode = String(roomCode || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    if (compactRoomCode.length >= 5) {
-      return compactRoomCode.slice(0, 5);
-    }
-    return `${compactRoomCode}${String(index + 1).padStart(5, "0")}`.slice(0, 5);
-  }
-
   function updateRoomStudentCount(roomIndex, nextValue) {
     const room = wizardState.roomConfigs[roomIndex];
     if (!room) {
@@ -1267,7 +1115,8 @@
     const suggestion = suggestions[wizardState.roomConfigs.length % Math.max(suggestions.length, 1)] || {};
     wizardState.roomConfigs.push({
       client_id: `room-${Date.now()}-${wizardState.roomConfigs.length + 1}`,
-      room_name: suggestion.room_name || generateRoomName(),
+      // ĐỂ TRỐNG TÊN PHÒNG Ở ĐÂY, bắt buộc người dùng nhập
+      room_name: suggestion.room_name || "",
       student_count: suggestion.capacity || 1,
       password: generateRoomPassword(),
       exam_set_id: null,
@@ -1815,7 +1664,6 @@
     examPickerOriginalSetId = null;
   }
 
-  // --- BẮT ĐẦU CẬP NHẬT RENDER CHO TABLE VÀ TAGS ---
   function renderExamPickerCodes() {
     const room = wizardState.roomConfigs[examPickerRoomIndex];
     if (!room) {
@@ -1849,7 +1697,6 @@
 
     pickerSelectedTags.innerHTML = examPickerSelection.map((codeId) => {
       const code = (examSet ? examSet.codes : []).find((item) => item.id === codeId);
-      // Nút X xóa từng pill
       return code ? `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; background: #eff6ff; color: #2563eb; border-radius: 20px; font-size: 13px; font-weight: 500; border: 1px solid #bfdbfe;">${code.code_name} <span class="remove-pill-btn" data-remove-id="${code.id}" style="color: #93c5fd; cursor: pointer; padding-left: 2px;">×</span></span>` : "";
     }).join("");
 
@@ -1863,7 +1710,6 @@
       pickerSelectAll.checked = codes.length ? codes.every((code) => examPickerSelection.includes(code.id)) : false;
     }
 
-    // Logic click checkbox
     pickerCodeTableBody.querySelectorAll("[data-code-pick]").forEach((checkbox) => {
       checkbox.addEventListener("change", () => {
         const codeId = Number(checkbox.dataset.codePick);
@@ -1878,7 +1724,6 @@
       });
     });
 
-    // Logic click nút X trên pill để xóa
     pickerSelectedTags.querySelectorAll(".remove-pill-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (isViewMode()) return;
@@ -1888,7 +1733,6 @@
       });
     });
   }
-  // --- KẾT THÚC CẬP NHẬT RENDER CHO TABLE VÀ TAGS ---
 
   function confirmExamPicker() {
     const room = wizardState.roomConfigs[examPickerRoomIndex];
@@ -1984,8 +1828,10 @@
           continue;
         }
         seenNames.add(roomName.toLowerCase());
+
+        // [YÊU CẦU 1]: Cập nhật thông báo "thông báo phòng thi dòng 1 phải có số lượng lớn hơn 0"
         if (Number(room.student_count || 0) <= 0) {
-          errors.push(`Phòng ${roomName} phải có số lượng sinh viên lớn hơn 0`);
+          errors.push(`Thông báo: Phòng thi ${index + 1} phải có số lượng sinh viên bằng sức chứa`);
         }
         if (!room.password.trim()) {
           errors.push(`Phòng ${roomName} chưa có mật khẩu phòng`);
@@ -2106,32 +1952,39 @@
     btn.disabled = true;
 
     try {
-        const targetUrl = wizardState.sessionId
-          ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
-          : createSessionUrl;
+      const targetUrl = wizardState.sessionId
+        ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
+        : createSessionUrl;
 
-        const response = await fetch(targetUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": getCookie("csrftoken"),
-          },
-          body: JSON.stringify(buildPayload(submitAction)),
-        });
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken"),
+        },
+        body: JSON.stringify(buildPayload(submitAction)),
+      });
 
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.success) {
-          pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
-          return;
-        }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.success) {
+        pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
+        return;
+      }
 
+      if (submitAction === "CONFIRM") {
+        pushToast(payload.message || "Đã lưu cấu hình ca thi thành công.", "success");
         window.location.href = payload.redirect_url || sessionListUrl;
+        return;
+      }
+
+      applyWizardSaveSuccess(payload, submitAction);
+      pushToast(payload.message || "Đã lưu nháp ca thi thành công.", "success");
     } catch (err) {
-        console.error("Lỗi khi lưu:", err);
-        pushToast("Lỗi kết nối đến máy chủ: " + (err.message || ""), "error");
+      console.error("Lỗi khi lưu:", err);
+      pushToast("Lỗi kết nối đến máy chủ: " + (err.message || ""), "error");
     } finally {
-        btn.innerHTML = originalHtml;
-        btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      btn.disabled = false;
     }
   }
 
@@ -2171,7 +2024,6 @@
         if (!validateStep(3)) {
           return;
         }
-        // Chỉ hiện popup xác nhận khi chỉnh sửa ca thi
         const isEditMode = sessionMode === "edit" && Boolean(wizardState.sessionId);
         if (isEditMode) {
           const confirmed = await window.showGlobalConfirm({
@@ -2195,6 +2047,23 @@
     if (wizardViewBackButton) {
       wizardViewBackButton.addEventListener("click", () => {
         window.location.href = sessionListUrl;
+      });
+    }
+
+    // [YÊU CẦU 3]: Bắt sự kiện nút Hủy bỏ, chặn nhảy trang, và hiện Popup xác nhận
+    const btnCancelWizard = document.getElementById("btnCancelWizard");
+    if (btnCancelWizard) {
+      btnCancelWizard.addEventListener("click", async () => {
+        const confirmed = await window.showGlobalConfirm({
+          title: 'Xác nhận hủy',
+          message: 'Bạn có chắc chắn muốn hủy bỏ? Dữ liệu đang nhập sẽ không được lưu lại.',
+          confirmText: 'Xác nhận hủy',
+          cancelText: 'Tiếp tục',
+          danger: true,
+        });
+        if (confirmed) {
+          window.location.href = sessionListUrl;
+        }
       });
     }
   }

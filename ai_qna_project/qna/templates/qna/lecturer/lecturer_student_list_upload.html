@@ -537,7 +537,7 @@
         error: '',
         warningMessages: [],
         meta: `${sizeText(file.size)} • Đã sẵn sàng`,
-        note: 'Chờ xác nhận tải lên',
+        note: 'Sẵn sàng tải lên',
       });
     });
 
@@ -617,16 +617,6 @@
             `${item.file.name} có ${warningMessages.length} cảnh báo dữ liệu.`,
             'warning'
           );
-        }
-
-        const isUploading = filesState.some(f => f.status === 'uploading');
-        const hasError = filesState.some(f => f.status === 'error' || f.status === 'invalid');
-        const hasWarning = filesState.some(f => Array.isArray(f.warningMessages) && f.warningMessages.length > 0);
-
-        if (!isUploading && !hasError && !hasWarning) {
-          setTimeout(() => {
-            window.location.href = "{% url 'qna:lecturer_student_list_management' subject.subject_code %}";
-          }, 1000);
         }
         return;
       }
@@ -745,12 +735,16 @@
       return;
     }
 
-    const confirmed = await window.showGlobalConfirm({
-      title: 'Xác nhận tải lên danh sách sinh viên',
-      message: 'Hệ thống sẽ tải các file hợp lệ hiện có lên và bắt đầu xử lý dữ liệu.',
-      confirmText: 'Xác nhận tải lên',
-      cancelText: 'Hủy',
-    });
+    isQueueUploading = true;
+    syncButton();
+
+    try {
+      await uploadItemsSequentially(readyFiles);
+    } finally {
+      isQueueUploading = false;
+      syncButton();
+    }
+  });
     if (!confirmed) {
       return;
     }

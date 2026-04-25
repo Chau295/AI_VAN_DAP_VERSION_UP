@@ -426,7 +426,7 @@
           <tbody id="examSetTableBody">
             {% if rows %}
               {% for row in rows %}
-                <tr class="qm2-clickable-row exam-row-item" data-detail-url="{{ row.detail_url }}" tabindex="0">
+                <tr class="qm2-clickable-row exam-row-item" data-exam-set-id="{{ row.id }}" data-detail-url="{{ row.detail_url }}" tabindex="0">
                   <td style="padding-left: 32px;">
                     <div class="set-code">{{ row.exam_set_code }}</div>
                   </td>
@@ -545,6 +545,60 @@
     }
   }
 
+
+  function renderExamSetEmptyState() {
+    const tableBody = document.getElementById('examSetTableBody');
+    if (!tableBody) return;
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="8" style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+          <i class="far fa-folder-open" style="font-size: 40px; color: #d1d5db; margin-bottom: 16px; display: block;"></i>
+          Chưa có bộ đề nào phù hợp với bộ lọc hiện tại.
+        </td>
+      </tr>
+    `;
+  }
+
+  function syncExamSetPaginationAfterDelete() {
+    const tableBody = document.getElementById('examSetTableBody');
+    const paginationInfo = document.getElementById('paginationInfo');
+    const paginationContainer = document.getElementById('paginationContainer');
+    if (!tableBody) return;
+
+    const rows = Array.from(tableBody.querySelectorAll('tr.exam-row-item'));
+    if (!rows.length) {
+      renderExamSetEmptyState();
+      if (paginationInfo) {
+        paginationInfo.innerHTML = 'Hiển thị <strong style="color: var(--text-main);">0-0</strong> trong số <strong style="color: var(--text-main);">0</strong> bộ đề';
+      }
+      if (paginationContainer) {
+        paginationContainer.style.display = 'none';
+      }
+      return;
+    }
+
+    if (paginationContainer) {
+      paginationContainer.style.display = '';
+    }
+    if (paginationInfo) {
+      const strongs = paginationInfo.querySelectorAll('strong');
+      if (strongs.length >= 2) {
+        const total = Number((strongs[1].textContent || '0').replace(/\D/g, '')) || rows.length;
+        const nextTotal = Math.max(rows.length, total - 1);
+        strongs[0].textContent = `1-${rows.length}`;
+        strongs[1].textContent = String(nextTotal);
+      }
+    }
+  }
+
+  function removeExamSetRow(id) {
+    const row = document.querySelector(`tr.exam-row-item[data-exam-set-id="${id}"]`);
+    if (!row) return;
+    row.remove();
+    syncExamSetPaginationAfterDelete();
+  }
+
+
   async function openDeleteSetModal(id, canDelete) {
     if (!canDelete) {
       showToast('Không thể xóa bộ đề này vì đã có mã đề được sử dụng.', true);
@@ -572,8 +626,8 @@
         if (!response.ok || data.status !== 'SUCCESS') {
             showToast(data.message || 'Xóa đề thi không thành công', true);
         } else {
+            removeExamSetRow(id);
             showToast(data.message || 'Xóa bộ đề thành công!');
-            setTimeout(() => window.location.reload(), 800);
         }
     } catch (error) {
         showToast('Lỗi kết nối máy chủ!', true);
