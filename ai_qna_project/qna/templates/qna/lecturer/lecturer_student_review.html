@@ -13,6 +13,12 @@
     --review-muted: #64748b;
     --review-blue: #2563eb;
     --review-blue-soft: #dbeafe;
+    --review-green: #16a34a;
+    --review-green-soft: #dcfce7;
+    --review-orange: #f97316;
+    --review-orange-soft: #ffedd5;
+    --review-red: #ef4444;
+    --review-red-soft: #fee2e2;
     --review-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
     --review-radius: 26px;
   }
@@ -20,7 +26,7 @@
   .student-review-page { min-height: calc(100vh - 80px); margin: -2.5rem; background: radial-gradient(circle at top left, #ffffff 0%, #f4f6fb 45%, #eef2ff 100%); }
   .top-header { background: #fff; padding: 16px 32px; font-size: 20px; font-weight: 800; color: #111827; border-bottom: 1px solid var(--review-border); display: flex; align-items: center; justify-content: space-between; margin-top: 0; }
   .student-review-content { padding: 28px 22px 36px; }
-  .student-review-shell { max-width: 1360px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .student-review-shell { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
   .student-review-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .student-review-title { margin: 0; color: var(--review-text); font-size: 2.15rem; font-weight: 800; letter-spacing: -0.03em; }
   .student-review-back { display: inline-flex; align-items: center; gap: 10px; padding: 0 18px; height: 42px; border-radius: 10px; border: 1px solid #cbd5e1; background: #7c8697; color: #fff; text-decoration: none; font-weight: 600; }
@@ -29,57 +35,28 @@
   .subject-filter-panel { padding: 16px 22px; }
   .subject-filter-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
   .subject-filter-label { font-size: 1rem; font-weight: 700; color: #0f172a; min-width: 144px; }
-  .subject-filter-control,
-  .table-filter-input,
-  .table-filter-select,
-  .table-filter-btn {
-    height: 50px;
-    border: 1px solid #cbd5e1;
-    border-radius: 14px;
-    background: #fff;
-    color: var(--review-text);
-    padding: 0 18px;
-    font-size: 1rem;
-    flex: 0 0 auto;
-  }
+  .subject-filter-control, .table-filter-input, .table-filter-select { height: 50px; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; color: var(--review-text); padding: 0 18px; font-size: 1rem; }
   .subject-filter-control { flex: 1 1 420px; }
-  .list-title { margin: 0; color: #0f2b57; font-size: 1.95rem; font-weight: 800; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+  .stat-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 98px; padding: 18px 22px; background: var(--review-card); border-radius: 18px; box-shadow: 0 12px 28px rgba(148, 163, 184, 0.16); overflow: hidden; }
+  .stat-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: 999px; }
+  .stat-card-average::before { background: #3b82f6; }
+  .stat-card-complete::before { background: #22c55e; }
+  .stat-card-absent::before { background: #f97316; }
+  .stat-meta { display: flex; flex-direction: column; gap: 4px; }
+  .stat-label { color: #6b7280; font-size: 0.95rem; }
+  .stat-value { color: #1f2937; font-size: 2rem; font-weight: 700; line-height: 1; }
+  .stat-icon { width: 42px; height: 42px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+  .stat-card-average .stat-icon { background: var(--review-blue-soft); color: var(--review-blue); }
+  .stat-card-complete .stat-icon { background: var(--review-green-soft); color: var(--review-green); }
+  .stat-card-absent .stat-icon { background: var(--review-red-soft); color: var(--review-red); }
+  .list-title { margin: 8px 0 0; color: #0f2b57; font-size: 1.95rem; font-weight: 800; }
   .table-panel { padding: 18px 18px 0; }
-  .table-filters {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0 6px 18px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-  }
-  .table-filters::-webkit-scrollbar {
-    height: 8px;
-  }
-  .table-filters::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 999px;
-  }
-  .table-search { position: relative; min-width: 260px; flex: 0 0 280px; }
+  .table-filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 0 6px 18px; }
+  .table-search { position: relative; flex: 1 1 340px; max-width: 420px; }
   .table-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
   .table-filter-input { width: 100%; padding-left: 44px; }
-  .table-filter-select { min-width: 150px; }
-  .table-filter-date { min-width: 160px; }
-  .table-filter-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    text-decoration: none;
-    font-weight: 700;
-    background: #fff;
-    color: #475569;
-    white-space: nowrap;
-  }
-  .table-filter-btn:hover {
-    background: #f8fafc;
-    text-decoration: none;
-  }
+  .table-filter-select { min-width: 180px; }
   .result-table-wrap { overflow-x: auto; border-top: 1px solid #edf2f7; }
   .result-table { width: 100%; border-collapse: separate; border-spacing: 0; }
   .result-table thead th { padding: 18px 22px; background: #fafafa; color: #4b5563; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; white-space: nowrap; }
@@ -101,59 +78,73 @@
   .empty-state { padding: 50px 18px 56px; text-align: center; color: #64748b; }
   .empty-state i { font-size: 2.5rem; color: #cbd5e1; margin-bottom: 14px; }
 
-  /* PAGINATION ĐỒNG BỘ */
-  .pagination-container {
+  /* PAGINATION SYNCED CSS */
+  .qm2-pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 24px;
-    border-top: 1px solid var(--review-border);
+    padding: 18px 24px;
     font-size: 13px;
     color: var(--review-muted);
     background: #fff;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-top: 1px solid #f1f5f9;
   }
 
-  .page-controls { display: flex; align-items: center; gap: 6px; }
+  .qm2-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
 
-  .page-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    border: 1px solid var(--review-border);
+  .qm2-page-btn {
+    min-width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
     background: #fff;
-    color: var(--review-text);
+    color: #1f2937;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-weight: 500;
-    font-size: 13px;
-    transition: 0.2s;
+    font-weight: 600;
+    font-size: 14px;
     text-decoration: none;
+    transition: 0.2s;
   }
 
-  .page-btn:hover:not(.disabled):not(.active) { background: #f1f5f9; }
-  .page-btn.active { background: var(--review-blue); color: #fff; border-color: var(--review-blue); }
-  .page-btn.disabled { opacity: 0.4; cursor: not-allowed; border-color: transparent; background: transparent; }
+  .qm2-page-btn:hover:not(.disabled):not(.active) {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: var(--review-blue);
+  }
+
+  .qm2-page-btn.active {
+    background: var(--review-blue);
+    color: #fff;
+    border-color: var(--review-blue);
+  }
+
+  .qm2-page-btn.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+    background: #f1f5f9;
+  }
 
   @media (max-width: 991px) {
+    .stats-grid { grid-template-columns: 1fr; }
     .student-review-title { font-size: 1.8rem; }
-    .table-filters { flex-wrap: wrap; }
-    .table-search { flex: 1 1 100%; min-width: 100%; }
-    .table-filter-select,
-    .table-filter-date,
-    .table-filter-btn { flex: 1 1 calc(33.333% - 8px); min-width: 160px; }
   }
 
   @media (max-width: 640px) {
     .top-header { padding-left: 1rem; padding-right: 1rem; }
     .student-review-content { padding: 18px 12px 26px; }
-    .subject-filter-row { align-items: stretch; }
-    .student-review-back, .subject-filter-control { width: 100%; max-width: none; }
-    .table-filters { flex-wrap: wrap; }
-    .table-search, .table-filter-select, .table-filter-date, .table-filter-btn { flex: 1 1 100%; min-width: 100%; }
+    .subject-filter-row, .table-filters { align-items: stretch; }
+    .student-review-back, .subject-filter-control, .table-search, .table-filter-select { width: 100%; max-width: none; }
     .result-table thead th, .result-table tbody td { padding: 16px 14px; }
-    .pagination-container { flex-direction: column; gap: 12px; }
   }
 </style>
 
@@ -161,91 +152,83 @@
   <div class="top-header">Xem bài làm sinh viên</div>
   <div class="student-review-content">
     <div class="student-review-shell">
-      <div class="student-review-topbar">
-        <h1 class="student-review-title">Xem bài làm sinh viên</h1>
-        <a href="{% url 'qna:lecturer_subject_list' %}" class="student-review-back">
-          <i class="fas fa-arrow-left"></i>
-          Quay lại danh sách môn
-        </a>
+    <div class="student-review-topbar">
+      <h1 class="student-review-title">Xem bài làm sinh viên</h1>
+      <a href="{% url 'qna:lecturer_subject_list' %}" class="student-review-back">
+        <i class="fas fa-arrow-left"></i>
+        Quay lại danh sách môn
+      </a>
+    </div>
+
+    <form method="get" class="student-review-panel subject-filter-panel">
+      <div class="subject-filter-row">
+        <label class="subject-filter-label" for="subject_id">Chọn môn học:</label>
+        <select id="subject_id" name="subject_id" class="subject-filter-control" onchange="this.form.submit()">
+          <option value="">Chọn môn học</option>
+          {% for s in subjects %}
+            <option value="{{ s.id }}" {% if selected_subject and selected_subject.id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.subject_code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+
+    {% if selected_subject %}
+      <div class="stats-grid">
+        <div class="stat-card stat-card-average">
+          <div class="stat-meta">
+            <span class="stat-label">Điểm trung bình</span>
+            <span class="stat-value">{{ average_score|floatformat:1 }}</span>
+          </div>
+          <span class="stat-icon"><i class="fas fa-clipboard-list"></i></span>
+        </div>
+        <div class="stat-card stat-card-complete">
+          <div class="stat-meta">
+            <span class="stat-label">Đã hoàn thành</span>
+            <span class="stat-value">{{ completed_count }}</span>
+          </div>
+          <span class="stat-icon"><i class="fas fa-check"></i></span>
+        </div>
+        <div class="stat-card stat-card-absent">
+          <div class="stat-meta">
+            <span class="stat-label">Vắng thi</span>
+            <span class="stat-value">{{ absent_count }}</span>
+          </div>
+          <span class="stat-icon"><i class="fas fa-times"></i></span>
+        </div>
       </div>
 
-      <form method="get" class="student-review-panel subject-filter-panel">
-        <div class="subject-filter-row">
-          <label class="subject-filter-label" for="subject_id">Chọn môn học:</label>
-          <select id="subject_id" name="subject_id" class="subject-filter-control" onchange="this.form.submit()">
-            <option value="">Chọn môn học</option>
-            {% for s in subjects %}
-              <option value="{{ s.id }}" {% if selected_subject and selected_subject.id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.subject_code }})</option>
+      <h2 class="list-title">Danh sách Bài làm</h2>
+
+      <div class="student-review-panel table-panel">
+        <form method="get" class="table-filters">
+          <input type="hidden" name="subject_id" value="{{ selected_subject.id }}">
+          <div class="table-search">
+            <i class="fas fa-search"></i>
+            <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm ..." value="{{ student_filter }}">
+          </div>
+          <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
+            <option value="">Kỳ thi: Tất cả</option>
+            {% for g in exam_groups %}
+              <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}</option>
             {% endfor %}
           </select>
-        </div>
-      </form>
+        </form>
 
-      {% if selected_subject %}
-        <div class="student-review-panel table-panel">
-          <div style="padding: 0 6px 18px;">
-            <h2 class="list-title">Danh sách kết quả</h2>
-          </div>
-
-          <form method="get" class="table-filters">
-            <input type="hidden" name="subject_id" value="{{ selected_subject.id }}">
-
-            <div class="table-search">
-              <i class="fas fa-search"></i>
-              <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm sinh viên..." value="{{ student_filter }}">
-            </div>
-
-            <select name="class_name" class="table-filter-select" onchange="this.form.submit()">
-              <option value="">Lớp: Tất cả</option>
-              {% for class_name in class_options %}
-                <option value="{{ class_name }}" {% if selected_class_filter == class_name %}selected{% endif %}>{{ class_name }}</option>
-              {% endfor %}
-            </select>
-
-            <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
-              <option value="">Kỳ thi: Tất cả</option>
-              {% for g in exam_groups %}
-                <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }}</option>
-              {% endfor %}
-            </select>
-
-            <input type="date" name="exam_date" class="table-filter-select table-filter-date" value="{{ selected_exam_date_filter }}" onchange="this.form.submit()">
-
-            <select name="exam_time" class="table-filter-select" onchange="this.form.submit()">
-              <option value="">Thời gian: Tất cả</option>
-              {% for item in time_options %}
-                <option value="{{ item }}" {% if selected_exam_time_filter == item %}selected{% endif %}>{{ item }}</option>
-              {% endfor %}
-            </select>
-
-            <select name="status" class="table-filter-select" onchange="this.form.submit()">
-              <option value="">Trạng thái: Tất cả</option>
-              <option value="completed" {% if selected_status_filter == 'completed' %}selected{% endif %}>Đã hoàn thành</option>
-              <option value="ended" {% if selected_status_filter == 'ended' %}selected{% endif %}>Đã kết thúc</option>
-              <option value="in_progress" {% if selected_status_filter == 'in_progress' %}selected{% endif %}>Đang thực hiện</option>
-              <option value="absent" {% if selected_status_filter == 'absent' %}selected{% endif %}>Vắng thi</option>
-            </select>
-
-            <a href="{% url 'qna:lecturer_student_review_screen' %}?subject_id={{ selected_subject.id }}" class="table-filter-btn">
-              <i class="fas fa-rotate-left"></i>
-            </a>
-          </form>
-
-          {% if sessions %}
-            <div class="result-table-wrap">
-              <table class="result-table">
-                <thead>
-                  <tr>
-                    <th>Sinh viên</th>
-                    <th>Lớp</th>
-                    <th>Kỳ thi</th>
-                    <th>Ngày thi</th>
-                    <th>Thời gian</th>
-                    <th>Trạng thái</th>
-                    <th>Điểm</th>
-                    <th></th>
-                  </tr>
-                </thead>
+        {% if sessions %}
+          <div class="result-table-wrap">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th>Sinh viên</th>
+                  <th>Lớp</th>
+                  <th>Kỳ thi</th>
+                  <th>Ngày thi</th>
+                  <th>Thời gian</th>
+                  <th>Trạng thái</th>
+                  <th>Điểm</th>
+                  <th></th>
+                </tr>
+              </thead>
                 <tbody>
                   {% for session in sessions %}
                   <tr class="session-row{% if session.can_view_detail %} is-clickable{% endif %}"{% if session.can_view_detail %} data-detail-url="{% url 'qna:lecturer_session_detail' session.id %}" onclick="window.location.href=this.dataset.detailUrl;"{% endif %}>
@@ -256,7 +239,7 @@
                     <td>{{ session.student_class_name }}</td>
                     <td>{{ session.exam_group.group_name|default:"-" }}</td>
                     <td>{{ session.exam_date_display|date:"d/m/Y" }}</td>
-                    <td>{{ session.exam_time_display|default:"-" }}</td>
+                    <td>{{ session.actual_duration_display|default:"-" }}</td>
                     <td>
                       <span class="status-pill {{ session.review_status_class|default:session.status_class }}">{{ session.review_status_label|default:session.status_label }}</span>
                     </td>
@@ -273,72 +256,63 @@
                       {% endif %}
                     </td>
                   </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="qm2-pagination">
+            <div>
+              Hiển thị
+              {% if page_obj.paginator.count %}
+                <strong style="color: var(--review-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+              {% else %}
+                <strong style="color: var(--review-text);">0</strong>
+              {% endif %}
+              trong số <strong style="color: var(--review-text);">{{ page_obj.paginator.count }}</strong> sinh viên
             </div>
 
-            <div class="pagination-container">
-              <div>
-                Hiển thị
-                {% if page_obj and page_obj.paginator.count %}
-                  <strong style="color: var(--review-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
-                {% else %}
-                  <strong style="color: var(--review-text);">0-0</strong>
-                {% endif %}
-                trong số
-                <strong style="color: var(--review-text);">{% if page_obj %}{{ page_obj.paginator.count }}{% else %}{{ sessions|length }}{% endif %}</strong>
-                sinh viên
-              </div>
+            <div class="qm2-page-controls">
+              {% if page_obj.has_previous %}
+                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
+                  <i class="fas fa-chevron-left" style="font-size: 12px;"></i>
+                </a>
+              {% else %}
+                <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 12px;"></i></span>
+              {% endif %}
 
-              {% if page_obj and page_obj.paginator.num_pages > 1 %}
-              <div class="page-controls">
-                {% if page_obj.has_previous %}
-                  <a class="page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if selected_class_filter %}&class_name={{ selected_class_filter|urlencode }}{% endif %}{% if selected_exam_date_filter %}&exam_date={{ selected_exam_date_filter|urlencode }}{% endif %}{% if selected_exam_time_filter %}&exam_time={{ selected_exam_time_filter|urlencode }}{% endif %}{% if selected_status_filter %}&status={{ selected_status_filter|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
-                    <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
-                  </a>
-                {% else %}
-                  <span class="page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+              {% for i in page_obj.paginator.page_range %}
+                {% if page_obj.number == i %}
+                  <span class="qm2-page-btn active">{{ i }}</span>
+                {% elif i > page_obj.number|add:'-4' and i < page_obj.number|add:'4' %}
+                  <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ i }}">{{ i }}</a>
                 {% endif %}
+              {% endfor %}
 
-                {% for num in page_obj.paginator.page_range %}
-                  {% if num == page_obj.number %}
-                    <span class="page-btn active">{{ num }}</span>
-                  {% elif num == 1 or num == page_obj.paginator.num_pages %}
-                    <a class="page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if selected_class_filter %}&class_name={{ selected_class_filter|urlencode }}{% endif %}{% if selected_exam_date_filter %}&exam_date={{ selected_exam_date_filter|urlencode }}{% endif %}{% if selected_exam_time_filter %}&exam_time={{ selected_exam_time_filter|urlencode }}{% endif %}{% if selected_status_filter %}&status={{ selected_status_filter|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ num }}">{{ num }}</a>
-                  {% elif num == page_obj.number|add:"-1" or num == page_obj.number|add:"1" %}
-                    <a class="page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if selected_class_filter %}&class_name={{ selected_class_filter|urlencode }}{% endif %}{% if selected_exam_date_filter %}&exam_date={{ selected_exam_date_filter|urlencode }}{% endif %}{% if selected_exam_time_filter %}&exam_time={{ selected_exam_time_filter|urlencode }}{% endif %}{% if selected_status_filter %}&status={{ selected_status_filter|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ num }}">{{ num }}</a>
-                  {% elif num == page_obj.number|add:"-2" or num == page_obj.number|add:"2" %}
-                    <span class="page-btn disabled" style="border:none;">...</span>
-                  {% endif %}
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                  <a class="page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if selected_class_filter %}&class_name={{ selected_class_filter|urlencode }}{% endif %}{% if selected_exam_date_filter %}&exam_date={{ selected_exam_date_filter|urlencode }}{% endif %}{% if selected_exam_time_filter %}&exam_time={{ selected_exam_time_filter|urlencode }}{% endif %}{% if selected_status_filter %}&status={{ selected_status_filter|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
-                    <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
-                  </a>
-                {% else %}
-                  <span class="page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
-                {% endif %}
-              </div>
+              {% if page_obj.has_next %}
+                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
+                  <i class="fas fa-chevron-right" style="font-size: 12px;"></i>
+                </a>
+              {% else %}
+                <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 12px;"></i></span>
               {% endif %}
             </div>
-
+          </div>
           {% else %}
-            <div class="empty-state">
-              <i class="fas fa-inbox"></i>
-              <div>Chưa có bài làm nào để hiển thị.</div>
-            </div>
-          {% endif %}
-        </div>
-      {% else %}
-        <div class="student-review-panel table-panel">
           <div class="empty-state">
             <i class="fas fa-inbox"></i>
-            <div>Vui lòng chọn môn học để xem kết quả.</div>
+            <div>Chưa có bài làm nào để hiển thị.</div>
           </div>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="student-review-panel table-panel">
+        <div class="empty-state">
+          <i class="fas fa-inbox"></i>
+          <div>Vui lòng chọn môn học để xem kết quả.</div>
         </div>
-      {% endif %}
+      </div>
+    {% endif %}
     </div>
   </div>
 </div>

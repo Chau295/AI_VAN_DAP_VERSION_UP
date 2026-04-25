@@ -3357,50 +3357,45 @@ def _build_missing_review_rows(exam_groups, existing_session_keys):
 
 @login_required
 def lecturer_student_review_screen(request):
-    _ensure_lecturer(request)
+    if not request.user.userprofile.is_lecturer:
+        return redirect("qna:dashboard")
 
-    subjects = _get_lecturer_subjects(request)
-    selected_subject = _get_selected_subject_for_lecturer(request, request.GET.get("subject_id"))
-
-    selected_exam_group_id = _normalize_optional_int(request.GET.get("exam_group_id"))
-    selected_status_filter = (request.GET.get("status") or "").strip()
-    selected_class_filter = (request.GET.get("class_name") or "").strip()
-    selected_exam_date_filter = (request.GET.get("exam_date") or "").strip()
-    selected_exam_time_filter = (request.GET.get("exam_time") or "").strip()
+    subjects = list(request.user.userprofile.subjects_taught.all().order_by("name"))
+    selected_subject_id = (request.GET.get("subject_id") or "").strip()
+    raw_exam_group_id = (request.GET.get("exam_group_id") or "").strip()
     student_filter = (request.GET.get("student") or "").strip()
+    selected_exam_group_id = int(raw_exam_group_id) if raw_exam_group_id.isdigit() else None
+    selected_subject = next((subject for subject in subjects if str(subject.pk) == selected_subject_id), None)
 
     exam_groups = []
     review_rows = []
     page_obj = None
-    class_options = []
-    time_options = []
 
     if selected_subject:
         exam_groups = list(
-            ExamSessionGroup.objects.filter(subject_id=selected_subject)
-            .order_by("-exam_date", "-pk")
+            ExamSessionGroup.objects.filter(subject_id=selected_subject).order_by("-exam_date", "-pk")
         )
-
-        selected_exam_groups = exam_groups
-        if selected_exam_group_id:
-            selected_exam_groups = [group for group in exam_groups if group.pk == selected_exam_group_id]
-
-        sessions_qs = _with_lecturer_visible_violation_count(
-            ExamSession.objects.filter(subject_id=selected_subject)
-            .select_related(
+        sessions = _with_lecturer_visible_violation_count(
+            ExamSession.objects.filter(
+                subject_id=selected_subject,
+                exam_session_group_id__isnull=False,
+            ).select_related(
                 "user_id",
                 "user_id__userprofile",
                 "exam_session_group_id",
             )
-            .order_by("-created_at", "-pk")
         )
 
         if selected_exam_group_id:
-            sessions_qs = sessions_qs.filter(exam_session_group_id=selected_exam_group_id)
+            sessions = sessions.filter(exam_session_group_id=selected_exam_group_id)
 
+        selected_exam_groups = [
+            exam_group for exam_group in exam_groups if exam_group.pk == selected_exam_group_id
+        ] if selected_exam_group_id else exam_groups
         existing_session_keys = set()
+        sessions = sessions.order_by("-created_at", "-pk")
 
-        for session in sessions_qs:
+        for session in sessions:
             main_avg, final_total = _compute_scores(session)
             session.main_avg = main_avg
             if session.final_score != final_total:
@@ -3409,47 +3404,40 @@ def lecturer_student_review_screen(request):
             _attach_session_score_meta(session)
 
             profile = getattr(session.user_id, "userprofile", None)
+
             linked_roster_row = (
-                StudentRosterStudent.objects.filter(
-                    linked_user_id=session.user_id,
-                    student_roster_upload_id__subject_id=selected_subject,
-                )
-                .order_by("-created_at", "-pk")
+                StudentRosterStudent.objects
+                .filter(linked_user_id=session.user_id, student_roster_upload_id__subject_id=session.subject_id)
+                .order_by("-student_roster_student_id")
                 .first()
             )
 
-            session.student_name = (
-                (linked_roster_row.full_name if linked_roster_row else None)
-                or (getattr(profile, "full_name", None) if profile else None)
-                or getattr(session.user_id, "get_full_name", lambda: "")()
-                or session.user_id.username
-            )
             session.student_identifier = (
-                (linked_roster_row.student_code if linked_roster_row else None)
-                or (getattr(profile, "student_id", None) if profile else None)
-                or session.user_id.username
-            )
-            session.student_class_name = (
-                (linked_roster_row.class_name if linked_roster_row else None)
-                or getattr(profile, "class_name", None)
-                or "-"
+                    (linked_roster_row.student_code if linked_roster_row else None)
+                    or getattr(profile, "student_id", None)
+                    or session.user_id.username
             )
 
+            session.student_name = (
+                    (linked_roster_row.full_name if linked_roster_row else None)
+                    or getattr(profile, "full_name", None)
+                    or session.user_id.username
+            )
+
+            session.student_class_name = (
+                    (linked_roster_row.class_name if linked_roster_row else None)
+                    or getattr(profile, "class_name", None)
+                    or "-"
+            )
             session.exam_date_display = (
                 session.exam_group.exam_date
                 if session.exam_group and session.exam_group.exam_date
                 else session.completed_at.date() if session.completed_at
                 else session.created_at.date()
             )
-
-            start_dt = getattr(session.exam_group, "start_at", None) if getattr(session, "exam_group", None) else None
-            if start_dt is None and getattr(session, "exam_group", None):
-                start_dt = getattr(session.exam_group, "exam_date", None)
-            session.exam_time_value = timezone.localtime(start_dt).strftime("%H:%M") if start_dt else ""
-            session.exam_time_display = session.exam_time_value or "-"
-
             session.has_violation_warning = bool(getattr(session, "visible_violation_count", 0))
             _attach_review_status_meta(session)
+            _attach_session_duration_meta(session)
             review_rows.append(session)
 
             if session.exam_group:
@@ -3458,31 +3446,6 @@ def lecturer_student_review_screen(request):
                     existing_session_keys.add((session.exam_group.pk, session_key))
 
         review_rows.extend(_build_missing_review_rows(selected_exam_groups, existing_session_keys))
-
-        for row in review_rows:
-            exam_group = getattr(row, "exam_group", None)
-            if not hasattr(row, "student_class_name"):
-                row.student_class_name = "-"
-            if not hasattr(row, "exam_date_display"):
-                row.exam_date_display = (
-                    exam_group.exam_date
-                    if exam_group and getattr(exam_group, "exam_date", None)
-                    else getattr(row, "created_at", None).date() if getattr(row, "created_at", None)
-                    else None
-                )
-
-            start_dt = getattr(exam_group, "start_at", None) if exam_group else None
-            if start_dt is None and exam_group:
-                start_dt = getattr(exam_group, "exam_date", None)
-            row.exam_time_value = timezone.localtime(start_dt).strftime("%H:%M") if start_dt else getattr(row, "exam_time_value", "")
-            row.exam_time_display = row.exam_time_value or "-"
-
-        class_options = sorted(
-            {row.student_class_name for row in review_rows if (row.student_class_name or "").strip() and row.student_class_name != "-"}
-        )
-        time_options = sorted(
-            {row.exam_time_value for row in review_rows if (row.exam_time_value or "").strip()}
-        )
 
         if student_filter:
             keyword = student_filter.lower()
@@ -3493,41 +3456,6 @@ def lecturer_student_review_screen(request):
                 or keyword in (row.student_class_name or "").lower()
                 or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
             ]
-
-        if selected_class_filter:
-            review_rows = [
-                row for row in review_rows
-                if (row.student_class_name or "").strip() == selected_class_filter
-            ]
-
-        if selected_exam_date_filter:
-            review_rows = [
-                row for row in review_rows
-                if row.exam_date_display and row.exam_date_display.strftime("%Y-%m-%d") == selected_exam_date_filter
-            ]
-
-        if selected_exam_time_filter:
-            review_rows = [
-                row for row in review_rows
-                if (row.exam_time_value or "") == selected_exam_time_filter
-            ]
-
-        if selected_status_filter:
-            status_aliases = {
-                "completed": {"COMPLETED", "ĐÃ HOÀN THÀNH"},
-                "ended": {"ENDED", "ĐÃ KẾT THÚC"},
-                "in_progress": {"IN_PROGRESS", "ĐANG THỰC HIỆN"},
-                "absent": {"ABSENT", "VẮNG THI"},
-            }
-            allowed = status_aliases.get(selected_status_filter, set())
-            if allowed:
-                review_rows = [
-                    row for row in review_rows
-                    if (
-                        ((getattr(row, "review_status", "") or "").upper() in allowed)
-                        or ((getattr(row, "review_status_label", "") or "").upper() in allowed)
-                    )
-                ]
 
         default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
         review_rows.sort(
@@ -3568,12 +3496,6 @@ def lecturer_student_review_screen(request):
             "subject": selected_subject,
             "exam_groups": exam_groups,
             "selected_exam_group_id": selected_exam_group_id,
-            "selected_status_filter": selected_status_filter,
-            "selected_class_filter": selected_class_filter,
-            "selected_exam_date_filter": selected_exam_date_filter,
-            "selected_exam_time_filter": selected_exam_time_filter,
-            "class_options": class_options,
-            "time_options": time_options,
             "sessions": sessions_page,
             "page_obj": page_obj,
             "student_filter": student_filter,
@@ -4960,6 +4882,55 @@ def _student_parse_records(file_name, file_bytes):
     return records, skipped_rows
 
 
+def _student_normalize_roster_record(record):
+    return (
+        normalize_student_code(record.get("student_code")),
+        (record.get("full_name") or "").strip().lower(),
+        (record.get("gender") or "").strip().lower(),
+        str(record.get("date_of_birth") or "").strip(),
+        (record.get("class_name") or "").strip().lower(),
+        (record.get("email") or "").strip().lower(),
+    )
+
+
+def _student_find_exact_duplicate_roster(subject, academic_year, semester, uploaded_file_name, records):
+    normalized_file_name = (uploaded_file_name or "").strip()
+    incoming_codes = sorted(
+        {
+            normalize_student_code(record.get("student_code"))
+            for record in records
+            if normalize_student_code(record.get("student_code"))
+        }
+    )
+
+    if not normalized_file_name or not incoming_codes:
+        return None
+
+    existing_rosters = (
+        StudentRosterUpload.objects.filter(
+            subject_id=subject,
+            academic_year=academic_year,
+            semester=semester,
+            original_file_name__iexact=normalized_file_name,
+        )
+        .prefetch_related("students")
+        .order_by("-created_at", "-pk")
+    )
+
+    for roster in existing_rosters:
+        existing_codes = sorted(
+            {
+                normalize_student_code(student.student_code)
+                for student in roster.students.all()
+                if normalize_student_code(student.student_code)
+            }
+        )
+        if existing_codes == incoming_codes:
+            return roster
+
+    return None
+
+
 def _student_create_roster(subject, created_by, academic_year, semester, uploaded_file, mode="new"):
     if not is_valid_academic_year(academic_year):
         raise ValidationError(ACADEMIC_YEAR_ERROR_MESSAGE)
@@ -4994,6 +4965,20 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
 
     records, skipped_rows = _student_parse_records(uploaded_file.name, file_bytes)
 
+    if mode != "replace":
+        duplicate_roster = _student_find_exact_duplicate_roster(
+            subject=subject,
+            academic_year=academic_year,
+            semester=semester,
+            uploaded_file_name=uploaded_file.name,
+            records=records,
+        )
+        if duplicate_roster is not None:
+            raise ValidationError(
+                f"Phát hiện file bị trùng với '{duplicate_roster.original_file_name}' "
+                f"(danh sách ID {duplicate_roster.id}) trong cùng môn, năm học và học kỳ."
+            )
+
     existing_codes = set(
         StudentRosterStudent.objects.filter(
             student_roster_upload_id__subject_id=subject,
@@ -5013,19 +4998,6 @@ def _student_create_roster(subject, created_by, academic_year, semester, uploade
             "message": f"Các MSSV sau đã tồn tại trong danh sách khác của môn {subject.name} "
                        f"năm học {academic_year} học kỳ {semester}: {', '.join(sorted(duplicate_codes))}. "
                        "Có thể là import trùng hoặc học lại."
-        })
-
-    existing_roster_count = StudentRosterUpload.objects.filter(
-        subject_id=subject,
-        academic_year=academic_year,
-        semester=semester
-    ).count()
-    if existing_roster_count > 0:
-        skipped_rows.append({
-            "row": None,
-            "message": f"Đã có {existing_roster_count} danh sách sinh viên cho môn {subject.name} "
-                       f"năm học {academic_year} học kỳ {semester}. "
-                       "Có thể là import trùng hoặc học lại. Hệ thống vẫn tạo danh sách mới."
         })
 
     roster = StudentRosterUpload(
