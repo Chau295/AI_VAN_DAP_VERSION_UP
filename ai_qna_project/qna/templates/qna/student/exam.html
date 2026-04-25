@@ -1250,29 +1250,24 @@ document.addEventListener('DOMContentLoaded', () => {
     canvas: null,
     stream: null,
     isMonitoring: false,
-    violations: { noFace: 0, multipleFaces: 0 },
+    violations: { multipleFaces: 0 },
     lastViolationTime: 0,
     warningCooldown: 5000,
     cameraInterrupted: false
   };
 
   const PROCTORING_CONFIG = {
-    NO_FACE_THRESHOLD: 4000,
     MULTIPLE_FACES_LIMIT: 1,
     MULTIPLE_FACE_COOLDOWN: 5000,
     VIOLATION_WARNING_LIMIT: 3
   };
 
   const PROCTORING_MAX_WARNINGS = 3;
-  let noFaceTimeout = null;
   let multipleFaceTimeout = null;
   let cameraOffTimeout = null;
 
   function hasReachedViolationWarningLimit() {
-    return (
-      proctoringState.violations.noFace >= PROCTORING_MAX_WARNINGS ||
-      proctoringState.violations.multipleFaces >= PROCTORING_MAX_WARNINGS
-    );
+    return proctoringState.violations.multipleFaces >= PROCTORING_MAX_WARNINGS;
   }
 
   function createProctoringUI() {
@@ -1303,7 +1298,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusBar = document.createElement('div');
     statusBar.style.cssText = `background: #f3f4f6; padding: 6px 12px; font-size: 11px; color: #374151; border-top: 1px solid #e5e7eb;`;
     statusBar.innerHTML = `
-      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Không mặt:</span><span id="violation-noface" style="color: #10b981;">0</span></div>
       <div style="display: flex; justify-content: space-between;"><span>Nhiều người:</span><span id="violation-multiface" style="color: #10b981;">0</span></div>
     `;
 
@@ -1401,20 +1395,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       proctoringState.cameraInterrupted = true;
-
-      if (noFaceTimeout) {
-        clearTimeout(noFaceTimeout);
-        noFaceTimeout = null;
+      if (multipleFaceTimeout) {
+        clearTimeout(multipleFaceTimeout);
+        multipleFaceTimeout = null;
       }
-
-      proctoringState.violations.noFace++;
-      updateViolationDisplay('noface', proctoringState.violations.noFace);
-      sendProctoringViolation('CAMERA_OFF', 0);
-      showProctoringWarning(
-        hasReachedViolationWarningLimit()
-          ? 'Đã ghi nhận nhiều lần camera bị gián đoạn. Vui lòng bật lại camera và giữ ổn định kết nối.'
-          : 'Camera bị tắt hoặc ngắt kết nối quá lâu. Vui lòng bật lại camera.'
-      );
       cameraOffTimeout = null;
     }, 3000);
   }
@@ -1451,10 +1435,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
         if (document.hidden) {
-          if (noFaceTimeout) {
-            clearTimeout(noFaceTimeout);
-            noFaceTimeout = null;
-          }
           if (multipleFaceTimeout) {
             clearTimeout(multipleFaceTimeout);
             multipleFaceTimeout = null;
@@ -1482,26 +1462,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = proctoringState.canvas.getContext('2d');
         ctx.clearRect(0, 0, proctoringState.canvas.width, proctoringState.canvas.height);
 
-        if (detections.length === 0) {
-          if (!noFaceTimeout) {
-            noFaceTimeout = setTimeout(() => {
-              proctoringState.violations.noFace++;
-              updateViolationDisplay('noface', proctoringState.violations.noFace);
-              sendProctoringViolation('NO_FACE', 0);
-              showProctoringWarning(
-                hasReachedViolationWarningLimit()
-                  ? 'Đã ghi nhận nhiều lần không phát hiện khuôn mặt. Vui lòng quay lại vị trí trước camera.'
-                  : 'Không phát hiện khuôn mặt trong 4 giây. Vui lòng ngồi trước camera.'
-              );
-              noFaceTimeout = null;
-            }, PROCTORING_CONFIG.NO_FACE_THRESHOLD);
-          }
-        } else {
-          if (noFaceTimeout) {
-            clearTimeout(noFaceTimeout);
-            noFaceTimeout = null;
-          }
-        }
 
         if (detections.length > PROCTORING_CONFIG.MULTIPLE_FACES_LIMIT) {
           if (!multipleFaceTimeout) {

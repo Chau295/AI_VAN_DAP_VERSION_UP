@@ -73,8 +73,7 @@
   }
 
   .common-back-link,
-  .common-outline-btn,
-  .common-export-btn {
+  .common-outline-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -243,36 +242,16 @@
     color: var(--common-muted);
   }
 
-  .common-export-wrap {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 1.4rem;
-  }
-
-  .common-export-btn {
-    min-width: 230px;
-    border: 2px solid var(--common-blue);
-    background: #fff;
-    color: var(--common-blue);
-    box-shadow: var(--common-shadow);
-  }
-
-  .common-export-btn:hover {
-    background: #f8fbff;
-    color: var(--common-blue-dark);
-  }
-
+  /* CSS PHÂN TRANG ĐỒNG BỘ */
   .qm2-pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 20px;
-    border-top: 1px solid var(--border, #e6ebf2);
+    padding: 16px 24px;
+    border-top: 1px solid var(--common-border);
     font-size: 13px;
-    color: var(--muted, #7a8699);
+    color: var(--common-muted);
     background: #fff;
-    gap: 16px;
-    flex-wrap: wrap;
   }
 
   .qm2-page-controls {
@@ -282,30 +261,25 @@
   }
 
   .qm2-page-btn {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     border-radius: 6px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #475569;
+    border: 1px solid var(--common-border);
+    background: #fff;
+    color: var(--common-text);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 500;
+    font-size: 13px;
+    transition: 0.2s;
     text-decoration: none;
   }
 
-  .qm2-page-btn:hover { background: #f1f5f9; }
-  .qm2-page-btn.active { background: var(--blue, #1f6feb); color: #fff; }
-  .qm2-page-btn.disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    pointer-events: none;
-    transform: none;
-  }
-
-
+  .qm2-page-btn:hover:not(.disabled):not(.active) { background: #f3f4f6; }
+  .qm2-page-btn.active { background: var(--common-blue); color: #fff; border-color: var(--common-blue); }
+  .qm2-page-btn.disabled { opacity: 0.4; cursor: not-allowed; border-color: transparent; background: transparent; }
 
   @media (max-width: 1100px) {
     .common-page { margin: -1.5rem; }
@@ -334,10 +308,14 @@
     .common-search,
     .common-room-filter,
     .common-back-link,
-    .common-outline-btn,
-    .common-export-btn {
+    .common-outline-btn {
       width: 100%;
       min-width: 0;
+    }
+
+    .qm2-pagination {
+      flex-direction: column;
+      gap: 12px;
     }
   }
 </style>
@@ -430,45 +408,52 @@
             Chưa có sinh viên nào trong danh sách chung của ca thi này.
           </div>
         {% endif %}
-      </div>
 
-      <div class="qm2-pagination" style="margin-top: 1rem;">
-        <div>
-          Hiển thị
-          {% if page_obj.paginator.count %}
-            <strong style="color: var(--common-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
-          {% else %}
-            <strong style="color: var(--common-text);">0</strong>
+        <div class="qm2-pagination">
+          <div>
+            Hiển thị
+            {% if page_obj.paginator.count %}
+              <strong style="color: var(--common-text);">{{ page_obj.start_index }}-{{ page_obj.end_index }}</strong>
+            {% else %}
+              <strong style="color: var(--common-text);">0-0</strong>
+            {% endif %}
+            trong số <strong style="color: var(--common-text);">{{ page_obj.paginator.count|default:"0" }}</strong> sinh viên
+          </div>
+
+          {% if page_obj.paginator.num_pages > 1 %}
+          <div class="qm2-page-controls">
+            {% if page_obj.has_previous %}
+              <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.previous_page_number }}">
+                <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
+              </a>
+            {% else %}
+              <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+              {% if num == page_obj.number %}
+                <span class="qm2-page-btn active">{{ num }}</span>
+              {% elif num == 1 or num == page_obj.paginator.num_pages %}
+                <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ num }}">{{ num }}</a>
+              {% elif num == page_obj.number|add:"-1" or num == page_obj.number|add:"1" %}
+                <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ num }}">{{ num }}</a>
+              {% elif num == page_obj.number|add:"-2" or num == page_obj.number|add:"2" %}
+                <span class="qm2-page-btn disabled" style="border:none;">...</span>
+              {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+              <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.next_page_number }}">
+                <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
+              </a>
+            {% else %}
+              <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
+            {% endif %}
+          </div>
           {% endif %}
-          trong số <strong style="color: var(--common-text);">{{ page_obj.paginator.count }}</strong> sinh viên
         </div>
-        <div class="qm2-page-controls">
-          {% if page_obj.has_previous %}
-            <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.previous_page_number }}">
-              <i class="fas fa-chevron-left" style="font-size: 10px;"></i>
-            </a>
-          {% else %}
-            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-left" style="font-size: 10px;"></i></span>
-          {% endif %}
-
-          <span class="qm2-page-btn active">{{ page_obj.number }}</span>
-
-          {% if page_obj.has_next %}
-            <a class="qm2-page-btn" href="?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}&page={{ page_obj.next_page_number }}">
-              <i class="fas fa-chevron-right" style="font-size: 10px;"></i>
-            </a>
-          {% else %}
-            <span class="qm2-page-btn disabled"><i class="fas fa-chevron-right" style="font-size: 10px;"></i></span>
-          {% endif %}
-        </div>
       </div>
 
-      <div class="common-export-wrap">
-        <a class="common-export-btn" href="{{ export_url }}?q={{ filters.q|urlencode }}&room={{ filters.room|urlencode }}">
-          <i class="fas fa-table"></i>
-          Xuất file Excel
-        </a>
-      </div>
     </div>
   </div>
 </div>

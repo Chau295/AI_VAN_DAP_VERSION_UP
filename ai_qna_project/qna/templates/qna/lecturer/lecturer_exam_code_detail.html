@@ -660,7 +660,7 @@
     }
   }
 
-  function isLockedCode(code) { return Boolean(code && code.is_linked); }
+  function isLockedCode(code) { return false; }
 
   function sortExamItems(items) {
     if (!items || !items.length) return [];
@@ -690,7 +690,7 @@
     const selectAll = document.getElementById('selectAllCodes');
     const bulkBar = document.getElementById('bulkBar');
     const selectedCount = document.getElementById('selectedCount');
-    const selectableIds = examCodes.filter((code) => !code.is_linked).map((code) => code.id);
+    const selectableIds = examCodes.map((code) => code.id);
     selectedCodeIds = new Set(Array.from(selectedCodeIds).filter((id) => selectableIds.includes(id)));
     const count = selectedCodeIds.size;
     if (selectedCount) selectedCount.textContent = count;
@@ -757,9 +757,8 @@
 
       const isChecked = selectedCodeIds.has(code.id) ? 'checked' : '';
 
-      const isDisabled = code.is_linked ? 'disabled title="Mã đề đã dùng không thể chọn"' : '';
       const checkboxHtml = `<div class="checkbox-container" data-ignore-card-click>
-                              <input type="checkbox" data-select-code ${isChecked} ${isDisabled}>
+                              <input type="checkbox" data-select-code ${isChecked}>
                             </div>`;
 
       const sortedItems = sortExamItems(code.items).slice(0, 3);
@@ -778,7 +777,7 @@
             <div class="card-title">${escapeHtml(code.code_name)}</div>
           </div>
           <div class="card-actions">
-            <button type="button" class="icon-btn" data-ignore-card-click data-delete-code="${code.id}" title="${code.is_linked ? 'Mã đề đã dùng' : 'Xóa'}" ${code.is_linked ? 'disabled' : ''}>
+            <button type="button" class="icon-btn" data-ignore-card-click data-delete-code="${code.id}" title="Xóa">
               <i class="far fa-trash-alt"></i>
             </button>
           </div>
@@ -828,7 +827,7 @@
     if(domUsed) domUsed.textContent = used;
 
     const pub = document.getElementById('btnPublishExamSet');
-    if (pub) pub.disabled = examSetIsLinked || !total || approved !== total || computeExamSetApprovalStatus() === 'APPROVED';
+    if (pub) pub.disabled = !total || approved !== total || computeExamSetApprovalStatus() === 'APPROVED';
     syncExamSetApprovalBadge();
     updateSelectionState();
   }
@@ -895,7 +894,7 @@
         const code = getCodeById(codeId); if (!code) return;
         titleSpan.textContent = "Biên tập Mã đề:";
         nameInput.value = code.code_name;
-        nameInput.readOnly = isLockedCode(code);
+        nameInput.readOnly = false;
         syncDrawerActions(code);
 
         sortExamItems(code.items).forEach((item, index) => {
@@ -913,7 +912,7 @@
                         <span class="score-badge">Điểm: ${scoreNum}</span>
                     </div>
                 </div>
-                <textarea class="question-editor-textarea" data-item-id="${item.id}" data-difficulty="${item.difficulty}" data-display-order="${index + 1}" maxlength="5000" ${code.is_linked ? 'readonly' : ''}>${escapeHtml(item.content)}</textarea>
+                <textarea class="question-editor-textarea" data-item-id="${item.id}" data-difficulty="${item.difficulty}" data-display-order="${index + 1}" maxlength="5000">${escapeHtml(item.content)}</textarea>
             `;
             container.appendChild(block);
         });
@@ -928,26 +927,22 @@
   }
 
   function syncDrawerActions(code) {
-    const isLocked = isLockedCode(code);
     const isApproved = Boolean(code && code.is_approved);
 
-    document.getElementById('btnDeleteCode').style.display = (isCreatingNewCode || isLocked ? 'none' : 'inline-flex');
-    document.getElementById('btnApproveCode').style.display = (isLocked ? 'none' : 'inline-flex');
+    document.getElementById('btnDeleteCode').style.display = (isCreatingNewCode ? 'none' : 'inline-flex');
+    document.getElementById('btnApproveCode').style.display = 'inline-flex';
+    document.getElementById('btnSaveCode').style.display = 'inline-flex';
 
-    if(isApproved || isLocked) {
+    if (isApproved) {
         document.getElementById('btnApproveCode').disabled = true;
         document.getElementById('btnApproveCode').setAttribute('data-locked', 'true');
     } else {
+        document.getElementById('btnApproveCode').disabled = false;
         document.getElementById('btnApproveCode').removeAttribute('data-locked');
     }
 
-    document.getElementById('btnSaveCode').style.display = (isLocked ? 'none' : 'inline-flex');
-    if (isLocked) {
-        document.getElementById('btnSaveCode').disabled = true;
-        document.getElementById('btnSaveCode').setAttribute('data-locked', 'true');
-    } else {
-        document.getElementById('btnSaveCode').removeAttribute('data-locked');
-    }
+    document.getElementById('btnSaveCode').disabled = false;
+    document.getElementById('btnSaveCode').removeAttribute('data-locked');
   }
 
   function closeDrawer() {
@@ -959,12 +954,6 @@
   function clearCodeSelection() { selectedCodeIds.clear(); renderCards(); }
 
   async function openDeleteCodeModal(id) {
-    const code = getCodeById(id);
-    if (isLockedCode(code)) {
-      showToast('Mã đề đã được sử dụng trong ca thi nên không thể xóa.', true);
-      return;
-    }
-
     const confirmed = await window.showGlobalConfirm({
       title: 'Xác nhận xóa mã đề',
       message: 'Mã đề được xóa sẽ không thể khôi phục lại.',
@@ -982,13 +971,13 @@
 
   async function confirmBulkDeleteSelectedCodes() {
     if (!selectedCodeIds.size) {
-      showToast('Vui lòng chọn ít nhất 1 mã đề chưa dùng để xóa.', true);
+      showToast('Vui lòng chọn ít nhất 1 mã đề để xóa.', true);
       return;
     }
 
     const confirmed = await window.showGlobalConfirm({
       title: 'Xác nhận xóa các mã đề đã chọn',
-      message: 'Chỉ các mã đề chưa dùng mới được xóa. Các mã đề đã dùng sẽ bị bỏ qua.',
+      message: 'Các mã đề đã chọn sẽ bị xóa khỏi bộ đề hiện tại.',
       confirmText: 'Xóa',
       cancelText: 'Hủy',
       danger: true,
@@ -1188,7 +1177,7 @@
       }
 
       renderCards();
-      showToast(`Đã xóa ${deletedIds.length} mã đề chưa dùng.`);
+      showToast(`Đã xóa ${deletedIds.length} mã đề.`);
     }
 
     if (failedMessages.length) {
@@ -1219,7 +1208,7 @@
   }
 
   document.getElementById('selectAllCodes').addEventListener('change', (e) => {
-    const ids = examCodes.filter(c => !c.is_linked).map(c => c.id);
+    const ids = examCodes.map(c => c.id);
     if (e.target.checked) selectedCodeIds = new Set(ids); else selectedCodeIds.clear();
     renderCards();
   });

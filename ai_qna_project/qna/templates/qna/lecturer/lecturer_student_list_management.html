@@ -634,16 +634,7 @@
                     {% else %}
                       <span class="qm2-pill qm2-pill-pending">CHƯA TẠO</span>
                     {% endif %}
-                    <div class="qm2-status-meta">
-                      {{ roster.created_accounts_total|default:0 }}/{{ roster.student_count|default:roster.total_students }} sinh viên đã có tài khoản
-                    </div>
-                    <div class="qm2-status-meta">
-                      {{ roster.existing_accounts_total|default:0 }} có sẵn • {{ roster.new_accounts_total|default:0 }} mới tạo
-                    </div>
                     {% if roster.status == 'CREATED' and roster.account_created_at %}
-                      <div class="qm2-status-meta">
-                        Hoàn tất lúc {{ roster.account_created_at|date:"H:i d/m/Y" }}
-                      </div>
                     {% endif %}
                   </div>
                 </td>

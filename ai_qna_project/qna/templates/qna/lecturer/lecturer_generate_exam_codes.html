@@ -768,13 +768,17 @@
     return { config, validation };
   }
 
-  async function openConfirmCreateModal(message, payload) {
+  async function openConfirmCreateModal(config, payload) {
     pendingCreatePayload = payload;
+
+    const totalScore = formatScore(config.totalScore);
+    const needsWarning = Math.abs(Number(config.totalScore) - 10) > 0.0001;
+
     const confirmed = await window.showGlobalConfirm({
       title: 'Xác nhận tạo bộ đề',
-      message: message
-        ? `${message}\nBạn có chắc chắn muốn tiếp tục tạo bộ đề không?`
-        : 'Bạn có chắc chắn muốn tiếp tục tạo bộ đề không?',
+      message: needsWarning
+        ? `Tổng điểm hiện tại là ${totalScore}. Bạn có chắc chắn muốn tạo bộ đề không?`
+        : 'Bạn có chắc chắn muốn tạo bộ đề không?',
       confirmText: 'Xác nhận',
       cancelText: 'Hủy',
       danger: false,
@@ -784,34 +788,6 @@
     if (confirmed && nextPayload) {
       await performCreateExamSet(nextPayload);
     }
-  }
-
-
-  function showCreatedExamSetSuccess(detailUrl, message) {
-    const bar = document.getElementById('createExamSetSuccessBar');
-    const textEl = document.getElementById('createExamSetSuccessText');
-    const linkEl = document.getElementById('createExamSetSuccessLink');
-    if (!bar || !textEl || !linkEl) return;
-    textEl.textContent = message || EXAM_SET_MESSAGES.success;
-    linkEl.href = detailUrl || '{% url "qna:lecturer_exam_codes_screen" %}';
-    bar.style.display = 'flex';
-  }
-
-  function resetCreateExamSetForm() {
-    ['easyCount', 'mediumCount', 'hardCount', 'easyScore', 'mediumScore', 'hardScore'].forEach((id) => {
-      const input = document.getElementById(id);
-      if (!input) return;
-      input.value = '0';
-    });
-    const codeInput = document.getElementById('examCode');
-    if (codeInput) codeInput.value = '';
-    const select = document.getElementById('sourceBanks');
-    if (select && window.jQuery && window.jQuery(select).data('select2')) {
-      window.jQuery(select).val(null).trigger('change');
-    } else if (select) {
-      Array.from(select.options).forEach((opt) => { opt.selected = false; });
-    }
-    updateSummary();
   }
 
   async function performCreateExamSet(payload) {
@@ -840,10 +816,7 @@
       }
 
       showToast(data.message || EXAM_SET_MESSAGES.success, true);
-      showCreatedExamSetSuccess(data.detail_url, data.message || EXAM_SET_MESSAGES.success);
-      resetCreateExamSetForm();
-      btn.innerHTML = originalText;
-      updateSummary();
+      window.location.href = data.detail_url || '{% url "qna:lecturer_exam_codes_screen" %}';
     } catch (error) {
       showToast('Lỗi kết nối máy chủ!');
       btn.innerHTML = originalText;
@@ -937,12 +910,7 @@
       exam_code: examCode,
     };
 
-    if (validation.state === 'warning') {
-      await openConfirmCreateModal(validation.message, payload);
-      return;
-    }
-
-    await openConfirmCreateModal('', payload);
+    await openConfirmCreateModal(config, payload);
   }
 </script>
 {% endblock %}

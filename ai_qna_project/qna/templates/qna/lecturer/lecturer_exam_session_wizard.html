@@ -213,7 +213,7 @@
   <div class="es-shell">
     <div class="es-header">
       <div class="es-title">
-        <h1 id="wizardScreenTitle">{{ screen_mode_label }}</h1>
+        <h1>{{ screen_mode_label }}</h1>
         <p>Thiết lập thông tin chung, phòng thi, bộ đề - mã đề và phân bổ sinh viên cho ca thi.</p>
       </div>
     </div>
@@ -244,7 +244,7 @@
     <section class="es-card" data-step-panel="1">
       <div class="es-card-head">
         <h2 class="es-card-title">Thông tin chung</h2>
-        <div id="wizardStatusMessage" class="es-card-subtitle">Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.</div>
+        <div class="es-card-subtitle">Vui lòng điền đầy đủ các thông tin bắt buộc dưới đây.</div>
       </div>
       <div class="es-card-body">
         <div class="es-grid">
@@ -505,7 +505,7 @@
 
   const sessionCatalog = {{ catalog_json|safe }};
   const sessionInitialState = {{ initial_state_json|safe }};
-  let sessionMode = "{{ screen_mode }}";
+  const sessionMode = "{{ screen_mode }}";
   const sessionListUrl = "{% url 'qna:lecturer_exam_sessions_list' %}";
   const createSessionUrl = "{% url 'qna:lecturer_create_exam_group_screen' %}";
   const updateSessionUrlTemplate = "{% url 'qna:lecturer_update_exam_group' 0 %}";
@@ -561,49 +561,6 @@
     })),
     rosterIds: (sessionInitialState.roster_configs || []).map((item) => item.id),
   };
-
-
-  function updateWizardScreenMeta(message = '') {
-    const titleEl = document.getElementById('wizardScreenTitle');
-    const subtitleEl = document.getElementById('wizardStatusMessage');
-    if (titleEl) {
-      titleEl.textContent = sessionMode === 'create' ? 'Tạo ca thi' : (sessionMode === 'edit' ? 'Chỉnh sửa ca thi' : 'Xem ca thi');
-    }
-    if (subtitleEl && message) {
-      subtitleEl.textContent = message;
-    }
-  }
-
-  function persistWizardUrlState() {
-    const nextUrl = new URL(window.location.href);
-    const currentSubjectId = subjectSelect?.value || sessionCatalog?.subject?.id || '';
-    if (currentSubjectId) {
-      nextUrl.searchParams.set('subject_id', currentSubjectId);
-    }
-    nextUrl.searchParams.set('mode', sessionMode === 'view' ? 'view' : 'edit');
-    if (wizardState.sessionId) {
-      nextUrl.searchParams.set('session_id', wizardState.sessionId);
-    }
-    window.history.replaceState({}, '', nextUrl.toString());
-  }
-
-  function applyWizardSaveSuccess(payload, submitAction) {
-    if (payload?.exam_group_id) {
-      wizardState.sessionId = payload.exam_group_id;
-    }
-    sessionMode = 'edit';
-    wizardState.statusLabel = submitAction === 'CONFIRM' ? 'Sắp diễn ra' : 'Lưu nháp';
-    if (subjectSelect) {
-      subjectSelect.disabled = true;
-    }
-    persistWizardUrlState();
-    updateStatusLabel();
-    updateWizardScreenMeta(
-      submitAction === 'CONFIRM'
-        ? 'Ca thi đã được lưu thành công. Bạn đang ở chế độ chỉnh sửa và UI đã được cập nhật ngay trên màn hình.'
-        : 'Bản nháp đã được lưu thành công. Bạn có thể tiếp tục chỉnh sửa ngay trên màn hình này.'
-    );
-  }
 
   function buildAcademicYearOptions(baseYear) {
     const options = [];
@@ -1576,26 +1533,49 @@
     return options;
   }
 
+  function getExamSetDisplayCode(examSet) {
+    if (!examSet) {
+      return "";
+    }
+
+    if (examSet.exam_set_code) {
+      return String(examSet.exam_set_code).trim();
+    }
+
+    if (examSet.code) {
+      return String(examSet.code).trim();
+    }
+
+    if (examSet.exam_code) {
+      return String(examSet.exam_code).trim();
+    }
+
+    return `BD-${String(examSet.id).padStart(4, "0")}`;
+  }
+
+  function getExamSetOptionLabel(examSet) {
+    return `${getExamSetDisplayCode(examSet)} - ${examSet.name || "Bộ đề chưa đặt tên"}`;
+  }
+
   function renderExamPickerSets() {
     const room = wizardState.roomConfigs[examPickerRoomIndex];
-    if (!room) {
+    if (!room || !pickerExamSet) {
       return [];
     }
 
     const options = getFilteredExamSetsForPicker(room);
-    const currentSetId = Number(pickerExamSet?.value || room.exam_set_id || 0);
+    const requestedSetId = Number(pickerExamSet.value || room.exam_set_id || 0);
+    const activeOption = options.find((item) => item.id === requestedSetId) || options[0] || null;
+
     pickerExamSet.innerHTML = options.length
       ? options.map((item) => `
-          <option value="${item.id}" ${item.id === currentSetId ? "selected" : ""}>
-            ${item.name} • ${item.academic_year} • ${item.semester_label}
+          <option value="${item.id}" ${activeOption && item.id === activeOption.id ? "selected" : ""}>
+            ${escapeHtml(getExamSetOptionLabel(item))}
           </option>
         `).join("")
       : '<option value="">Không có bộ đề đã duyệt phù hợp</option>';
 
-    if (options.length) {
-      const activeOption = options.find((item) => item.id === currentSetId) || options[0];
-      pickerExamSet.value = String(activeOption.id);
-    }
+    pickerExamSet.value = activeOption ? String(activeOption.id) : "";
     return options;
   }
 
@@ -1952,39 +1932,32 @@
     btn.disabled = true;
 
     try {
-      const targetUrl = wizardState.sessionId
-        ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
-        : createSessionUrl;
+        const targetUrl = wizardState.sessionId
+          ? updateSessionUrlTemplate.replace("/0/update/", `/${wizardState.sessionId}/update/`)
+          : createSessionUrl;
 
-      const response = await fetch(targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCookie("csrftoken"),
-        },
-        body: JSON.stringify(buildPayload(submitAction)),
-      });
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken"),
+          },
+          body: JSON.stringify(buildPayload(submitAction)),
+        });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.success) {
-        pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
-        return;
-      }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+          pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
+          return;
+        }
 
-      if (submitAction === "CONFIRM") {
-        pushToast(payload.message || "Đã lưu cấu hình ca thi thành công.", "success");
         window.location.href = payload.redirect_url || sessionListUrl;
-        return;
-      }
-
-      applyWizardSaveSuccess(payload, submitAction);
-      pushToast(payload.message || "Đã lưu nháp ca thi thành công.", "success");
     } catch (err) {
-      console.error("Lỗi khi lưu:", err);
-      pushToast("Lỗi kết nối đến máy chủ: " + (err.message || ""), "error");
+        console.error("Lỗi khi lưu:", err);
+        pushToast("Lỗi kết nối đến máy chủ: " + (err.message || ""), "error");
     } finally {
-      btn.innerHTML = originalHtml;
-      btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
     }
   }
 

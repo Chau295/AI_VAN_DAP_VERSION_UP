@@ -60,14 +60,18 @@
 {% endblock %}
 
 {% block extra_js %}
-{% if form.non_field_errors %}
+{% if form.non_field_errors or form.username.errors or form.password.errors %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         if (typeof window.showGlobalToast !== 'function') {
             return;
         }
 
-        [{% for error in form.non_field_errors %}"{{ error|escapejs }}"{% if not forloop.last %}, {% endif %}{% endfor %}].forEach(function (message) {
+        [
+            {% for error in form.non_field_errors %}"{{ error|escapejs }}",{% endfor %}
+            {% for error in form.username.errors %}"{{ error|escapejs }}",{% endfor %}
+            {% for error in form.password.errors %}"{{ error|escapejs }}",{% endfor %}
+        ].filter(Boolean).forEach(function (message) {
             window.showGlobalToast(message, 'error');
         });
     });

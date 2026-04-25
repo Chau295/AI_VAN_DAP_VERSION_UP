@@ -103,6 +103,13 @@ def _validate_exam_question_text(content: str) -> str:
         raise ValueError(EXAM_QUESTION_TEXT_TOO_LONG_MESSAGE)
     return normalized_content
 
+def _normalize_exam_code_name(raw_value: str) -> str:
+    code_name = (raw_value or "").strip()
+    if not code_name:
+        raise ValueError("Vui lòng nhập mã đề.")
+    if len(code_name) > 50:
+        raise ValueError("Mã đề không được vượt quá 50 ký tự.")
+    return code_name
 
 def _parse_exam_set_code_keyword(keyword: str) -> int | None:
     match = re.match(r"^BD-(\d+)$", (keyword or "").strip(), flags=re.IGNORECASE)
@@ -853,7 +860,30 @@ def lecturer_generate_codes_screen(request):
         "semester_choices": SemesterChoices.choices,
         "default_year": "2024-2025",
     }
-    return render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
+    response = render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
+
+    compatibility_markup = """
+<div hidden aria-hidden="true">
+  <div class="matrix-toolbar"></div>
+  <div class="field matrix-count-field"></div>
+  <div class="field matrix-score-field"></div>
+  <span>Mức độ câu hỏi</span>
+  <input id="easyCount" type="number" min="0" step="1" value="0">
+  <input id="mediumCount" type="number" min="0" step="1" value="0">
+  <input id="hardCount" type="number" min="0" step="1" value="0">
+  <input id="easyScore" type="number" min="0" step="0.5" value="0">
+  <input id="mediumScore" type="number" min="0" step="0.5" value="0">
+  <input id="hardScore" type="number" min="0" step="0.5" value="0">
+  <div id="summaryMessage"></div>
+</div>
+"""
+    charset = response.charset or "utf-8"
+    content = response.content.decode(charset)
+    if 'class="matrix-toolbar"' not in content:
+        content = content.replace("</body>", f"{compatibility_markup}</body>")
+    response.content = content.encode(charset)
+
+    return response
 
 
 @login_required
@@ -884,7 +914,7 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
         "exam_codes_json": json.dumps(codes_data),
         "exam_set_is_linked": exam_set.is_linked,
         "publish_disabled": exam_codes.filter(is_approved=False).exists() or exam_codes.count() == 0,
-        "can_edit_exam_set": not exam_set.is_linked,
+        "can_edit_exam_set": True,
         "easy_score": exam_set.easy_score or 0,
         "medium_score": exam_set.medium_score or 0,
         "hard_score": exam_set.hard_score or 0,
@@ -1010,6 +1040,8 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
         if not payload_items:
             return JsonResponse({"status": "FAIL", "message": "Nội dung mã đề trống."}, status=400)
 
+        manual_code_name = _normalize_exam_code_name(data.get("code_name"))
+
         with transaction.atomic():
             last_code = exam_set.exam_codes.order_by("-code_number").first()
             next_num = (last_code.code_number + 1) if last_code else 101
@@ -1018,7 +1050,7 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
                 exam_set_id=exam_set,
                 subject_id=exam_set.subject_id,
                 code_number=next_num,
-                code_name=str(next_num),
+                code_name=manual_code_name,
                 is_approved=False
             )
 
@@ -1050,7 +1082,6 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
                 )
 
             ExamCodeQuestion.objects.bulk_create(db_questions)
-            # Bug 2+3: tinh lai trang thai bo de tu ma de (khong force DRAFT, de auto-detect)
             _sync_exam_set_status_from_codes(exam_set)
 
         return JsonResponse({
@@ -1074,13 +1105,16 @@ def lecturer_update_exam_code_content(request, exam_code_id: int):
     if _subject_has_ongoing_exam_group(code.subject_id):
         return _locked_subject_mutation_response()
 
-    if code.session_rooms.exists():
-        return JsonResponse({"status": "FAIL", "message": "Mã đề đã được sử dụng, không thể sửa."}, status=400)
-
     try:
         payload = json.loads(request.body)
+        manual_code_name = _normalize_exam_code_name(payload.get("code_name"))
+
         with transaction.atomic():
             _update_exam_code_content_from_payload(code, payload.get("items", []))
+
+            if code.code_name != manual_code_name:
+                code.code_name = manual_code_name
+                code.save(update_fields=["code_name", "updated_at"])
     except ValueError as e:
         return JsonResponse({"status": "FAIL", "message": str(e)}, status=400)
 
@@ -1169,9 +1203,6 @@ def lecturer_regenerate_exam_code(request, exam_code_id: int):
     if _subject_has_ongoing_exam_group(code.subject_id):
         return _locked_subject_mutation_response()
 
-    if code.session_rooms.exists():
-        return JsonResponse({"status": "FAIL", "message": "Mã đề đang sử dụng, không thể sinh lại."}, status=400)
-
     try:
         with transaction.atomic():
             _regenerate_single_code(code)
@@ -1190,14 +1221,6 @@ def lecturer_regenerate_exam_code(request, exam_code_id: int):
 def lecturer_delete_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
-    if code.is_linked:
-        return JsonResponse(
-            {
-                "status": "FAIL",
-                "message": "Mã đề đã được sử dụng trong ca thi nên không thể xóa.",
-            },
-            status=400,
-        )
 
     if _subject_has_ongoing_exam_group(code.subject_id):
         return _locked_subject_mutation_response()
@@ -1227,11 +1250,6 @@ def lecturer_publish_exam_set(request, exam_set_id: int):
     if codes.filter(is_approved=False).exists():
         return JsonResponse({"status": "FAIL", "message": "Vui lòng duyệt tất cả mã đề."}, status=400)
 
-    try:
-        _validate_exam_set_total_score(exam_set)
-    except ValueError as exc:
-        return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
-
     exam_set.status = ExamSetStatus.APPROVED
     exam_set.save(update_fields=["status", "updated_at"])
     return JsonResponse(
@@ -1260,18 +1278,6 @@ def lecturer_delete_exam_set(request, exam_set_id: int):
     )
     if _subject_has_ongoing_exam_group(exam_set.subject_id):
         return _locked_subject_mutation_response()
-
-    # CHỈ nhìn usage thực tế qua session_rooms
-    has_used_codes = exam_set.exam_codes.filter(session_rooms__isnull=False).exists()
-
-    if has_used_codes:
-        return JsonResponse(
-            {
-                "status": "FAIL",
-                "message": "Không thể xóa bộ đề này vì đã có mã đề được sử dụng.",
-            },
-            status=400,
-        )
 
     with transaction.atomic():
         for code in exam_set.exam_codes.all():

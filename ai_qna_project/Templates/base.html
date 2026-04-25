@@ -757,6 +757,42 @@
             });
         })();
 
+        window.translateSystemMessage = function (rawMessage) {
+            const message = String(rawMessage || "").trim();
+            if (!message) return "";
+
+            const exactMap = {
+                "Please enter a correct username and password. Note that both fields may be case-sensitive.": "Tên đăng nhập hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.",
+                "This field is required.": "Trường này là bắt buộc.",
+                "Enter a valid email address.": "Địa chỉ email không hợp lệ.",
+                "Enter a whole number.": "Vui lòng nhập số nguyên hợp lệ.",
+                "Enter a number.": "Vui lòng nhập số hợp lệ.",
+                "No file was submitted. Check the encoding type on the form.": "Chưa có file nào được gửi lên. Vui lòng kiểm tra lại biểu mẫu.",
+                "The submitted file is empty.": "File được gửi lên đang bị rỗng.",
+                "Authentication credentials were not provided.": "Thông tin xác thực chưa được cung cấp.",
+                "You do not have permission to perform this action.": "Bạn không có quyền thực hiện thao tác này.",
+                "Not found.": "Không tìm thấy dữ liệu.",
+                "Incorrect API key provided": "OpenAI API key không hợp lệ hoặc đã hết hiệu lực.",
+                "database is locked": "Hệ thống đang bận xử lý dữ liệu. Vui lòng thử lại sau ít phút."
+            };
+
+            if (exactMap[message]) return exactMap[message];
+
+            const lower = message.toLowerCase();
+            if (lower.includes("please enter a correct username and password")) return "Tên đăng nhập hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.";
+            if (lower.includes("database is locked")) return "Hệ thống đang bận xử lý dữ liệu. Vui lòng thử lại sau ít phút.";
+            if (lower.includes("incorrect api key provided")) return "OpenAI API key không hợp lệ hoặc đã hết hiệu lực.";
+
+            let matched = message.match(/^Ensure this value has at most (\d+) characters?.*$/i);
+            if (matched) return `Giá trị này không được vượt quá ${matched[1]} ký tự.`;
+            matched = message.match(/^Ensure this value has at least (\d+) characters?.*$/i);
+            if (matched) return `Giá trị này phải có ít nhất ${matched[1]} ký tự.`;
+            matched = message.match(/^Select a valid choice\..*$/i);
+            if (matched) return "Lựa chọn không hợp lệ.";
+
+            return message;
+        };
+
         (function () {
             function normalizeToastType(type) {
                 return ["error", "warning", "info"].includes(type) ? type : "success";
@@ -829,7 +865,13 @@
             }
 
             window.initGlobalToasts = function (root = document) {
-                root.querySelectorAll("[data-global-toast]").forEach(bindToast);
+                root.querySelectorAll("[data-global-toast]").forEach((toast) => {
+                    const titleEl = toast.querySelector(".global-toast-title");
+                    const messageEl = toast.querySelector(".global-toast-message");
+                    if (titleEl) titleEl.textContent = window.translateSystemMessage(titleEl.textContent);
+                    if (messageEl) messageEl.textContent = window.translateSystemMessage(messageEl.textContent);
+                    bindToast(toast);
+                });
             };
 
             window.clearGlobalToasts = function (type = null) {
@@ -843,8 +885,8 @@
                 const stack = document.getElementById("globalToastStack");
                 const payload =
                     message && typeof message === "object" && !Array.isArray(message)
-                        ? message
-                        : { ...options, message };
+                        ? { ...message, message: window.translateSystemMessage(message.message), title: message.title ? window.translateSystemMessage(message.title) : message.title }
+                        : { ...options, message: window.translateSystemMessage(message), title: options.title ? window.translateSystemMessage(options.title) : options.title };
 
                 if (!stack || !payload.message) {
                     return null;
