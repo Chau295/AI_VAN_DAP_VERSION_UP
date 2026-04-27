@@ -399,9 +399,8 @@
         </select>
 
         <select name="linked" class="filter-select" onchange="this.form.submit()">
-          <option value="">Liên kết: Tất cả</option>
-          <option value="USED" {% if filter_values.linked == 'USED' %}selected{% endif %}>Đã dùng</option>
-          <option value="UNUSED" {% if filter_values.linked == 'UNUSED' %}selected{% endif %}>Chưa dùng</option>
+          <option value="">Trạng thái sử dụng: Tất cả</option>
+          <option value="USED" {% if filter_values.linked == 'USED' %}selected{% endif %}>Đang dùng</option>
         </select>
 
         <a href="window.location.pathname" class="btn-reset" title="Làm mới bộ lọc" onclick="event.preventDefault(); window.location.href=window.location.pathname">
@@ -453,9 +452,9 @@
 
                   <td style="text-align: center;">
                     {% if row.used_codes_count > 0 %}
-                      <span class="pill pill-info">{{ row.used_codes_count }} mã đề đã dùng</span>
+                      <span class="pill pill-info">{{ row.used_codes_count }} mã đề đang dùng</span>
                     {% else %}
-                      <span class="pill pill-muted">0 mã đề đã dùng</span>
+                      <span class="pill pill-muted">0 mã đề đang dùng</span>
                     {% endif %}
                   </td>
 

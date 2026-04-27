@@ -1413,8 +1413,6 @@ def lecturer_create_question(request):
         return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
     subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response(response_style="legacy")
 
     if _question_exists_in_subject(subject, question_text):
         return JsonResponse(
@@ -1447,8 +1445,7 @@ def lecturer_update_question(request, question_id):
         )
     if question.subject not in request.user.userprofile.subjects_taught.all():
         return JsonResponse({"success": False, "error": "Không có quyền truy cập môn học này"}, status=403)
-    if _subject_has_ongoing_exam_group(question.subject):
-        return _locked_subject_mutation_response(response_style="legacy")
+
 
     question_text = (request.POST.get("question_text") or "").strip()
     difficulty = request.POST.get("difficulty")
@@ -1488,8 +1485,7 @@ def lecturer_delete_question(request, question_id):
         )
     if question.subject not in request.user.userprofile.subjects_taught.all():
         return JsonResponse({"success": False, "error": "Không có quyền truy cập môn học này"}, status=403)
-    if _subject_has_ongoing_exam_group(question.subject):
-        return _locked_subject_mutation_response(response_style="legacy")
+
 
     question.delete()
     messages.success(request, "Đã xóa câu hỏi thành công.")
@@ -1508,8 +1504,7 @@ def lecturer_import_questions(request):
         return JsonResponse({"success": False, "error": "Thiếu thông tin"}, status=400)
 
     subject = get_object_or_404(request.user.userprofile.subjects_taught, pk=subject_id)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response(response_style="legacy")
+
 
     try:
         decoded_file = file_obj.read().decode("utf-8-sig")
@@ -2155,7 +2150,7 @@ def lecturer_questions_screen(request):
             f"{request.path}?subject_id={selected_subject.id}&mode=detail&view=generate"
             if selected_subject else "#"
         ),
-        "has_active_exam": subject_has_active_exam_group(selected_subject) if selected_subject else False,
+        "has_active_exam": False,
     }
     return render(request, "qna/lecturer/lecturer_question_management.html", context)
 
@@ -2220,8 +2215,6 @@ def api_create_question_bank(request):
         return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
 
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
     bank_name, error_message = _validate_question_bank_name(subject, payload.get("name"))
     if error_message:
         return JsonResponse({"status": "FAIL", "message": error_message}, status=400)
@@ -2249,8 +2242,6 @@ def api_create_question_bank(request):
 def api_update_question_bank(request, bank_id):
     _ensure_lecturer(request)
     bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
-    if _subject_has_ongoing_exam_group(bank.subject):
-        return _locked_subject_mutation_response()
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -2290,8 +2281,6 @@ def api_save_question_bank_questions(request, bank_id):
     _ensure_lecturer(request)
     bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
     subject = bank.subject
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -2348,8 +2337,6 @@ def api_save_question_bank_questions(request, bank_id):
 def api_delete_question_bank(request, bank_id):
     _ensure_lecturer(request)
     bank = get_object_or_404(_get_lecturer_question_banks(request), pk=bank_id)
-    if _subject_has_ongoing_exam_group(bank.subject):
-        return _locked_subject_mutation_response()
 
     # Cho phép xóa ngân hàng dù đang dùng trong bộ đề;
     # frontend hiển thị popup xác nhận trước khi gọi API này.
@@ -2440,8 +2427,6 @@ def api_material_upload_complete(request):
         bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=bank_id).first()
         if bank_obj is None:
             return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
 
     file_bytes = file_obj.read()
     if not file_bytes:
@@ -2525,8 +2510,6 @@ def lecturer_delete_material(request, material_id):
 
     if material.subject not in request.user.userprofile.subjects_taught.all():
         return JsonResponse({"status": "FAIL", "message": "Bạn không có quyền xóa tài liệu này."}, status=403)
-    if _subject_has_ongoing_exam_group(material.subject):
-        return _locked_subject_mutation_response()
 
     try:
         if material.file_path and os.path.exists(material.file_path):
@@ -2660,8 +2643,6 @@ def api_create_manual_question(request):
 
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=form.cleaned_data["subject_id"])
     question_text = form.cleaned_data["question_text"]
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
 
     if _question_exists_in_subject(subject, question_text):
         return JsonResponse(
@@ -2723,8 +2704,6 @@ def api_update_question_bank_question(request, question_id):
             {"status": "FAIL", "message": "Không thể sửa câu hỏi đang được sử dụng trong mã đề."},
             status=400,
         )
-    if _subject_has_ongoing_exam_group(question.subject):
-        return _locked_subject_mutation_response()
 
     question_text = (payload.get("content") or payload.get("question_text") or "").strip()
     difficulty = payload.get("difficulty")
@@ -2782,8 +2761,6 @@ def api_delete_question_bank_question(request, question_id):
         )
     if question.subject not in request.user.userprofile.subjects_taught.all():
         return JsonResponse({"status": "FAIL", "message": "Không có quyền truy cập môn học này."}, status=403)
-    if _subject_has_ongoing_exam_group(question.subject):
-        return _locked_subject_mutation_response()
 
     question.delete()
     return JsonResponse({"status": "SUCCESS", "message": "Xóa câu hỏi thành công."})
@@ -2807,8 +2784,6 @@ def api_bulk_update_question_level(request):
         question_ids = json.loads(question_ids)
 
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=bank_id)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
 
     updated = Question.objects.filter(
         subject_id=subject,
@@ -2842,8 +2817,6 @@ def api_bulk_delete_questions(request):
         question_ids = json.loads(question_ids)
 
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=bank_id)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
 
     qs = Question.objects.filter(subject_id=subject, pk__in=question_ids, is_exam_clone=False)
     deleted_count = qs.count()
@@ -2883,8 +2856,6 @@ def api_generate_questions(request):
         return JsonResponse({"status": "FAIL", "message": "Thiếu subject_id."}, status=400)
 
     subject = get_object_or_404(_get_lecturer_subjects(request), pk=subject_id)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
 
     if not workspace_id:
         return JsonResponse(
@@ -3165,8 +3136,6 @@ def lecturer_upload_material(request, subject_code):
         return JsonResponse({"success": False, "error": "Không có quyền"}, status=403)
 
     subject = get_object_or_404(request.user.userprofile.subjects_taught, subject_code=subject_code)
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response(response_style="legacy")
     title = request.POST.get("title")
     file_obj = request.FILES.get("file")
     if not title or not file_obj:
@@ -3280,11 +3249,17 @@ def _attach_review_status_meta(session: ExamSession) -> None:
         session.review_status_class = "status-completed"
         session.can_view_detail = True
         session.can_display_score = True
+
     elif resolved_status == "ABSENT":
         session.review_status_label = "Vắng thi"
         session.review_status_class = "status-absent"
-        session.can_view_detail = False
+
+        # Cho phép bấm xem chi tiết bài thi vắng thi
+        session.can_view_detail = bool(getattr(session, "id", None))
+
+        # Vắng thi không hiển thị điểm
         session.can_display_score = False
+
     else:
         session.review_status_label = "Đang thực hiện"
         session.review_status_class = "status-in-progress"
@@ -3319,11 +3294,89 @@ def _can_view_review_detail(row):
     _attach_review_status_meta(row)
     return bool(getattr(row, "can_view_detail", False))
 
+def _resolve_review_student_user(student_row, student_identifier):
+    raw_user = (
+        student_row.get("linked_user_id")
+        or student_row.get("user_id")
+        or student_row.get("user")
+    )
+
+    if getattr(raw_user, "pk", None):
+        return raw_user if _student_user_is_eligible(raw_user) else None
+
+    if raw_user:
+        user = User.objects.filter(pk=raw_user).first()
+        if _student_user_is_eligible(user):
+            return user
+
+    return _student_find_user(student_identifier)
+
+
+def _ensure_absent_exam_session(exam_group, student_row, student_identifier):
+    if not exam_group or exam_group.computed_status not in {"COMPLETED", "CANCELLED"}:
+        return None
+
+    student_user = _resolve_review_student_user(student_row, student_identifier)
+    if not student_user:
+        return None
+
+    session = _get_student_exam_session(student_user, exam_group.subject_id, exam_group)
+    if session:
+        return session
+
+    absent_session = ExamSession.objects.create(
+        user_id=student_user,
+        subject_id=exam_group.subject_id,
+        exam_session_group_id=exam_group,
+        session_status="PENDING",
+        final_score=0,
+    )
+
+    if getattr(exam_group, "end_at", None):
+        ExamSession.objects.filter(pk=absent_session.pk).update(created_at=exam_group.end_at)
+        absent_session.created_at = exam_group.end_at
+
+    return absent_session
+
+def _ensure_student_absent_sessions_for_history(user):
+    if not user:
+        return 0
+
+    created_count = 0
+    profile = getattr(user, "userprofile", None)
+    subjects = profile.subjects_enrolled.all() if profile else Subject.objects.none()
+
+    for subject in subjects:
+        rooms = _get_student_assigned_rooms_for_subject(user, subject)
+
+        for room in rooms:
+            exam_group = room.exam_session_group_id
+            if not exam_group or exam_group.computed_status not in {"COMPLETED", "CANCELLED"}:
+                continue
+
+            existing_session = _get_student_exam_session(user, subject, exam_group)
+            if existing_session:
+                continue
+
+            absent_session = ExamSession.objects.create(
+                user_id=user,
+                subject_id=subject,
+                exam_session_group_id=exam_group,
+                session_status="PENDING",
+                final_score=0,
+            )
+
+            if getattr(exam_group, "end_at", None):
+                ExamSession.objects.filter(pk=absent_session.pk).update(created_at=exam_group.end_at)
+            created_count += 1
+
+    return created_count
 
 def _build_missing_review_rows(exam_groups, existing_session_keys):
     from .session_management import _build_exam_group_student_rows
 
     rows = []
+
     for exam_group in exam_groups:
         if exam_group.computed_status not in {"COMPLETED", "CANCELLED"}:
             continue
@@ -3331,9 +3384,40 @@ def _build_missing_review_rows(exam_groups, existing_session_keys):
         for student_row in _build_exam_group_student_rows(exam_group):
             student_identifier = student_row.get("student_code") or "-"
             student_key = normalize_student_code(student_identifier)
+
             if student_key and (exam_group.pk, student_key) in existing_session_keys:
                 continue
 
+            absent_session = _ensure_absent_exam_session(
+                exam_group,
+                student_row,
+                student_identifier,
+            )
+
+            if absent_session:
+                absent_session.student_identifier = student_identifier
+                absent_session.student_name = student_row.get("full_name") or student_identifier
+                absent_session.student_class_name = student_row.get("class_name") or "-"
+                absent_session.exam_date_display = exam_group.exam_date
+                absent_session.visible_violation_count = 0
+                absent_session.has_violation_warning = False
+
+                # Dùng end_at để sort đúng theo ca thi, không phụ thuộc thời điểm tạo record vắng
+                absent_session.created_at = exam_group.end_at or absent_session.created_at
+
+                _attach_session_score_meta(absent_session)
+                _attach_review_status_meta(absent_session)
+                _attach_session_duration_meta(absent_session)
+
+                rows.append(absent_session)
+
+                if student_key:
+                    existing_session_keys.add((exam_group.pk, student_key))
+
+                continue
+
+            # Trường hợp sinh viên chưa có tài khoản/link user thì vẫn hiển thị vắng thi,
+            # nhưng không thể bấm xem chi tiết vì không có ExamSession thật.
             row = SimpleNamespace(
                 id=None,
                 exam_group=exam_group,
@@ -3349,7 +3433,8 @@ def _build_missing_review_rows(exam_groups, existing_session_keys):
                 visible_violation_count=0,
             )
             _apply_review_status(row)
-            row.can_view_detail = _can_view_review_detail(row)
+            row.can_view_detail = False
+            row.can_display_score = False
             rows.append(row)
 
     return rows
@@ -3364,17 +3449,53 @@ def lecturer_student_review_screen(request):
     selected_subject_id = (request.GET.get("subject_id") or "").strip()
     raw_exam_group_id = (request.GET.get("exam_group_id") or "").strip()
     student_filter = (request.GET.get("student") or "").strip()
+
+    raw_academic_year = (request.GET.get("academic_year") or "").strip()
+    selected_academic_year = raw_academic_year if is_valid_academic_year(raw_academic_year) else ""
+
+    raw_semester = (request.GET.get("semester") or "").strip()
+    valid_semesters = {choice[0] for choice in SemesterChoices.choices}
+    selected_semester = raw_semester if raw_semester in valid_semesters else ""
+
+    raw_status = (request.GET.get("status") or "").strip()
+    valid_review_statuses = {"COMPLETED", "ABSENT", "IN_PROGRESS"}
+    selected_status = raw_status if raw_status in valid_review_statuses else ""
+
     selected_exam_group_id = int(raw_exam_group_id) if raw_exam_group_id.isdigit() else None
     selected_subject = next((subject for subject in subjects if str(subject.pk) == selected_subject_id), None)
 
     exam_groups = []
+    year_options = []
     review_rows = []
     page_obj = None
 
+    review_status_choices = [
+        ("", "Trạng thái: Tất cả"),
+        ("COMPLETED", "Đã hoàn thành"),
+        ("ABSENT", "Vắng thi"),
+        ("IN_PROGRESS", "Đang thực hiện"),
+    ]
+
     if selected_subject:
-        exam_groups = list(
-            ExamSessionGroup.objects.filter(subject_id=selected_subject).order_by("-exam_date", "-pk")
-        )
+        all_exam_groups_qs = ExamSessionGroup.objects.filter(subject_id=selected_subject)
+
+        year_options = [
+            year for year in all_exam_groups_qs
+            .values_list("academic_year", flat=True)
+            .distinct()
+            .order_by("-academic_year")
+            if sanitize_academic_year_for_display(year)
+        ]
+
+        exam_groups_qs = all_exam_groups_qs
+
+        if selected_academic_year:
+            exam_groups_qs = exam_groups_qs.filter(academic_year=selected_academic_year)
+
+        if selected_semester:
+            exam_groups_qs = exam_groups_qs.filter(semester=selected_semester)
+
+        exam_groups = list(exam_groups_qs.order_by("-exam_date", "-pk"))
         sessions = _with_lecturer_visible_violation_count(
             ExamSession.objects.filter(
                 subject_id=selected_subject,
@@ -3385,6 +3506,11 @@ def lecturer_student_review_screen(request):
                 "exam_session_group_id",
             )
         )
+        if selected_academic_year:
+            sessions = sessions.filter(exam_session_group_id__academic_year=selected_academic_year)
+
+        if selected_semester:
+            sessions = sessions.filter(exam_session_group_id__semester=selected_semester)
 
         if selected_exam_group_id:
             sessions = sessions.filter(exam_session_group_id=selected_exam_group_id)
@@ -3456,6 +3582,11 @@ def lecturer_student_review_screen(request):
                 or keyword in (row.student_class_name or "").lower()
                 or keyword in ((row.exam_group.group_name if getattr(row, "exam_group", None) else "") or "").lower()
             ]
+        if selected_status:
+            review_rows = [
+                row for row in review_rows
+                if getattr(row, "review_status", None) == selected_status
+            ]
 
         default_sort_time = timezone.make_aware(datetime(1970, 1, 1))
         review_rows.sort(
@@ -3503,6 +3634,17 @@ def lecturer_student_review_screen(request):
             "completed_count": completed_count,
             "absent_count": absent_count,
             "flagged_count": flagged_count,
+            "year_options": year_options,
+            "semester_choices": SemesterChoices.choices,
+            "review_status_choices": review_status_choices,
+            "filters": {
+                "subject_id": selected_subject_id,
+                "exam_group_id": raw_exam_group_id,
+                "student": student_filter,
+                "academic_year": selected_academic_year,
+                "semester": selected_semester,
+                "status": selected_status,
+            },
         },
     )
 
@@ -3988,6 +4130,8 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def history_view(request: HttpRequest) -> HttpResponse:
+    _ensure_student_absent_sessions_for_history(request.user)
+
     sessions_qs = (
         ExamSession.objects.filter(user_id=request.user)
         .select_related("subject_id", "exam_session_group_id")
@@ -4032,9 +4176,6 @@ def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
     _attach_session_duration_meta(session)
     _attach_review_status_meta(session)
 
-    if getattr(session, "review_status_label", "") == "Vắng thi":
-        messages.warning(request, "Phiên thi vắng thi không có chi tiết để xem.")
-        return redirect("qna:history")
     if getattr(session, "review_status", None) == "IN_PROGRESS":
         messages.info(request, "Phiên thi đang diễn ra. Hệ thống chuyển bạn trở lại màn hình làm bài.")
         return redirect("qna:exam_page", subject_code=session.subject.subject_code)
@@ -4394,6 +4535,7 @@ def save_exam_result(request: HttpRequest) -> JsonResponse:
         session_id,
         question_id,
         converted_audio["source_extension"],
+        converted_audio["stored_name"],
         converted_audio.get("output_size", 0),
         float(converted_audio.get("duration_seconds") or 0),
         result.audio_file.name if result.audio_file else "",

@@ -577,6 +577,9 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+{{ exam_set_messages|json_script:"exam-set-messages-data" }}
+{{ exam_set_target_total_score|json_script:"exam-set-target-total-score-data" }}
+{{ exam_question_text_max_length|json_script:"exam-question-text-max-length-data" }}
 
 <script>
   $(document).ready(function() {
@@ -630,14 +633,26 @@
     document.getElementById('semester').value = button.dataset.value;
   }
 
+  const examSetMessagesNode = document.getElementById('exam-set-messages-data');
+  const backendExamSetMessages = examSetMessagesNode
+    ? JSON.parse(examSetMessagesNode.textContent)
+    : {};
+
+  const targetTotalScoreNode = document.getElementById('exam-set-target-total-score-data');
+  const EXAM_SET_TARGET_TOTAL_SCORE = targetTotalScoreNode
+    ? parseFloat(JSON.parse(targetTotalScoreNode.textContent))
+    : 10;
+
+  const questionTextMaxLengthNode = document.getElementById('exam-question-text-max-length-data');
+  const EXAM_QUESTION_TEXT_MAX_LENGTH = questionTextMaxLengthNode
+    ? parseInt(JSON.parse(questionTextMaxLengthNode.textContent), 10)
+    : 5000;
+
   const EXAM_SET_MESSAGES = {
-    success: 'Tạo bộ đề thành công.',
-    totalOver: 'Tổng điểm hiện tại đang vượt quá 10 điểm.',
-    totalUnder: 'Tổng điểm hiện tại chưa đủ 10 điểm.',
-    noQuestions: 'Mỗi mã đề phải có ít nhất 1 câu hỏi.',
-    invalidQuestionScore: 'Mỗi câu hỏi phải có số điểm lớn hơn 0.',
+    ...backendExamSetMessages,
+
+    // Các message chỉ dùng riêng frontend, chưa có constant backend
     invalidVersionCount: 'Số lượng mã đề phải lớn hơn 0.',
-    invalidAcademicYear: 'Năm học phải đúng định dạng xxxx-xxxx và chỉ được chứa chữ số.',
     examCodeRequired: 'Vui lòng nhập mã bộ đề.',
     examCodeTooLong: 'Mã bộ đề không được vượt quá 50 ký tự.',
   };
@@ -663,9 +678,17 @@
     const input = document.getElementById('academicYear');
     if (!input) return true;
 
-    const isValid = ACADEMIC_YEAR_REGEX.test(String(input.value ?? ''));
-    input.setCustomValidity(isValid ? '' : EXAM_SET_MESSAGES.invalidAcademicYear);
-    return isValid;
+    const value = String(input.value ?? '').trim();
+    let message = '';
+
+    if (!value) {
+      message = EXAM_SET_MESSAGES.emptyAcademicYear;
+    } else if (!ACADEMIC_YEAR_REGEX.test(value)) {
+      message = EXAM_SET_MESSAGES.invalidAcademicYear;
+    }
+
+    input.setCustomValidity(message);
+    return !message;
   }
 
   function getMatrixConfig() {
@@ -704,11 +727,11 @@
       return { valid: false, state: 'error', message: EXAM_SET_MESSAGES.invalidQuestionScore };
     }
 
-    if (config.totalScore > 10) {
+    if (config.totalScore > EXAM_SET_TARGET_TOTAL_SCORE) {
       return { valid: true, state: 'warning', message: EXAM_SET_MESSAGES.totalOver };
     }
 
-    if (config.totalScore < 10) {
+    if (config.totalScore < EXAM_SET_TARGET_TOTAL_SCORE) {
       return { valid: true, state: 'warning', message: EXAM_SET_MESSAGES.totalUnder };
     }
 
@@ -771,20 +794,22 @@
   async function openConfirmCreateModal(config, payload) {
     pendingCreatePayload = payload;
 
-    const totalScore = formatScore(config.totalScore);
-    const needsWarning = Math.abs(Number(config.totalScore) - 10) > 0.0001;
+    const validation = getConfigValidation(config);
+    const needsWarning = validation.state === 'warning';
 
     const confirmed = await window.showGlobalConfirm({
       title: 'Xác nhận tạo bộ đề',
       message: needsWarning
-        ? `Tổng điểm hiện tại là ${totalScore}. Bạn có chắc chắn muốn tạo bộ đề không?`
+        ? `${validation.message}\nBạn có chắc chắn muốn tạo bộ đề không?`
         : 'Bạn có chắc chắn muốn tạo bộ đề không?',
       confirmText: 'Xác nhận',
       cancelText: 'Hủy',
       danger: false,
     });
+
     const nextPayload = pendingCreatePayload;
     pendingCreatePayload = null;
+
     if (confirmed && nextPayload) {
       await performCreateExamSet(nextPayload);
     }
@@ -843,7 +868,7 @@
   async function submitCreateExamSet() {
     const sourceBanks = $('#sourceBanks').val() || [];
     const academicYearInput = document.getElementById('academicYear');
-    const academicYear = academicYearInput.value;
+    const academicYear = academicYearInput.value.trim();
     const versionCount = parseSafeInt(document.getElementById('numberOfVersions').value);
     const examCodeInput = document.getElementById('examSetName');
     const examCode = (examCodeInput.value || '').trim();
@@ -878,8 +903,7 @@
     }
 
     if (!validateAcademicYearField()) {
-      // BUG_034: dùng toast thay vì reportValidity() (browser native)
-      showToast(EXAM_SET_MESSAGES.invalidAcademicYear);
+      showToast(academicYearInput.validationMessage || EXAM_SET_MESSAGES.invalidAcademicYear);
       academicYearInput.focus();
       return;
     }

@@ -57,7 +57,53 @@ def _locked_subject_mutation_response():
         {"status": "FAIL", "message": "Không thể chỉnh sửa khi ca thi đang diễn ra."},
         status=403,
     )
+def _exam_code_has_ongoing_session(code: ExamCode | None) -> bool:
+    """
+    Chỉ khóa mã đề nếu chính mã đề đó đang được gán vào ca thi ĐANG DIỄN RA.
+    Không khóa môn học.
+    Không khóa bộ đề.
+    Không khóa mã đề ở ca SẮP DIỄN RA hoặc ĐÃ KẾT THÚC.
+    """
+    if code is None or not getattr(code, "pk", None):
+        return False
 
+    for room in code.session_rooms.select_related("exam_session_group_id").all():
+        group = room.exam_session_group_id
+        if getattr(group, "computed_status", None) == "ONGOING":
+            return True
+
+    return False
+
+def _exam_code_is_currently_used(code: ExamCode | None) -> bool:
+    """
+    Dùng riêng cho UI trạng thái mã đề.
+    True chỉ khi mã đề đang được gán vào ca thi ĐANG DIỄN RA.
+    Ca sắp diễn ra hoặc đã kết thúc đều không tính là đang dùng.
+    """
+    return _exam_code_has_ongoing_session(code)
+
+
+def _exam_code_ui_status(code: ExamCode) -> str:
+    """
+    Trạng thái hiển thị của mã đề:
+    - IN_USE: đang được sử dụng trong ca thi đang diễn ra
+    - APPROVED: đã duyệt và không còn đang dùng
+    - DRAFT: chưa duyệt
+    """
+    if _exam_code_is_currently_used(code):
+        return "IN_USE"
+    if code.is_approved:
+        return "APPROVED"
+    return "DRAFT"
+
+def _locked_exam_code_mutation_response():
+    return JsonResponse(
+        {
+            "status": "FAIL",
+            "message": "Không thể chỉnh sửa mã đề đang được gán vào ca thi đang diễn ra.",
+        },
+        status=403,
+    )
 
 def _validate_academic_year(value: str) -> bool:
     return is_valid_academic_year(value)
@@ -119,7 +165,17 @@ def _parse_exam_set_code_keyword(keyword: str) -> int | None:
         return int(match.group(1))
     except (TypeError, ValueError):
         return None
+def _exam_set_display_code(exam_set: ExamSet) -> str:
+    """
+    Hiển thị mã bộ đề.
 
+    Ưu tiên mã bộ đề giảng viên đã nhập.
+    Nếu dữ liệu cũ chưa có mã bộ đề thì fallback về BD-{id}.
+    """
+    manual_code = (getattr(exam_set, "exam_code", "") or "").strip()
+    if manual_code:
+        return manual_code
+    return f"BD-{exam_set.exam_set_id:04d}"
 
 def _validate_exam_set_creation_rules(
         *,
@@ -273,7 +329,11 @@ def _exam_set_summary(exam_set: ExamSet) -> dict:
     for code in codes:
         if code.is_approved:
             approved_count += 1
-        if code.session_rooms.exists():
+
+        # Chỉ tính là đang dùng nếu mã đề thuộc ca thi ĐANG DIỄN RA.
+        # Không dùng code.session_rooms.exists() vì nó sẽ giữ trạng thái mãi
+        # kể cả khi ca thi đã kết thúc.
+        if _exam_code_is_currently_used(code):
             used_count += 1
 
     return {
@@ -374,12 +434,21 @@ def _ordered_items(code: ExamCode):
 
 def _serialize_exam_code(code: ExamCode) -> dict:
     items = _ordered_items(code)
+    is_currently_used = _exam_code_is_currently_used(code)
+
     return {
         "id": code.pk,
         "code_name": code.code_name,
         "code_number": code.code_number,
         "is_approved": code.is_approved,
+
+        # Giữ is_linked nếu nơi khác còn dùng, nhưng KHÔNG dùng nó để hiển thị "Đang dùng".
         "is_linked": code.is_linked,
+
+        # Trạng thái realtime cho UI.
+        "is_currently_used": is_currently_used,
+        "ui_status": _exam_code_ui_status(code),
+
         "items": items,
         "preview": [
             {
@@ -743,6 +812,8 @@ def lecturer_exam_codes_screen(request):
     semester = (request.GET.get("semester") or "").strip()
     status_filter = (request.GET.get("status") or "").strip()
     linked_filter = (request.GET.get("linked") or "").strip().upper()
+    if linked_filter not in {"", "USED"}:
+        linked_filter = ""
     keyword = (request.GET.get("q") or "").strip()
 
     exam_sets = ExamSet.objects.filter(subject_id__in=subjects)
@@ -765,7 +836,7 @@ def lecturer_exam_codes_screen(request):
         exam_sets = exam_sets.exclude(status=ExamSetStatus.APPROVED)
 
     if keyword:
-        search_filter = Q(name__icontains=keyword) | Q(
+        search_filter = Q(name__icontains=keyword) | Q(exam_code__icontains=keyword) | Q(
             Q(name="") | Q(name__isnull=True),
             subject_id__name__icontains=keyword,
         )
@@ -786,13 +857,11 @@ def lecturer_exam_codes_screen(request):
 
         if linked_filter == "USED" and used_codes_count <= 0:
             continue
-        if linked_filter == "UNUSED" and used_codes_count > 0:
-            continue
 
         rows.append(
             {
                 "id": es.exam_set_id,
-                "exam_set_code": f"BD-{es.exam_set_id:04d}",
+                "exam_set_code": _exam_set_display_code(es),
                 "subject_name": es.subject_id.name,
                 "subject_code": es.subject_id.subject_code,
                 "academic_year": es.academic_year,
@@ -825,14 +894,12 @@ def lecturer_exam_codes_screen(request):
         "rows": list(page_obj.object_list),
         "year_options": year_options,
         "semester_choices": SemesterChoices.choices,
-        # exam_set_status_choices chỉ có 2 trạng thái bộ đề
         "exam_set_status_choices": EXAM_SET_UI_STATUS_CHOICES,
         "filter_values": request.GET,
         "page_obj": page_obj,
         "paginator": paginator,
     }
     return render(request, "qna/lecturer/lecturer_exam_codes_management.html", context)
-
 
 @login_required
 @require_GET
@@ -859,6 +926,20 @@ def lecturer_generate_codes_screen(request):
         "question_banks": question_banks,
         "semester_choices": SemesterChoices.choices,
         "default_year": "2024-2025",
+
+        # Đồng bộ message backend -> HTML
+        "exam_set_messages": {
+            "success": EXAM_SET_SUCCESS_MESSAGE,
+            "totalOver": EXAM_SET_TOTAL_OVER_MESSAGE,
+            "totalUnder": EXAM_SET_TOTAL_UNDER_MESSAGE,
+            "noQuestions": EXAM_SET_NO_QUESTIONS_MESSAGE,
+            "invalidQuestionScore": EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE,
+            "emptyAcademicYear": EXAM_SET_EMPTY_ACADEMIC_YEAR_MESSAGE,
+            "invalidAcademicYear": EXAM_SET_INVALID_ACADEMIC_YEAR_MESSAGE,
+            "questionTextTooLong": EXAM_QUESTION_TEXT_TOO_LONG_MESSAGE,
+        },
+        "exam_set_target_total_score": str(EXAM_SET_TARGET_TOTAL_SCORE),
+        "exam_question_text_max_length": EXAM_QUESTION_TEXT_MAX_LENGTH,
     }
     response = render(request, "qna/lecturer/lecturer_generate_exam_codes.html", context)
 
@@ -879,7 +960,7 @@ def lecturer_generate_codes_screen(request):
 """
     charset = response.charset or "utf-8"
     content = response.content.decode(charset)
-    if 'class="matrix-toolbar"' not in content:
+    if 'id="summaryMessage"' not in content and 'id="easyCount"' not in content:
         content = content.replace("</body>", f"{compatibility_markup}</body>")
     response.content = content.encode(charset)
 
@@ -907,10 +988,10 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
         # exam_set_approval_status: APPROVED hoặc UNAPPROVED – chỉ dùng cho UI bộ đề
         "exam_set_approval_status": approval_status,
         "exam_set_approval_label": approval_label,
-        "exam_set_code": f"BD-{exam_set.exam_set_id:04d}",
+        "exam_set_code": _exam_set_display_code(exam_set),
         "total_codes_count": exam_codes.count(),
         "approved_codes_count": sum(1 for c in codes_data if c['is_approved']),
-        "used_codes_count": sum(1 for c in codes_data if c['is_linked']),
+        "used_codes_count": sum(1 for c in codes_data if c.get("is_currently_used")),
         "exam_codes_json": json.dumps(codes_data),
         "exam_set_is_linked": exam_set.is_linked,
         "publish_disabled": exam_codes.filter(is_approved=False).exists() or exam_codes.count() == 0,
@@ -929,9 +1010,6 @@ def lecturer_create_exam_set(request):
     payload = json.loads(request.body)
 
     subject = get_object_or_404(_lecturer_subjects(request), pk=payload.get("subject_id"))
-    if _subject_has_ongoing_exam_group(subject):
-        return _locked_subject_mutation_response()
-
     try:
         academic_year = "" if payload.get("academic_year") is None else str(payload.get("academic_year")).strip()
         if not academic_year:
@@ -1031,9 +1109,6 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
         pk=exam_set_id,
         subject_id__in=_lecturer_subjects(request)
     )
-    if _subject_has_ongoing_exam_group(exam_set.subject_id):
-        return _locked_subject_mutation_response()
-
     try:
         data = json.loads(request.body)
         payload_items = data.get("items", [])
@@ -1102,8 +1177,8 @@ def lecturer_create_manual_exam_code(request, exam_set_id: int):
 def lecturer_update_exam_code_content(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
-    if _subject_has_ongoing_exam_group(code.subject_id):
-        return _locked_subject_mutation_response()
+    if _exam_code_has_ongoing_session(code):
+        return _locked_exam_code_mutation_response()
 
     try:
         payload = json.loads(request.body)
@@ -1130,8 +1205,8 @@ def lecturer_update_exam_code_content(request, exam_code_id: int):
 def lecturer_approve_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
-    if _subject_has_ongoing_exam_group(code.subject_id):
-        return _locked_subject_mutation_response()
+    if _exam_code_has_ongoing_session(code):
+        return _locked_exam_code_mutation_response()
 
     err = _approval_error_for_code(code)
     if err:
@@ -1164,14 +1239,16 @@ def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
     code_ids = data.get("exam_code_ids", [])
 
     exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
-    if _subject_has_ongoing_exam_group(exam_set.subject_id):
-        return _locked_subject_mutation_response()
 
     codes = ExamCode.objects.filter(
         exam_set_id__pk=exam_set_id,
         pk__in=code_ids,
         is_approved=False
     )
+
+    for code in codes:
+        if _exam_code_has_ongoing_session(code):
+            return _locked_exam_code_mutation_response()
 
     count = 0
     for code in codes:
@@ -1200,8 +1277,8 @@ def lecturer_bulk_approve_exam_codes(request, exam_set_id: int):
 def lecturer_regenerate_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
-    if _subject_has_ongoing_exam_group(code.subject_id):
-        return _locked_subject_mutation_response()
+    if _exam_code_has_ongoing_session(code):
+        return _locked_exam_code_mutation_response()
 
     try:
         with transaction.atomic():
@@ -1222,9 +1299,8 @@ def lecturer_delete_exam_code(request, exam_code_id: int):
     _ensure_lecturer(request)
     code = get_object_or_404(ExamCode, pk=exam_code_id, subject_id__in=_lecturer_subjects(request))
 
-    if _subject_has_ongoing_exam_group(code.subject_id):
-        return _locked_subject_mutation_response()
-
+    if _exam_code_has_ongoing_session(code):
+        return _locked_exam_code_mutation_response()
     exam_set = code.exam_set_id
     with transaction.atomic():
         for eq in code.exam_code_questions.all():
@@ -1240,9 +1316,6 @@ def lecturer_delete_exam_code(request, exam_code_id: int):
 def lecturer_publish_exam_set(request, exam_set_id: int):
     _ensure_lecturer(request)
     exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
-    if _subject_has_ongoing_exam_group(exam_set.subject_id):
-        return _locked_subject_mutation_response()
-
     codes = exam_set.exam_codes.all()
     if not codes.exists():
         return JsonResponse({"status": "FAIL", "message": "Bộ đề không có mã đề nào."}, status=400)
@@ -1261,8 +1334,6 @@ def lecturer_publish_exam_set(request, exam_set_id: int):
 def lecturer_save_exam_set_draft(request, exam_set_id: int):
     _ensure_lecturer(request)
     exam_set = get_object_or_404(ExamSet, pk=exam_set_id, subject_id__in=_lecturer_subjects(request))
-    if _subject_has_ongoing_exam_group(exam_set.subject_id):
-        return _locked_subject_mutation_response()
     exam_set.save(update_fields=["updated_at"])
     return JsonResponse({"status": "SUCCESS", "message": "Đã lưu thay đổi."})
 
@@ -1276,8 +1347,6 @@ def lecturer_delete_exam_set(request, exam_set_id: int):
         pk=exam_set_id,
         subject_id__in=_lecturer_subjects(request),
     )
-    if _subject_has_ongoing_exam_group(exam_set.subject_id):
-        return _locked_subject_mutation_response()
 
     with transaction.atomic():
         for code in exam_set.exam_codes.all():

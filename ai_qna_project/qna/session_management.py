@@ -102,6 +102,26 @@ def _session_safe_int(value, default=0):
     except (TypeError, ValueError, AttributeError):
         return default
 
+def _session_parse_non_negative_int(value):
+    raw_value = "" if value is None else str(value).strip()
+
+    # Cho phép rỗng khi khởi tạo => hiểu là 0
+    if raw_value == "":
+        return 0
+
+    # Chỉ cho phép số nguyên không âm: 0, 1, 2, 20...
+    # Chặn số âm, số thập phân như 20.5, chữ, ký tự lạ.
+    if not re.fullmatch(r"\d+", raw_value):
+        return None
+
+    return int(raw_value)
+
+
+def _session_parse_positive_int(value):
+    parsed_value = _session_parse_non_negative_int(value)
+    if parsed_value is None or parsed_value <= 0:
+        return None
+    return parsed_value
 
 def _session_safe_float(value, default=0.0):
     try:
@@ -446,7 +466,9 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
     for index, raw_room in enumerate(rooms_payload, start=1):
         room_name = (raw_room.get("room_name") or "").strip()
-        student_count = _session_safe_int(raw_room.get("student_count"), 0)
+        raw_student_count = raw_room.get("student_count")
+        parsed_student_count = _session_parse_non_negative_int(raw_student_count)
+        student_count = parsed_student_count if parsed_student_count is not None else 0
         room_password = (raw_room.get("password") or "").strip().upper()
         exam_set_id = _session_safe_int(raw_room.get("exam_set_id"))
         exam_set = ExamSet.objects.filter(pk=exam_set_id, subject_id=subject).first() if exam_set_id else None
@@ -474,8 +496,8 @@ def _normalize_session_configuration(request, payload, exam_group=None):
         if not is_draft:
             if not room_name:
                 errors.append(f"Phòng thi dòng {index} chưa có tên phòng.")
-            if student_count <= 0:
-                errors.append(f"Phòng thi dòng {index} phải có số lượng sinh viên lớn hơn 0.")
+            if parsed_student_count is None:
+                errors.append(f"Phòng thi dòng {index}: SỐ LƯỢNG SV bắt buộc phải là số nguyên dương.")
             if not room_password:
                 room_password = _generate_room_password()
             elif len(room_password) != 5:
@@ -532,7 +554,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
                     }
                 )
 
-        if not is_draft and len(normalized_assignments) > student_count:
+        if parsed_student_count is not None and len(normalized_assignments) > student_count:
             errors.append(
                 f"Phòng {room_name or index} đang có {len(normalized_assignments)} sinh viên, vượt quá sức chứa đã cấu hình {student_count}."
             )

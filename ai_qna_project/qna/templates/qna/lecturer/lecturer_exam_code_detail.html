@@ -651,13 +651,15 @@
 
   // LOGIC TRẠNG THÁI BADGE
   function statusBadge(code) {
-    if (code.is_linked) {
-        return '<span class="pill pill-used">ĐÃ DÙNG</span>';
-    } else if (code.is_approved) {
-        return '<span class="pill pill-approved">ĐÃ DUYỆT</span>';
-    } else {
-        return '<span class="pill pill-draft">CHƯA DUYỆT</span>';
+    if (code.is_currently_used || code.ui_status === 'IN_USE') {
+        return '<span class="pill pill-used">ĐANG DÙNG</span>';
     }
+
+    if (code.is_approved || code.ui_status === 'APPROVED') {
+        return '<span class="pill pill-approved">ĐÃ DUYỆT</span>';
+    }
+
+    return '<span class="pill pill-draft">CHƯA DUYỆT</span>';
   }
 
   function isLockedCode(code) { return false; }
@@ -817,7 +819,7 @@
   function updateExamSetSummary() {
     const total = examCodes.length;
     const approved = examCodes.filter(c => c.is_approved).length;
-    const used = examCodes.filter(c => c.is_linked).length;
+    const used = examCodes.filter(c => c.is_currently_used || c.ui_status === 'IN_USE').length;
     const domTotal = document.getElementById('summaryTotalCodes');
     const domApproved = document.getElementById('summaryApprovedCodes');
     const domUsed = document.getElementById('summaryUsedCodes');
@@ -1218,5 +1220,13 @@
   document.getElementById('btnPublishExamSet')?.addEventListener('click', publishExamSet);
 
   renderCards();
+  // Nếu đang có mã đề trong ca thi đang diễn ra,
+  // tự reload nhẹ mỗi 15 giây để khi ca thi kết thúc,
+  // badge tự chuyển từ "ĐANG DÙNG" về "ĐÃ DUYỆT".
+  if (examCodes.some(code => code.is_currently_used || code.ui_status === 'IN_USE')) {
+    setInterval(() => {
+      window.location.reload();
+    }, 15000);
+  }
 </script>
 {% endblock %}

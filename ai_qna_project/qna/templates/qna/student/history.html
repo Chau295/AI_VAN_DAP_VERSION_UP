@@ -86,11 +86,11 @@
 
         <tbody class="bg-white divide-y divide-gray-200">
           {% for session in sessions %}
-          <tr class="hover:bg-gray-100 transition-colors {% if session.history_status != 'ABSENT' %}cursor-pointer{% endif %}"
-              {% if session.history_status == 'COMPLETED' %}
-                onclick="window.location.href='{% url 'qna:history_detail' session.id %}'"
-              {% elif session.history_status == 'IN_PROGRESS' %}
+          <tr class="hover:bg-gray-100 transition-colors cursor-pointer"
+              {% if session.history_status == 'IN_PROGRESS' %}
                 onclick="window.location.href='{% url 'qna:exam_page' session.subject.subject_code %}'"
+              {% else %}
+                onclick="window.location.href='{% url 'qna:history_detail' session.id %}'"
               {% endif %}
           >
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">

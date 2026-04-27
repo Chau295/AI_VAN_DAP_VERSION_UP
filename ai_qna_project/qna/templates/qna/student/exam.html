@@ -405,10 +405,94 @@ document.addEventListener('DOMContentLoaded', () => {
   const isExamTimeExpired = () => Boolean(state.mainTimerEnd && nowMs() >= state.mainTimerEnd);
 
   const showAlert = (message, type = 'error') => {
-    if (typeof window.showGlobalToast === 'function' && message) {
+    if (!message) return;
+
+    // Ưu tiên toast/popup global của hệ thống
+    if (typeof window.showGlobalToast === 'function') {
       window.showGlobalToast(message, type);
+      return;
     }
+
+    // Fallback vẫn là popup tự tạo, tuyệt đối không dùng alert()
+    showSystemPopup({
+      title: type === 'success' ? 'Thành công' : 'Thông báo',
+      message,
+      confirmText: 'Đã hiểu',
+      hideCancel: true,
+    });
   };
+
+  function showSystemPopup({
+    title = 'Thông báo',
+    message = '',
+    confirmText = 'Đồng ý',
+    cancelText = 'Hủy',
+    danger = false,
+    hideCancel = false,
+  } = {}) {
+    return new Promise((resolve) => {
+      const oldPopup = document.getElementById('systemCustomPopup');
+      if (oldPopup) oldPopup.remove();
+
+      const popup = document.createElement('div');
+      popup.id = 'systemCustomPopup';
+      popup.className = 'modal';
+      popup.style.display = 'flex';
+
+      popup.innerHTML = `
+        <div class="modal-content w-full max-w-md bg-white rounded-xl shadow-2xl flex flex-col m-4">
+          <div class="p-6 border-b border-gray-200">
+            <h3 class="text-2xl font-bold text-gray-800">${title}</h3>
+          </div>
+          <div class="p-6 text-gray-700 leading-relaxed">
+            ${message}
+          </div>
+          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end gap-3">
+            ${
+              hideCancel
+                ? ''
+                : `<button type="button" id="systemPopupCancel" class="btn">${cancelText}</button>`
+            }
+            <button type="button" id="systemPopupConfirm" class="btn ${danger ? '' : 'btn-primary'}">
+              ${confirmText}
+            </button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(popup);
+
+      const close = (value) => {
+        popup.remove();
+        resolve(value);
+      };
+
+      const cancelBtn = popup.querySelector('#systemPopupCancel');
+      const confirmBtn = popup.querySelector('#systemPopupConfirm');
+
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => close(false));
+      }
+
+      if (confirmBtn) {
+        confirmBtn.addEventListener('click', () => close(true));
+      }
+
+      popup.addEventListener('click', (event) => {
+        if (event.target === popup && !hideCancel) {
+          close(false);
+        }
+      });
+    });
+  }
+
+  async function showConfirmPopup(options = {}) {
+    if (typeof window.showGlobalConfirm === 'function') {
+      return await window.showGlobalConfirm(options);
+    }
+
+    return await showSystemPopup(options);
+  }
 
   function resetGradingProgress(detail = 'Hệ thống đang chờ worker nhận audio...') {
     state.gradingProgress = {
@@ -790,7 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function stopRecording() {
     if (state.mediaRecorder?.state === 'recording') {
-      const confirmed = await window.showGlobalConfirm({
+      const confirmed = await showConfirmPopup({
         title: 'Xác nhận dừng ghi âm',
         message: 'Hệ thống sẽ dừng ghi âm, gửi câu trả lời hiện tại cho AI chấm điểm và đưa bạn quay lại danh sách câu hỏi.',
         confirmText: 'Dừng ghi âm và chấm câu này',
@@ -1216,7 +1300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const confirmed = await window.showGlobalConfirm({
+      const confirmed = await showConfirmPopup({
         title: 'Xác nhận kết thúc bài thi',
         message: 'Hệ thống sẽ chốt toàn bộ câu trả lời hiện có và chuyển sang màn hình tổng kết.',
         confirmText: 'Xác nhận nộp bài',
@@ -1263,6 +1347,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const PROCTORING_MAX_WARNINGS = 3;
+  let noFaceTimeout = null;
   let multipleFaceTimeout = null;
   let cameraOffTimeout = null;
 

@@ -35,7 +35,7 @@
   .subject-filter-panel { padding: 16px 22px; }
   .subject-filter-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
   .subject-filter-label { font-size: 1rem; font-weight: 700; color: #0f172a; min-width: 144px; }
-  .subject-filter-control, .table-filter-input, .table-filter-select { height: 50px; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; color: var(--review-text); padding: 0 18px; font-size: 1rem; }
+  .subject-filter-control { height: 50px; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; color: var(--review-text); padding: 0 18px; font-size: 1rem;}
   .subject-filter-control { flex: 1 1 420px; }
   .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
   .stat-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 98px; padding: 18px 22px; background: var(--review-card); border-radius: 18px; box-shadow: 0 12px 28px rgba(148, 163, 184, 0.16); overflow: hidden; }
@@ -52,11 +52,101 @@
   .stat-card-absent .stat-icon { background: var(--review-red-soft); color: var(--review-red); }
   .list-title { margin: 8px 0 0; color: #0f2b57; font-size: 1.95rem; font-weight: 800; }
   .table-panel { padding: 18px 18px 0; }
-  .table-filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 0 6px 18px; }
-  .table-search { position: relative; flex: 1 1 340px; max-width: 420px; }
-  .table-search i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
-  .table-filter-input { width: 100%; padding-left: 44px; }
-  .table-filter-select { min-width: 180px; }
+  .table-filters {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--review-border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    background: #fff;
+  }
+
+  .table-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .table-search {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 220px;
+    max-width: none;
+  }
+
+  .table-search i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 14px;
+  }
+
+  .table-filter-input,
+  .table-filter-select {
+    height: 40px;
+    border: 1px solid var(--review-border);
+    border-radius: 20px;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4b5563;
+    background: #fff;
+    outline: none;
+    transition: 0.2s;
+  }
+
+  .table-filter-input {
+    width: 100%;
+    padding-left: 40px;
+    box-sizing: border-box;
+  }
+
+  .table-filter-input:focus,
+  .table-filter-select:focus {
+    border-color: var(--review-blue);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .table-filter-select {
+    appearance: none;
+    padding-right: 36px;
+    min-width: 170px;
+    max-width: 240px;
+    cursor: pointer;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px;
+  }
+
+  .table-filter-reset {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--review-border);
+    background: #fff;
+    color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+    text-decoration: none;
+  }
+
+  .table-filter-reset:hover {
+    background: #f3f4f6;
+    color: #111827;
+  }
   .result-table-wrap { overflow-x: auto; border-top: 1px solid #edf2f7; }
   .result-table { width: 100%; border-collapse: separate; border-spacing: 0; }
   .result-table thead th { padding: 18px 22px; background: #fafafa; color: #4b5563; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; white-space: nowrap; }
@@ -142,7 +232,8 @@
   @media (max-width: 640px) {
     .top-header { padding-left: 1rem; padding-right: 1rem; }
     .student-review-content { padding: 18px 12px 26px; }
-    .subject-filter-row, .table-filters { align-items: stretch; }
+    .subject-filter-row { align-items: stretch; }
+    .table-filters { align-items: stretch; flex-wrap: wrap; }
     .student-review-back, .subject-filter-control, .table-search, .table-filter-select { width: 100%; max-width: none; }
     .result-table thead th, .result-table tbody td { padding: 16px 14px; }
   }
@@ -200,18 +291,57 @@
       <h2 class="list-title">Danh sách Bài làm</h2>
 
       <div class="student-review-panel table-panel">
-        <form method="get" class="table-filters">
+        <form method="get" id="studentReviewFilterForm" class="table-filters">
+          <input type="hidden" name="page" value="1">
           <input type="hidden" name="subject_id" value="{{ selected_subject.id }}">
+
           <div class="table-search">
             <i class="fas fa-search"></i>
-            <input type="text" name="student" class="table-filter-input" placeholder="Tìm kiếm ..." value="{{ student_filter }}">
+            <input
+              type="text"
+              name="student"
+              class="table-filter-input"
+              placeholder="Tìm kiếm sinh viên, MSSV, lớp..."
+              value="{{ filters.student|default:student_filter }}"
+            >
           </div>
+
+          <select name="academic_year" class="table-filter-select" onchange="this.form.submit()">
+            <option value="">Năm học: Tất cả</option>
+            {% for year in year_options %}
+              <option value="{{ year }}" {% if filters.academic_year == year %}selected{% endif %}>{{ year }}</option>
+            {% endfor %}
+          </select>
+
+          <select name="semester" class="table-filter-select" onchange="this.form.submit()">
+            <option value="">Học kỳ: Tất cả</option>
+            {% for value, label in semester_choices %}
+              <option value="{{ value }}" {% if filters.semester == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+
           <select name="exam_group_id" class="table-filter-select" onchange="this.form.submit()">
             <option value="">Kỳ thi: Tất cả</option>
             {% for g in exam_groups %}
-              <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>{{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}</option>
+              <option value="{{ g.id }}" {% if selected_exam_group_id == g.id %}selected{% endif %}>
+                {{ g.group_name }} - {{ g.exam_date|date:"d/m/Y" }}
+              </option>
             {% endfor %}
           </select>
+
+          <select name="status" class="table-filter-select" onchange="this.form.submit()">
+            {% for value, label in review_status_choices %}
+              <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+
+          <a
+            href="?subject_id={{ selected_subject.id }}"
+            class="table-filter-reset"
+            title="Xóa bộ lọc"
+          >
+            <i class="fas fa-redo-alt"></i>
+          </a>
         </form>
 
         {% if sessions %}
@@ -231,7 +361,7 @@
               </thead>
                 <tbody>
                   {% for session in sessions %}
-                  <tr class="session-row{% if session.can_view_detail %} is-clickable{% endif %}"{% if session.can_view_detail %} data-detail-url="{% url 'qna:lecturer_session_detail' session.id %}" onclick="window.location.href=this.dataset.detailUrl;"{% endif %}>
+                  <tr class="session-row{% if session.can_view_detail and session.id %} is-clickable{% endif %}"{% if session.can_view_detail and session.id %} data-detail-url="{% url 'qna:lecturer_session_detail' session.id %}" onclick="window.location.href=this.dataset.detailUrl;"{% endif %}>
                     <td>
                       <span class="student-name">{{ session.student_name }}</span>
                       <span class="student-id">{{ session.student_identifier }}</span>
@@ -243,9 +373,17 @@
                     <td>
                       <span class="status-pill {{ session.review_status_class|default:session.status_class }}">{{ session.review_status_label|default:session.status_label }}</span>
                     </td>
-                    <td><span class="score-value">{% if session.can_display_score %}{{ session.calculated_final_score|floatformat:2 }}{% else %}-{% endif %}</span></td>
+                    <td>
+                      <span class="score-value">
+                        {% if session.can_display_score %}
+                          {{ session.final_display_score|floatformat:2 }}
+                        {% else %}
+                          -
+                        {% endif %}
+                      </span>
+                    </td>
                     <td class="action-cell">
-                      {% if session.has_violation_warning and session.can_view_detail %}
+                      {% if session.has_violation_warning and session.can_view_detail and session.id %}
                         <a href="{% url 'qna:lecturer_session_detail' session.id %}" class="detail-flag-link" title="Có cảnh báo gian lận" onclick="event.stopPropagation();">
                           <i class="fas fa-exclamation-triangle warning-icon"></i>
                         </a>
@@ -274,7 +412,7 @@
 
             <div class="qm2-page-controls">
               {% if page_obj.has_previous %}
-                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
+                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if filters.academic_year %}&academic_year={{ filters.academic_year|urlencode }}{% endif %}{% if filters.semester %}&semester={{ filters.semester|urlencode }}{% endif %}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if filters.status %}&status={{ filters.status|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.previous_page_number }}">
                   <i class="fas fa-chevron-left" style="font-size: 12px;"></i>
                 </a>
               {% else %}
@@ -285,12 +423,12 @@
                 {% if page_obj.number == i %}
                   <span class="qm2-page-btn active">{{ i }}</span>
                 {% elif i > page_obj.number|add:'-4' and i < page_obj.number|add:'4' %}
-                  <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ i }}">{{ i }}</a>
+                  <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if filters.academic_year %}&academic_year={{ filters.academic_year|urlencode }}{% endif %}{% if filters.semester %}&semester={{ filters.semester|urlencode }}{% endif %}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if filters.status %}&status={{ filters.status|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ i }}">{{ i }}</a>
                 {% endif %}
               {% endfor %}
 
               {% if page_obj.has_next %}
-                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
+                <a class="qm2-page-btn" href="?subject_id={{ selected_subject.id }}{% if filters.academic_year %}&academic_year={{ filters.academic_year|urlencode }}{% endif %}{% if filters.semester %}&semester={{ filters.semester|urlencode }}{% endif %}{% if selected_exam_group_id %}&exam_group_id={{ selected_exam_group_id }}{% endif %}{% if filters.status %}&status={{ filters.status|urlencode }}{% endif %}{% if student_filter %}&student={{ student_filter|urlencode }}{% endif %}&page={{ page_obj.next_page_number }}">
                   <i class="fas fa-chevron-right" style="font-size: 12px;"></i>
                 </a>
               {% else %}

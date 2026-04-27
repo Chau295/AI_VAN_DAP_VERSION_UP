@@ -1378,7 +1378,6 @@
 
   const qm2App = document.getElementById('qm2App') || document.getElementById('questionManagementApp') || document.body;
   const app = qm2App;
-  const hasActiveExam = String(app?.dataset?.hasActiveExam || 'false').toLowerCase() === 'true';
 
 
   const pageMode = app?.dataset.pageMode || 'list';
@@ -1793,7 +1792,7 @@
       const draftClass = q.is_draft ? 'draft-row' : '';
       const draftBadge = q.is_draft ? `<span class="qm2-draft-pill"><i class="fas fa-star"></i> Mới tạo (Chưa lưu)</span>` : '';
       const autoCheck = q.is_draft ? 'checked' : '';
-      const disabled = hasActiveExam ? 'disabled' : '';
+      const disabled = '';
 
       return `
       <div class="qm2-question-row ${draftClass}" data-question-id="${q.question_id}" data-difficulty="${q.difficulty}">

@@ -407,64 +407,94 @@
     border-color: #fca5a5;
   }
 
-  .detail-modal-backdrop {
+  /* =========================================
+     CUSTOM MODAL STYLE FOR DELETE CONFIRMATION
+     ========================================= */
+  .custom-delete-backdrop {
     position: fixed;
     inset: 0;
+    background: rgba(0, 0, 0, 0.4);
     display: none;
     align-items: center;
     justify-content: center;
+    z-index: 9999;
     padding: 1.5rem;
-    background: rgba(15, 23, 42, 0.42);
-    z-index: 80;
   }
 
-  .detail-modal-backdrop.open { display: flex; }
+  .custom-delete-backdrop.open {
+    display: flex;
+  }
 
-  .detail-modal {
-    width: min(860px, 100%);
-    padding: 3rem 2rem 2.2rem;
-    border-radius: 20px;
-    background: #fff;
-    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+  .custom-delete-modal {
+    background: #ffffff;
+    width: 100%;
+    max-width: 540px;
+    border-radius: 12px;
+    padding: 3rem 2rem 2.5rem;
     text-align: center;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   }
 
-  .detail-modal-title {
-    margin: 0;
-    color: #666b73;
-    font-size: 1.5rem;
+  .custom-delete-title {
+    font-size: 1.35rem;
     font-weight: 600;
-    line-height: 1.15;
+    color: #4B5563;
+    margin-bottom: 1rem;
+    line-height: 1.5;
   }
 
-  .detail-modal-description {
-    margin-top: 1rem;
-    color: #9aa2af;
-    font-size: 1rem;
+  .custom-delete-desc {
+    font-size: 0.95rem;
+    color: #9CA3AF;
+    margin-bottom: 2.5rem;
   }
 
-  .detail-modal-actions {
+  .custom-delete-actions {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 1rem;
-    margin-top: 2rem;
-    flex-wrap: wrap;
   }
 
-  .detail-confirm-btn {
+  .custom-btn-cancel {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 170px;
-    min-height: 56px;
-    border: 0;
-    border-radius: 14px;
-    background: linear-gradient(180deg, #5f2bd8 0%, #4720b7 100%);
-    color: #fff;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    border: 1px solid #D1D5DB;
+    background: #FFFFFF;
+    color: #111827;
+    font-weight: 600;
     font-size: 1rem;
-    font-weight: 800;
-    box-shadow: 0 14px 28px rgba(79, 33, 191, 0.24);
+    cursor: pointer;
+    transition: 0.2s;
+    min-width: 130px;
+  }
+
+  .custom-btn-cancel:hover {
+    background: #F9FAFB;
+  }
+
+  .custom-btn-confirm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    border: none;
+    background: #3B10E5; /* Màu tím đặc trưng như thiết kế */
+    color: #FFFFFF;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.2s;
+    min-width: 130px;
+  }
+
+  .custom-btn-confirm:hover {
+    background: #2D0CAD;
   }
 
   @media (max-width: 1100px) {
@@ -760,26 +790,58 @@
 </script>
 
 {% if detail.can_delete %}
+  <div id="customDeleteModal" class="custom-delete-backdrop">
+    <div class="custom-delete-modal">
+      <div class="custom-delete-title">
+        Bạn có chắc chắn muốn xóa ca thi <strong>“{{ exam_group.group_name }}”</strong> này?
+      </div>
+      <div class="custom-delete-desc">
+        Hành động này sẽ được xóa vĩnh viễn, không thể khôi phục
+      </div>
+      <div class="custom-delete-actions">
+        <button type="button" class="custom-btn-cancel" id="closeDeleteModalBtn">
+          <i class="fas fa-times"></i> Hủy bỏ
+        </button>
+        <button type="button" class="custom-btn-confirm" id="confirmDeleteBtn">
+          Xác nhận
+        </button>
+      </div>
+    </div>
+  </div>
+
   <form id="deleteExamGroupForm" method="post" action="{{ delete_url }}">
     {% csrf_token %}
   </form>
 
   <script>
+    // Logic điều khiển Custom Modal Xóa
     const openDeleteModalButton = document.getElementById("openDeleteModalButton");
     const deleteExamGroupForm = document.getElementById("deleteExamGroupForm");
+    const customDeleteModal = document.getElementById("customDeleteModal");
+    const closeDeleteModalBtn = document.getElementById("closeDeleteModalBtn");
+    const confirmDeleteBtn = document.getElementById("confirmDeleteBtn");
 
-    if (openDeleteModalButton && deleteExamGroupForm) {
-      openDeleteModalButton.addEventListener("click", async () => {
-        const confirmed = await window.showGlobalConfirm({
-          title: 'Xác nhận xóa ca thi',
-          message: 'Hành động này sẽ xóa vĩnh viễn ca thi hiện tại và không thể khôi phục.',
-          confirmText: 'Xác nhận',
-          cancelText: 'Hủy bỏ',
-          danger: true,
-        });
-        if (confirmed) {
-          deleteExamGroupForm.submit();
+    if (openDeleteModalButton && deleteExamGroupForm && customDeleteModal) {
+      // Mở modal
+      openDeleteModalButton.addEventListener("click", () => {
+        customDeleteModal.classList.add("open");
+      });
+
+      // Đóng modal khi nhấn "Hủy bỏ"
+      closeDeleteModalBtn.addEventListener("click", () => {
+        customDeleteModal.classList.remove("open");
+      });
+
+      // Đóng modal khi bấm ra ngoài vùng xám (backdrop)
+      customDeleteModal.addEventListener("click", (e) => {
+        if (e.target === customDeleteModal) {
+          customDeleteModal.classList.remove("open");
         }
+      });
+
+      // Bấm "Xác nhận" -> Gửi Form
+      confirmDeleteBtn.addEventListener("click", () => {
+        deleteExamGroupForm.submit();
       });
     }
   </script>
