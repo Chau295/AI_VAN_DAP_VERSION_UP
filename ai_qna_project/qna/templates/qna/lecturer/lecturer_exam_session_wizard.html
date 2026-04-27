@@ -122,7 +122,6 @@
   .es-modal-backdrop { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
   .es-modal-backdrop.open { display: flex; }
 </style>
-
 <div class="es-page">
   <div class="top-header">
     <h1>Quản lý ca thi</h1>
@@ -1050,18 +1049,23 @@
     roomTableBody.innerHTML = wizardState.roomConfigs.map((room, index) => {
       hydrateRoomLabels(room);
       const hasCode = room.exam_code_ids.length > 0;
-      const actionLabel = hasCode ? "Chỉnh sửa bộ đề" : "Thêm đề";
+      // Đổi chữ hiển thị giống với hình ảnh của bạn
+      const actionLabel = hasCode ? "Xem bộ đề - mã đề" : "Xem bộ đề - mã đề";
 
       return `
         <tr>
           <td style="padding: 1rem;"><input class="es-input" type="text" value="${escapeHtml(room.room_name)}" data-room-field="room_name" data-room-index="${index}" ${isViewMode() ? "readonly" : ""}></td>
-          <td style="padding: 1rem;"><input class="es-input" type="number" min="0" step="1" inputmode="numeric" pattern="[0-9]*" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" data-last-valid-value="${room.student_count}" ${isViewMode() ? "readonly" : ""}></td>
-          <td style="padding: 1rem;"><input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Tự động" ${isViewMode() ? "readonly" : ""}></td>
+          <td style="padding: 1rem;"><input class="es-input es-room-count-input" type="number" min="0" step="1" inputmode="numeric" pattern="[0-9]*" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" data-last-valid-value="${room.student_count}" ${isViewMode() ? "readonly" : ""}></td>
+          <td style="padding: 1rem;"><input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Mật khẩu tự random" ${isViewMode() ? "readonly" : ""}></td>
+
           <td style="padding: 1rem;">
-            <button type="button" class="es-btn es-btn-primary" style="font-size: 0.875rem;" data-open-exam-picker="${index}">
-              <i class="fas fa-plus"></i> ${actionLabel}
-            </button>
+            <a href="javascript:void(0)"
+               style="color: #1D4ED8; text-decoration: underline; font-weight: 500; font-size: 0.875rem; cursor: pointer;"
+               data-open-exam-picker="${index}">
+               ${actionLabel}
+            </a>
           </td>
+
           <td style="text-align: center; padding: 1rem;">
             ${isViewMode() ? '<span style="color:#94a3b8;"><i class="fas fa-lock"></i></span>' : `<button type="button" class="es-btn es-btn-ghost" data-remove-room="${index}" style="color: #9CA3AF; font-size: 1.1rem; padding: 0.5rem;"><i class="far fa-trash-alt"></i></button>`}
           </td>
@@ -1804,10 +1808,22 @@
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.success) {
-          pushToast(payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.", "error");
+          const message = payload.message || "Không thể lưu ca thi. Vui lòng kiểm tra lại dữ liệu.";
+
+          if (message.includes("trùng thời gian") || message.includes("trùng lịch thi")) {
+            await window.showGlobalConfirm({
+              title: "Trùng lịch thi",
+              message: message,
+              confirmText: "Tôi sẽ đổi giờ thi",
+              cancelText: "Đóng",
+              danger: true,
+            });
+          } else {
+            pushToast(message, "error");
+          }
+
           return;
         }
-
         window.location.href = payload.redirect_url || sessionListUrl;
     } catch (err) {
         console.error("Lỗi khi lưu:", err);

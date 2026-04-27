@@ -12,18 +12,9 @@ import wave
 from array import array
 from typing import Optional, Dict, Any
 
-try:
-    import torch
-except ImportError:  # pragma: no cover - optional dependency
-    torch = None
 import fitz
 import openai
 from docx import Document
-try:
-    from transformers import AutoTokenizer, AutoModel
-except ImportError:  # pragma: no cover - optional dependency
-    AutoTokenizer = None
-    AutoModel = None
 
 from django.core.management.base import BaseCommand
 from django.conf import settings
@@ -141,14 +132,6 @@ def preprocess_text_vietnamese(text: str) -> str:
     text = normalize('NFC', text)
     text = re.sub(r'[^\w\s]', '', text)
     return re.sub(r'\s+', ' ', text).strip()
-
-
-def get_sentence_embedding(text, tokenizer, model, device):
-    inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True, max_length=256)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-    with torch.no_grad():
-        outputs = model(**inputs)
-    return outputs.last_hidden_state.mean(dim=1)
 
 
 async def rephrase_text_with_chatgpt(text, question_text, client):
@@ -325,23 +308,7 @@ class Command(BaseCommand):
         self.channel_layer = get_channel_layer()
         self.audio_chunks = {}
         self.audio_stream_meta = {}
-        self.device = "cuda" if (torch is not None and torch.cuda.is_available()) else "cpu"
-        self.stdout.write(f"Sử dụng thiết bị: {self.device}")
-        self.stdout.write("Đang tải PhoBERT model...")
-        if torch is None or AutoTokenizer is None or AutoModel is None:
-            self.phobert_model = None
-            self.phobert_tokenizer = None
-            self.stderr.write("PhoBERT dependencies chưa sẵn sàng - sẽ bỏ qua mô hình cục bộ.")
-        else:
-            try:
-                self.phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
-                self.phobert_model = AutoModel.from_pretrained("vinai/phobert-base").to(self.device)
-                self.phobert_model.eval()
-                self.stdout.write("PhoBERT đã sẵn sàng.")
-            except Exception as e:
-                self.phobert_model = None
-                self.phobert_tokenizer = None
-                self.stderr.write(f"Lỗi khi tải PhoBERT: {e} - sẽ bỏ qua mô hình cục bộ.")
+
         self.stdout.write("Đang cấu hình OpenAI client...")
         try:
             self.openai_client = openai.OpenAI()
@@ -350,6 +317,7 @@ class Command(BaseCommand):
         except Exception as e:
             self.openai_client = None
             self.stderr.write(f"Lỗi cấu hình OpenAI: {e} - đặt OPENAI_API_KEY trước.")
+
 
     async def _persist_grading_state(
         self,

@@ -34,7 +34,7 @@ from .models import (
     StudentRosterUpload,
     Subject,
     UserProfile,
-    resolve_audio_mime_type,
+    resolve_audio_mime_type, StudentListUploadStatus, SemesterChoices,
 )
 
 TEST_CACHES = {
@@ -2081,6 +2081,7 @@ class LecturerExamSessionManagementTests(TestCase):
             original_file_name="Danh_sach_L01.xlsx",
             total_students=2,
             created_by=self.lecturer,
+            status=StudentListUploadStatus.CREATED,
         )
         self.roster_student_1 = StudentRosterStudent.objects.create(
             roster=self.roster,
@@ -2100,6 +2101,12 @@ class LecturerExamSessionManagementTests(TestCase):
             account_created=True,
             account_status=StudentRosterAccountStatus.EXISTING,
         )
+        self.roster.refresh_status()
+        self.roster.refresh_from_db()
+
+        if self.roster.status != StudentListUploadStatus.CREATED:
+            self.roster.status = StudentListUploadStatus.CREATED
+            self.roster.save(update_fields=["status"])
 
         self.exam_set = self._create_approved_exam_set()
         self.exam_codes = list(self.exam_set.exam_codes.order_by("code_number", "exam_code_id"))
@@ -2136,6 +2143,28 @@ class StudentExamAccessTests(TestCase):
             display_order=1,
         )
         self.room.students.add(self.student)
+        self.dashboard_roster = StudentRosterUpload.objects.create(
+            subject=self.subject,
+            academic_year="2025-2026",
+            semester="HK1",
+            title="Danh_sach_Dashboard",
+            original_file_name="Danh_sach_Dashboard.xlsx",
+            total_students=1,
+            created_by=self.lecturer,
+            status=StudentListUploadStatus.CREATED,
+        )
+
+        self.dashboard_roster_student = StudentRosterStudent.objects.create(
+            roster=self.dashboard_roster,
+            row_number=1,
+            student_code="SVEXAM01",
+            full_name="Sinh Vien Exam",
+            linked_user=self.student,
+            account_created=True,
+            account_status=StudentRosterAccountStatus.EXISTING,
+        )
+
+        self.student.userprofile.subjects_enrolled.add(self.subject)
 
         self.bank = QuestionBank.objects.create(
             subject=self.subject,
@@ -2194,6 +2223,7 @@ class StudentExamAccessTests(TestCase):
             original_file_name="Danh_sach_L01.xlsx",
             total_students=2,
             created_by=self.lecturer,
+            status=StudentListUploadStatus.CREATED,
         )
         self.roster_student_1 = StudentRosterStudent.objects.create(
             roster=self.roster,
@@ -2213,6 +2243,13 @@ class StudentExamAccessTests(TestCase):
             account_created=True,
             account_status=StudentRosterAccountStatus.EXISTING,
         )
+
+        self.roster.refresh_status()
+        self.roster.refresh_from_db()
+
+        if self.roster.status != StudentListUploadStatus.CREATED:
+            self.roster.status = StudentListUploadStatus.CREATED
+            self.roster.save(update_fields=["status"])
 
         self.client.force_login(self.lecturer)
         self.exam_set = self._create_approved_exam_set()
@@ -2437,17 +2474,12 @@ class StudentExamAccessTests(TestCase):
         self.assertNotIn("finalizeAndShowResult", onstop_block.group("body"))
         self.assertNotIn("skipAudioSubmit", html)
 
-    def test_exam_page_js_face_violations_do_not_force_finalize(self):
+    def test_exam_page_js_camera_and_two_face_violations_do_not_force_finalize(self):
         response = self._open_verified_exam_page()
         html = response.content.decode("utf-8")
 
         camera_block = re.search(
             r"function handleCameraInterrupted\(\) \{(?P<body>.*?)\n\s*\}\n\n\s*function sendProctoringViolation",
-            html,
-            re.S,
-        )
-        no_face_block = re.search(
-            r"if \(detections\.length === 0\) \{(?P<body>.*?)\n\s*\} else \{",
             html,
             re.S,
         )
@@ -2458,14 +2490,16 @@ class StudentExamAccessTests(TestCase):
         )
 
         self.assertIsNotNone(camera_block)
-        self.assertIsNotNone(no_face_block)
         self.assertIsNotNone(multi_face_block)
+
         self.assertNotIn("forceExamTermination", camera_block.group("body"))
-        self.assertNotIn("forceExamTermination", no_face_block.group("body"))
         self.assertNotIn("forceExamTermination", multi_face_block.group("body"))
-        self.assertIn("showProctoringWarning", camera_block.group("body"))
-        self.assertIn("showProctoringWarning", no_face_block.group("body"))
+
         self.assertIn("showProctoringWarning", multi_face_block.group("body"))
+
+        # Hệ thống hiện tại không theo dõi NO_FACE bằng face detection.
+        self.assertNotIn('sendProctoringViolation("NO_FACE")', html)
+        self.assertNotIn("sendProctoringViolation('NO_FACE')", html)
 
     def test_student_dashboard_shows_finished_exam_as_outside_exam_window(self):
                 self.exam_group.exam_date = timezone.now() - timedelta(hours=2)
@@ -2792,7 +2826,8 @@ class StudentExamAccessTests(TestCase):
                 self.assertNotIn('Giảng viên tự nhập đúng 5 ký tự cho phòng thi.', content)
                 self.assertNotIn(': "Chưa gắn bộ đề";', content)
                 self.assertNotIn(': "Chưa gắn";', content)
-                self.assertIsNone(re.search("[\\u00C3\\u00C2\\u00C4\\u00C5]", content))
+                mojibake_pattern = r"(Ã[^\sA-Z]|Â[^\sA-Z]|Ä‘|áº|á»|Æ°|Æ¡)"
+                self.assertIsNone(re.search(mojibake_pattern, content))
 
     def test_create_exam_group_screen_persists_session_configuration(self):
                 response = self._post_json(
@@ -3243,28 +3278,6 @@ class StudentExamAccessTests(TestCase):
                 self.assertEqual(html.count("fa-exclamation-triangle"), 1)
                 self.assertNotIn("detail-link-disabled", html)
 
-    def test_student_review_hides_no_face_only_warning_from_lecturer(self):
-                exam_group = self._create_exam_group()
-                session = ExamSession.objects.create(
-                    user=self.student_user_1,
-                    subject=self.subject,
-                    exam_session_group_id=exam_group,
-                    cheating_flag=True,
-                )
-                session.violation_images.create(
-                    image_blob=b"img1",
-                    image_mime="image/jpeg",
-                    violation_type="NO_FACE",
-                )
-
-                response = self.client.get(
-                    reverse("qna:lecturer_student_review_screen"),
-                    {"subject_id": self.subject.id},
-                )
-
-                self.assertEqual(response.status_code, 200)
-                html = response.content.decode("utf-8")
-                self.assertEqual(html.count("fa-exclamation-triangle"), 0)
 
     def test_lecturer_can_open_incomplete_session_detail_after_exam_ends(self):
                 exam_group = self._create_exam_group()
@@ -3514,11 +3527,6 @@ class StudentExamAccessTests(TestCase):
                 session.violation_images.create(
                     image_blob=b"img2",
                     image_mime="image/jpeg",
-                    violation_type="NO_FACE",
-                )
-                session.violation_images.create(
-                    image_blob=b"img3",
-                    image_mime="image/jpeg",
                     violation_type="CAMERA_OFF",
                 )
 
@@ -3528,7 +3536,6 @@ class StudentExamAccessTests(TestCase):
 
                 self.assertEqual(response.status_code, 200)
                 html = response.content.decode("utf-8")
-                self.assertNotIn("Không phát hiện khuôn mặt trong khung hình", html)
                 self.assertEqual(html.count('class="fraud-item'), 2)
                 self.assertIn("data-fraud-toggle", html)
 
@@ -3805,6 +3812,45 @@ class SessionDetailScoreSyncTests(TestCase):
                 }
             )
         return snapshot
+
+    def _ensure_student_in_uploaded_roster(self, user=None, subject=None):
+        user = user or self.student_user
+        subject = subject or self.subject
+
+        profile, _ = UserProfile.objects.get_or_create(user_id=user)
+        profile.is_lecturer = False
+        profile.student_id = getattr(profile, "student_id", "") or user.username
+        profile.save()
+
+        roster, _ = StudentRosterUpload.objects.get_or_create(
+            subject_id=subject,
+            academic_year="2025-2026",
+            semester=SemesterChoices.HK1,
+            defaults={
+                "title": "Danh sách test",
+                "original_file_name": "test_roster.xlsx",
+                "total_students": 1,
+                "created_by_user_id": self.lecturer_user,
+                "status": StudentListUploadStatus.CREATED,
+            },
+        )
+
+        StudentRosterStudent.objects.get_or_create(
+            student_roster_upload_id=roster,
+            student_code=profile.student_id or user.username,
+            defaults={
+                "row_number": 1,
+                "full_name": profile.full_name or user.username,
+                "class_name": profile.class_name or "TEST",
+                "linked_user_id": user,
+                "account_created": True,
+                "account_status": StudentRosterAccountStatus.EXISTING,
+            },
+        )
+
+        roster.refresh_status()
+        profile.subjects_enrolled.add(subject)
+        return roster
 
     def test_student_history_detail_hides_audio_player_and_filename(self):
         session = self._create_completed_session(
@@ -4209,6 +4255,28 @@ class ExamWindowBoundaryTests(TestCase):
                     room_password="ABCDE",
                     display_order=1,
                 )
+                self.dashboard_roster = StudentRosterUpload.objects.create(
+                    subject=self.subject,
+                    academic_year="2025-2026",
+                    semester="HK1",
+                    title="Danh_sach_Dashboard",
+                    original_file_name="Danh_sach_Dashboard.xlsx",
+                    total_students=1,
+                    created_by=self.lecturer,
+                    status=StudentListUploadStatus.CREATED,
+                )
+
+                self.dashboard_roster_student = StudentRosterStudent.objects.create(
+                    roster=self.dashboard_roster,
+                    row_number=1,
+                    student_code="SVEXAM01",
+                    full_name="Sinh Vien Exam",
+                    linked_user=self.student,
+                    account_created=True,
+                    account_status=StudentRosterAccountStatus.EXISTING,
+                )
+
+                self.student.userprofile.subjects_enrolled.add(self.subject)
                 self.room.students.add(self.student)
                 self.seb_headers = {
                     "HTTP_USER_AGENT": "SEB",
@@ -5065,7 +5133,7 @@ class ExamSubmissionRegressionTests(TestCase):
                     self.assertTrue(grace_context["submission_window_open"])
                     self.assertTrue(grace_context["session_is_active"])
 
-    def test_websocket_no_face_violation_does_not_mark_session_cheating(self):
+    def test_websocket_two_faces_violation_marks_session_cheating(self):
         from .consumers import ExamConsumer
 
         self._start_session()
@@ -5074,12 +5142,12 @@ class ExamSubmissionRegressionTests(TestCase):
         consumer.session = self.session
         consumer.session_id = self.session.id
 
-        async_to_sync(consumer.save_violation_image)("NO_FACE", "data:image/jpeg;base64,ZmFrZQ==")
-        async_to_sync(consumer.mark_session_cheating)("NO_FACE")
+        async_to_sync(consumer.save_violation_image)("TWO_FACES", "data:image/jpeg;base64,ZmFrZQ==")
+        async_to_sync(consumer.mark_session_cheating)("TWO_FACES")
 
         self.session.refresh_from_db()
-        self.assertFalse(self.session.cheating_flag)
-        self.assertEqual(self.session.violation_images.filter(violation_type="NO_FACE").count(), 1)
+        self.assertTrue(self.session.cheating_flag)
+        self.assertEqual(self.session.violation_images.filter(violation_type="TWO_FACES").count(), 1)
 
     def test_exam_consumer_forwards_progress_event_to_browser(self):
         from .consumers import ExamConsumer
@@ -5415,7 +5483,6 @@ class StudentEnrollmentTests(TestCase):
     def tearDown(self):
         self.override.disable()
         shutil.rmtree(self.media_root, ignore_errors=True)
-
     def test_student_dashboard_shows_only_enrolled_subjects(self):
         # Tạo student user
         student = self.user_model.objects.create_user(

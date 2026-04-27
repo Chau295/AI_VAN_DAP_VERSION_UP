@@ -120,9 +120,9 @@
               {% endif %}
             </td>
             <td class="px-6 py-4 text-sm">
-              {% if session.history_status == "COMPLETED" %}
+              {% if session.history_status == "COMPLETED" or session.history_status == "ABSENT" %}
               <div class="font-bold text-blue-600">
-                {{ session.final_display_score|default:0|floatformat:-2 }}{{ session.score_scale_suffix }}
+                {{ session.final_display_score|default:0|floatformat:-2 }}{{ session.score_scale_suffix|default:"/10" }}
               </div>
               {% if session.show_non_ten_scale_warning %}
                 <div class="mt-1 text-xs text-amber-700">{{ session.score_scale_warning }}</div>

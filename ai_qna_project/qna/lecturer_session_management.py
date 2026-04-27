@@ -42,7 +42,7 @@ from .models import (
 
 LIST_PAGE_SIZE = 8
 
-from .student_accounts import normalize_student_code
+from .lecturer_student_accounts import normalize_student_code
 
 User = get_user_model()
 
@@ -151,6 +151,119 @@ def _generate_room_password(length=5):
     alphabet = string.ascii_uppercase + string.digits
     return "".join(random.choice(alphabet) for _ in range(length))
 
+def _extract_roster_ids_from_exam_group_config(exam_group):
+    config = exam_group.configuration_data or {}
+    roster_items = config.get("rosters") or []
+
+    roster_ids = set()
+    for item in roster_items:
+        if isinstance(item, dict):
+            roster_id = _session_safe_int(item.get("id"))
+        else:
+            roster_id = _session_safe_int(item)
+
+        if roster_id:
+            roster_ids.add(roster_id)
+
+    return roster_ids
+
+
+def _format_session_time_range(start_at, end_at):
+    if not start_at or not end_at:
+        return ""
+
+    local_start = timezone.localtime(start_at)
+    local_end = timezone.localtime(end_at)
+
+    if local_start.date() == local_end.date():
+        return f"{local_start:%H:%M} - {local_end:%H:%M}, ngày {local_start:%d/%m/%Y}"
+
+    return f"{local_start:%H:%M %d/%m/%Y} - {local_end:%H:%M %d/%m/%Y}"
+
+
+def _get_student_codes_for_roster_ids(roster_ids):
+    clean_roster_ids = {
+        _session_safe_int(roster_id)
+        for roster_id in (roster_ids or [])
+        if _session_safe_int(roster_id)
+    }
+
+    if not clean_roster_ids:
+        return set()
+
+    return {
+        normalize_student_code(student_code)
+        for student_code in StudentRosterStudent.objects.filter(
+            student_roster_upload_id__in=clean_roster_ids,
+        ).values_list("student_code", flat=True)
+        if normalize_student_code(student_code)
+    }
+
+
+def _find_overlapping_exam_group_for_student_codes(
+    *,
+    academic_year,
+    semester,
+    student_codes,
+    start_at,
+    end_at,
+    exclude_exam_group=None,
+):
+    """
+    Chặn sinh viên bị trùng lịch thi giữa các môn.
+
+    Rule:
+    - Cùng MSSV
+    - Cùng năm học
+    - Cùng học kỳ
+    - Ca thi khác bị trùng thời gian
+    => Không cho lưu.
+
+    Quy ước overlap:
+    - Có overlap nếu existing_start < new_end và existing_end > new_start.
+    - Nếu ca cũ kết thúc đúng lúc ca mới bắt đầu thì không tính là trùng.
+    """
+    clean_student_codes = {
+        normalize_student_code(code)
+        for code in (student_codes or [])
+        if normalize_student_code(code)
+    }
+
+    if not academic_year or not semester or not clean_student_codes or not start_at or not end_at:
+        return None, set()
+
+    candidate_qs = (
+        ExamSessionGroup.objects.filter(
+            academic_year=academic_year,
+            semester=semester,
+            exam_date__lt=end_at,
+        )
+        .exclude(status__in=["DRAFT", "CANCELLED"])
+        .select_related("subject_id")
+        .order_by("exam_date", "pk")
+    )
+
+    if exclude_exam_group and getattr(exclude_exam_group, "pk", None):
+        candidate_qs = candidate_qs.exclude(pk=exclude_exam_group.pk)
+
+    for candidate in candidate_qs:
+        candidate_start = candidate.exam_date
+        candidate_end = candidate.end_at
+
+        if not candidate_start or not candidate_end:
+            continue
+
+        if not (candidate_start < end_at and candidate_end > start_at):
+            continue
+
+        candidate_roster_ids = _extract_roster_ids_from_exam_group_config(candidate)
+        candidate_student_codes = _get_student_codes_for_roster_ids(candidate_roster_ids)
+        overlapped_student_codes = candidate_student_codes & clean_student_codes
+
+        if overlapped_student_codes:
+            return candidate, overlapped_student_codes
+
+    return None, set()
 
 def _session_get_payload(request):
     if request.content_type and "application/json" in request.content_type:
@@ -452,6 +565,40 @@ def _normalize_session_configuration(request, payload, exam_group=None):
 
     if not is_draft and not roster_configs:
         errors.append("Vui lòng chọn ít nhất một nguồn danh sách sinh viên.")
+
+    selected_student_codes = {
+        normalize_student_code(row.student_code)
+        for row in roster_students_by_id.values()
+        if normalize_student_code(row.student_code)
+    }
+
+    if not is_draft and start_at and end_at and selected_student_codes:
+        overlapped_group, overlapped_student_codes = _find_overlapping_exam_group_for_student_codes(
+            academic_year=academic_year,
+            semester=semester,
+            student_codes=selected_student_codes,
+            start_at=start_at,
+            end_at=end_at,
+            exclude_exam_group=exam_group,
+        )
+
+        if overlapped_group:
+            sample_codes = sorted(overlapped_student_codes)[:5]
+            sample_label = ", ".join(sample_codes)
+            extra_count = len(overlapped_student_codes) - len(sample_codes)
+
+            if extra_count > 0:
+                sample_label = f"{sample_label} và {extra_count} sinh viên khác"
+
+            time_label = _format_session_time_range(overlapped_group.exam_date, overlapped_group.end_at)
+            subject_name = getattr(overlapped_group.subject, "name", "") or "môn học khác"
+
+            errors.append(
+                f"Không thể tạo ca thi vì sinh viên {sample_label} đã có ca thi trùng thời gian "
+                f"'{overlapped_group.group_name}' của môn {subject_name}"
+                f"{f' ({time_label})' if time_label else ''}. "
+                "Vui lòng chọn khung giờ khác không trùng với ca thi hiện có."
+            )
 
     rooms_payload = payload.get("rooms") or []
     normalized_rooms = []

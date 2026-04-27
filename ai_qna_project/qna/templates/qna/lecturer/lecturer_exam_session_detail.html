@@ -75,7 +75,7 @@
     justify-content: center;
     gap: 0.6rem;
     min-height: 48px;
-    padding: 0 1.2rem;
+    padding: 0 1.5rem;
     border-radius: 10px;
     text-decoration: none;
     font-weight: 700;
@@ -114,7 +114,6 @@
   }
 
   .detail-primary-btn {
-    min-width: 300px;
     background: var(--detail-blue);
     color: #fff;
     box-shadow: 0 14px 28px rgba(38, 73, 166, 0.2);
@@ -175,7 +174,7 @@
 
   .detail-info-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .detail-info-cell {
@@ -184,18 +183,13 @@
     border-bottom: 1px solid #ecf1f7;
   }
 
-  .detail-info-cell:nth-child(3) {
-    display: none;
-  }
-
-  .detail-info-cell:nth-child(2),
-  .detail-info-cell:nth-child(5),
-  .detail-info-cell:nth-child(6) {
+  .detail-info-cell:nth-child(3n) {
     border-right: 0;
   }
 
+  .detail-info-cell:nth-child(4),
+  .detail-info-cell:nth-child(5),
   .detail-info-cell:nth-child(6) {
-    grid-column: span 2;
     border-bottom: 0;
   }
 
@@ -484,7 +478,7 @@
     padding: 0.75rem 1.5rem;
     border-radius: 6px;
     border: none;
-    background: #3B10E5; /* Màu tím đặc trưng như thiết kế */
+    background: #3B10E5;
     color: #FFFFFF;
     font-weight: 600;
     font-size: 1rem;
@@ -507,6 +501,12 @@
     .detail-info-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .detail-info-cell:nth-child(3n) { border-right: 1px solid #ecf1f7; }
+    .detail-info-cell:nth-child(2n) { border-right: 0; }
+    .detail-info-cell:nth-child(4) { border-bottom: 1px solid #ecf1f7; }
+    .detail-info-cell:nth-child(5),
+    .detail-info-cell:nth-child(6) { border-bottom: 0; }
   }
 
   @media (max-width: 768px) {
@@ -536,7 +536,13 @@
       grid-template-columns: 1fr;
     }
 
-    .detail-info-cell { border-right: 0; }
+    .detail-info-cell {
+      border-right: 0 !important;
+      border-bottom: 1px solid #ecf1f7 !important;
+    }
+    .detail-info-cell:last-child {
+      border-bottom: 0 !important;
+    }
   }
 </style>
 

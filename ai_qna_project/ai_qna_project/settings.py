@@ -8,19 +8,25 @@ except ImportError:  # pragma: no cover - optional in local/test environments
 else:
     HAS_WHITENOISE = True
 
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = "django-insecure-if@6s5)2b1+)vbko#wa$*u$y+ccr%)q981o%&n8e2y%i@ga@eq"
-
-# Mặc định bật DEBUG để không cần set env trên máy mới.
-# Nếu sau này muốn tắt, chỉ cần set DEBUG=False trong môi trường.
-DEBUG = os.getenv("DEBUG", "True").strip().lower() == "true"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me")
+DEBUG = env_bool("DJANGO_DEBUG", True)
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
     if host.strip()
 ]
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -103,19 +109,19 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [os.getenv("CHANNEL_REDIS_URL", "redis://127.0.0.1:6379/0")],
         },
-    }
+    },
 }
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/1")
 
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": REDIS_URL,
     }
 }
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "ffmpeg")
 FFPROBE_BINARY = os.getenv("FFPROBE_BINARY", "ffprobe")

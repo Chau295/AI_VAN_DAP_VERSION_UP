@@ -6,7 +6,7 @@ from typing import Any
 from django.core.cache import cache
 from django.utils import timezone
 
-LECTURER_HIDDEN_VIOLATION_TYPES = {"NO_FACE"}
+LECTURER_HIDDEN_VIOLATION_TYPES: set[str] = set()
 POST_END_SUBMISSION_GRACE_SECONDS = 15
 EXAM_GRADING_STATE_TIMEOUT_SECONDS = 60 * 60
 EXAM_GRADING_STATUS_PENDING = "PENDING"

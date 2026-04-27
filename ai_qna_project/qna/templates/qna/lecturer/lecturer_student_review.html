@@ -376,7 +376,7 @@
                     <td>
                       <span class="score-value">
                         {% if session.can_display_score %}
-                          {{ session.final_display_score|floatformat:2 }}
+                          {{ session.final_display_score|default:0|floatformat:2 }}{% if session.final_display_score_suffix %}<span style="font-size: 0.9rem; color: #64748b;">{{ session.final_display_score_suffix }}</span>{% else %}<span style="font-size: 0.9rem; color: #64748b;">/10</span>{% endif %}
                         {% else %}
                           -
                         {% endif %}
