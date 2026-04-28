@@ -145,6 +145,12 @@
       </div>
       <div class="p-6 flex-grow overflow-y-auto space-y-4">
         <div class="card p-4"><div class="text-sm text-gray-500">Câu hỏi</div><div id="detailQuestion" class="mt-1 font-semibold text-gray-800"></div></div>
+
+        <div class="card p-4">
+          <div class="text-sm text-gray-500">Transcript câu trả lời</div>
+          <div id="detailTranscript" class="mt-1 text-gray-800 whitespace-pre-line"></div>
+        </div>
+
         <div class="card p-4"><div class="text-sm text-gray-500">Nhận xét</div><div id="detailFeedback" class="mt-1 text-gray-800"></div></div>
         <div id="detailAnalysisBlock" class="card p-4" style="display:none;">
           <div class="text-sm text-gray-500">Phân tích đáp án</div>
@@ -154,11 +160,7 @@
           <div class="text-sm text-gray-500">Điểm</div>
           <div><span id="detailScore" class="text-2xl font-bold text-blue-600">0.00</span><span id="detailMax" class="text-gray-500"></span></div>
         </div>
-        <div id="detailAudioBlock" class="card p-4" style="display:none;">
-          <div class="text-sm text-gray-500">File ghi âm</div>
-          <audio id="detailAudio" controls class="mt-2 w-full"></audio>
         </div>
-      </div>
       <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex-shrink-0 flex items-center justify-end gap-3">
         <button id="btnCloseDetail" class="btn">Đóng</button>
       </div>
@@ -209,10 +211,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const GRADING_POLL_INTERVAL_MS = 2000;
   const GRADING_REQUEST_TIMEOUT_MS = 90000;
 
+  const DASHBOARD_URL = "{% url 'qna:dashboard' %}";
+
   const API_ENDPOINTS = {
     FINALIZE: "{% url 'qna:finalize_session' session.id %}",
+    HEARTBEAT: "{% url 'qna:exam_heartbeat' session.id %}",
+    SAVE_RECORDING_CHUNK: "{% url 'qna:save_exam_recording_chunk' %}",
     GRADING_STATUS_TEMPLATE: "{% url 'qna:exam_grading_status' session.id 999999 %}"
   };
+
+  const EXAM_STORAGE_PREFIX = `exam:${SESSION_ID}`;
+  const PENDING_GRADING_KEY = `${EXAM_STORAGE_PREFIX}:pending_grading_question`;
+  const DRAFT_DB_NAME = 'exam_recording_drafts';
+  const DRAFT_STORE_NAME = 'recordings';
+  const DRAFT_KEY = String(SESSION_ID);
 
   let scoreScaleSuffix = SCORE_SCALE_SUFFIX;
   let showNonTenWarning = SHOW_NON_TEN_WARNING;
@@ -276,6 +288,8 @@ document.addEventListener('DOMContentLoaded', () => {
     gradingPollTimer: null,
     lastGradingUpdateMs: 0,
     handledResultKeys: new Set(),
+    heartbeatTimer: null,
+    lastChunkIndex: 0,
   };
 
   document.querySelectorAll('.question-choice-btn').forEach(btn => {
@@ -407,13 +421,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const showAlert = (message, type = 'error') => {
     if (!message) return;
 
-    // Ưu tiên toast/popup global của hệ thống
     if (typeof window.showGlobalToast === 'function') {
       window.showGlobalToast(message, type);
       return;
     }
 
-    // Fallback vẫn là popup tự tạo, tuyệt đối không dùng alert()
     showSystemPopup({
       title: type === 'success' ? 'Thành công' : 'Thông báo',
       message,
@@ -439,44 +451,51 @@ document.addEventListener('DOMContentLoaded', () => {
       popup.className = 'modal';
       popup.style.display = 'flex';
 
-      popup.innerHTML = `
-        <div class="modal-content w-full max-w-md bg-white rounded-xl shadow-2xl flex flex-col m-4">
-          <div class="p-6 border-b border-gray-200">
-            <h3 class="text-2xl font-bold text-gray-800">${title}</h3>
-          </div>
-          <div class="p-6 text-gray-700 leading-relaxed">
-            ${message}
-          </div>
-          <div class="p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end gap-3">
-            ${
-              hideCancel
-                ? ''
-                : `<button type="button" id="systemPopupCancel" class="btn">${cancelText}</button>`
-            }
-            <button type="button" id="systemPopupConfirm" class="btn ${danger ? '' : 'btn-primary'}">
-              ${confirmText}
-            </button>
-          </div>
-        </div>
-      `;
+      const content = document.createElement('div');
+      content.className = 'modal-content w-full max-w-md bg-white rounded-xl shadow-2xl flex flex-col m-4';
 
-      document.body.appendChild(popup);
+      const header = document.createElement('div');
+      header.className = 'p-6 border-b border-gray-200';
+
+      const titleEl = document.createElement('h3');
+      titleEl.className = 'text-2xl font-bold text-gray-800';
+      titleEl.textContent = title;
+
+      header.appendChild(titleEl);
+
+      const body = document.createElement('div');
+      body.className = 'p-6 text-gray-700 leading-relaxed';
+      body.textContent = message;
+
+      const footer = document.createElement('div');
+      footer.className = 'p-4 bg-gray-50 border-t border-gray-200 rounded-b-xl flex items-center justify-end gap-3';
 
       const close = (value) => {
         popup.remove();
         resolve(value);
       };
 
-      const cancelBtn = popup.querySelector('#systemPopupCancel');
-      const confirmBtn = popup.querySelector('#systemPopupConfirm');
-
-      if (cancelBtn) {
+      if (!hideCancel) {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn';
+        cancelBtn.textContent = cancelText;
         cancelBtn.addEventListener('click', () => close(false));
+        footer.appendChild(cancelBtn);
       }
 
-      if (confirmBtn) {
-        confirmBtn.addEventListener('click', () => close(true));
-      }
+      const confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.className = `btn ${danger ? '' : 'btn-primary'}`;
+      confirmBtn.textContent = confirmText;
+      confirmBtn.addEventListener('click', () => close(true));
+      footer.appendChild(confirmBtn);
+
+      content.appendChild(header);
+      content.appendChild(body);
+      content.appendChild(footer);
+      popup.appendChild(content);
+      document.body.appendChild(popup);
 
       popup.addEventListener('click', (event) => {
         if (event.target === popup && !hideCancel) {
@@ -490,11 +509,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof window.showGlobalConfirm === 'function') {
       return await window.showGlobalConfirm(options);
     }
-
     return await showSystemPopup(options);
   }
 
-  function resetGradingProgress(detail = 'Hệ thống đang chờ worker nhận audio...') {
+  function resetGradingProgress(detail = 'Hệ thống đang chờ xử lý âm thanh...') {
     state.gradingProgress = {
       stage: '',
       detail,
@@ -516,13 +534,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderGradingProgress() {
     const progress = state.gradingProgress;
-    const stageLabel = PROGRESS_STAGE_LABELS[progress.stage] || 'Đang chờ xử lý âm thanh...';
+    const stageLabel = PROGRESS_STAGE_LABELS[progress.stage] || 'Đang chờ xử lý...';
 
     if (elements.gradingStageText) {
       elements.gradingStageText.textContent = stageLabel;
     }
     if (elements.gradingStageDetail) {
-      elements.gradingStageDetail.textContent = progress.detail || 'Hệ thống sẽ cập nhật tiến trình chấm bài theo thời gian thực.';
+      elements.gradingStageDetail.textContent = progress.detail || 'Hệ thống sẽ cập nhật tiến trình chấm bài.';
     }
   }
 
@@ -661,8 +679,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function startGradingStatusPolling(questionId) {
     stopGradingStatusPolling();
+    rememberPendingGradingQuestion(questionId);
     state.pendingGradingQuestionId = questionId;
     state.lastGradingUpdateMs = Date.now();
+
     state.gradingPollTimer = window.setTimeout(() => {
       pollGradingStatus(questionId).catch((error) => {
         console.error('Initial grading poll error:', error);
@@ -701,6 +721,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
       setAnswerUIState('grading');
+
+      try {
+        state.mediaRecorder.requestData?.();
+      } catch (error) {
+        console.warn('requestData before timeout stop failed:', error);
+      }
+
+      saveCurrentRecordingDraft().catch(() => {});
       state.mediaRecorder.stop();
       return;
     }
@@ -823,6 +851,138 @@ document.addEventListener('DOMContentLoaded', () => {
     state.socket.onerror = (err) => console.error('WebSocket error:', err);
   }
 
+  function openExamDraftDB() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error('Trình duyệt không hỗ trợ IndexedDB.'));
+        return;
+      }
+
+      const request = indexedDB.open(DRAFT_DB_NAME, 1);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(DRAFT_STORE_NAME)) {
+          db.createObjectStore(DRAFT_STORE_NAME, { keyPath: 'sessionId' });
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+ function rememberPendingGradingQuestion(questionId) {
+    if (!questionId) return;
+    sessionStorage.setItem(PENDING_GRADING_KEY, String(questionId));
+  }
+
+  function forgetPendingGradingQuestion() {
+    sessionStorage.removeItem(PENDING_GRADING_KEY);
+  }
+
+  function getPendingGradingQuestionId() {
+    return Number(sessionStorage.getItem(PENDING_GRADING_KEY) || 0);
+  }
+
+  function hasExistingResult(questionId) {
+    return state.mainResults.some(r => Number(r.question_id) === Number(questionId));
+  }
+
+  async function readDraftRecording() {
+    const db = await openExamDraftDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DRAFT_STORE_NAME, 'readonly');
+      const store = tx.objectStore(DRAFT_STORE_NAME);
+      const request = store.get(DRAFT_KEY);
+
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function writeDraftRecording(record) {
+    const db = await openExamDraftDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DRAFT_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(DRAFT_STORE_NAME);
+
+      store.put({
+        sessionId: DRAFT_KEY,
+        ...record,
+        updatedAt: Date.now(),
+      });
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function clearDraftRecording() {
+    try {
+      const db = await openExamDraftDB();
+
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DRAFT_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(DRAFT_STORE_NAME);
+        store.delete(DRAFT_KEY);
+
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (error) {
+      console.warn('Không thể xóa draft ghi âm:', error);
+    }
+  }
+
+  async function saveCurrentRecordingDraft() {
+    if (!state.currentQuestion || !state.audioChunks.length) return;
+
+    await writeDraftRecording({
+      question: state.currentQuestion,
+      mimeType: state.currentAudioMimeType || 'audio/webm',
+      chunks: state.audioChunks,
+    });
+  }
+
+  async function uploadRecordingChunk(chunk) {
+    if (!chunk || !chunk.size || !state.currentQuestion) return;
+
+    const questionId = state.currentQuestion.id;
+    const chunkIndex = state.lastChunkIndex++;
+
+    const mimeType = state.currentAudioMimeType || chunk.type || 'audio/webm';
+
+    const formData = new FormData();
+    formData.append('session_id', SESSION_ID);
+    formData.append('question_id', questionId);
+    formData.append('chunk_index', String(chunkIndex));
+    formData.append('audio_mime_type', mimeType);
+    formData.append(
+      'audio_chunk',
+      new File(
+        [chunk],
+        `chunk_${SESSION_ID}_${questionId}_${chunkIndex}.webm`,
+        { type: chunk.type || mimeType }
+      )
+    );
+
+    try {
+      await fetch(API_ENDPOINTS.SAVE_RECORDING_CHUNK, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+        },
+        body: formData,
+        credentials: 'same-origin',
+      });
+    } catch (error) {
+      console.warn('Không thể upload chunk ghi âm:', error);
+    }
+  }
+
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -831,6 +991,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       state.audioChunks = [];
       state.currentAudioBlob = null;
+      state.lastChunkIndex = 0;
 
       const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -842,7 +1003,17 @@ document.addEventListener('DOMContentLoaded', () => {
       state.currentAudioMimeType = normalizeAudioMimeType(state.mediaRecorder.mimeType || preferredMimeType);
 
       state.mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) state.audioChunks.push(e.data);
+        if (e.data && e.data.size > 0) {
+          state.audioChunks.push(e.data);
+
+          saveCurrentRecordingDraft().catch((error) => {
+            console.warn('Không thể lưu draft ghi âm:', error);
+          });
+
+          uploadRecordingChunk(e.data).catch((error) => {
+            console.warn('Không thể upload chunk ghi âm:', error);
+          });
+        }
       };
 
       state.mediaRecorder.onstop = async () => {
@@ -863,6 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       setAnswerUIState('recording');
       state.mediaRecorder.start(1000);
+      saveCurrentRecordingDraft().catch(() => {});
     } catch (e) {
       showAlert('Không thể truy cập microphone. Vui lòng cấp quyền và thử lại.');
       console.error('Microphone access error:', e);
@@ -897,7 +1069,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function submitAudio(blob) {
+  function waitForSocketOpen(timeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+      if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        resolve(true);
+        return;
+      }
+
+      if (!state.socket || state.socket.readyState === WebSocket.CLOSED || state.socket.readyState === WebSocket.CLOSING) {
+        connectWebSocket();
+      }
+
+      const startedAt = Date.now();
+
+      const timer = window.setInterval(() => {
+        if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+          window.clearInterval(timer);
+          resolve(true);
+          return;
+        }
+
+        if (Date.now() - startedAt >= timeoutMs) {
+          window.clearInterval(timer);
+          reject(new Error('WebSocket chưa sẵn sàng.'));
+        }
+      }, 200);
+    });
+  }
+
+  async function submitAudio(blob, options = {}) {
     if (state.isSubmittingAnswer) return;
     setSubmittingAnswer(true);
     const allowLateAnswerFlush = shouldAllowLateAnswerFlush();
@@ -932,19 +1132,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-      setSubmittingAnswer(false);
-      showAlert('Kênh chấm điểm chưa sẵn sàng. Vui lòng thử lại.');
-      state.currentQuestion = null;
+      try {
+        await waitForSocketOpen(options.waitSocket ? 15000 : 5000);
+      } catch (error) {
+        setSubmittingAnswer(false);
+        showAlert('Kênh chấm điểm chưa sẵn sàng. Vui lòng thử lại.');
+        state.currentQuestion = null;
 
-      if (state.pendingExamFinalize) {
-        await finalizePendingExamIfNeeded();
+        if (state.pendingExamFinalize) {
+          await finalizePendingExamIfNeeded();
+          return;
+        }
+
+        setQuestionListLocked(false);
+        showScreen('selection');
+        setAnswerUIState('interaction');
         return;
       }
-
-      setQuestionListLocked(false);
-      showScreen('selection');
-      setAnswerUIState('interaction');
-      return;
     }
 
     const { id } = state.currentQuestion;
@@ -1024,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function handleExamError(message) {
     stopGradingStatusPolling();
     state.pendingGradingQuestionId = null;
+    forgetPendingGradingQuestion();
     pushGradingLog(message || 'Có lỗi xảy ra trong quá trình chấm điểm.');
     setSubmittingAnswer(false);
     state.currentQuestion = null;
@@ -1049,12 +1254,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (state.handledResultKeys.has(handledResultKey)) {
         stopGradingStatusPolling();
         state.pendingGradingQuestionId = null;
+        forgetPendingGradingQuestion();
         setSubmittingAnswer(false);
         return;
       }
       state.handledResultKeys.add(handledResultKey);
       stopGradingStatusPolling();
       state.pendingGradingQuestionId = null;
+      forgetPendingGradingQuestion();
       logTranscriptDebug('exam.result.transcript', data.transcript, data.question_id);
       applyProgressPayload({
         stage: 'score_ready',
@@ -1079,6 +1286,7 @@ document.addEventListener('DOMContentLoaded', () => {
           rawScore: Number(data.score || 0),
           maxScore: scaledScore.maxScore,
           feedback: data.feedback,
+          transcript: data.transcript || '',
           analysis: data.analysis || [],
           result_id: data.result_id,
           text: state.questions.find(q => q.id === data.question_id)?.question_text || '',
@@ -1091,6 +1299,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localResult.rawScore = Number(data.score || 0);
         localResult.maxScore = scaledScore.maxScore;
         localResult.feedback = data.feedback;
+        localResult.transcript = data.transcript || localResult.transcript || '';
         localResult.analysis = data.analysis || [];
         localResult.result_id = data.result_id;
       }
@@ -1105,6 +1314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localResult.audioUrl = '';
         showAlert(error.message || 'Đã chấm điểm xong nhưng không thể đính kèm file ghi âm.');
       }
+      await clearDraftRecording();
 
       const btn = document.querySelector(`.question-choice-btn[data-question-id="${data.question_id}"]`);
       if (btn) {
@@ -1159,6 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.exitFinalizeSent = true;
       state.pendingExamFinalize = false;
       state.pendingFinalizeIsTimeout = false;
+      stopHeartbeat();
       setSubmittingAnswer(false);
       syncFinishExamButtonState();
     }
@@ -1170,12 +1381,21 @@ document.addEventListener('DOMContentLoaded', () => {
     return state.mainResults.find(r => r.question_id === questionId) || null;
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
   function showFinalResult(isForcedEnd = false, forcedNote = '') {
     const rows = state.questions.map((q, index) => {
       const result = getQuestionResult(q.id);
       return `
         <div class="card p-4 transition-all hover:shadow-md hover:border-blue-400">
-          <p class="text-gray-700 mb-3 line-clamp-2">${q.question_text || 'Không có nội dung câu hỏi'}</p>
+          <p class="text-gray-700 mb-3 line-clamp-2">${escapeHtml(q.question_text || 'Không có nội dung câu hỏi')}</p>
           <div class="flex items-center justify-between border-t border-gray-200 pt-3">
             <div class="text-sm text-gray-500">
               <span class="font-semibold text-gray-800">Câu ${index + 1}:</span>
@@ -1184,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${result ? 'Đã trả lời' : 'Chưa trả lời'}
               </div>
             </div>
-            ${result ? `<button data-index="${index}" data-question-id="${q.id}" class="btn btn-sm detail-btn">Xem chi tiết</button>` : ''}
+            ${result ? `<button type="button" data-index="${index}" data-question-id="${q.id}" class="btn btn-sm detail-btn">Xem chi tiết</button>` : ''}
           </div>
         </div>
       `;
@@ -1212,17 +1432,24 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.show('finalResultModal');
   }
 
-  function showAnswerDetail({ title, question, feedback, analysis, score, max, audioUrl }) {
+  function showAnswerDetail({ title, question, transcript, feedback, analysis, score, max }) {
     document.getElementById('detailTitle').textContent = title || 'Chi tiết câu trả lời';
     document.getElementById('detailQuestion').textContent = question || '';
+    document.getElementById('detailTranscript').textContent = transcript || 'Chưa có transcript câu trả lời.';
     document.getElementById('detailFeedback').textContent = feedback || 'Chưa có nhận xét';
 
     const analysisBlock = document.getElementById('detailAnalysisBlock');
     const analysisList = document.getElementById('detailAnalysis');
 
+    // Dùng DOM createElement để render thay cho innerHTML nhằm phòng tránh XSS
+    analysisList.innerHTML = '';
     if (Array.isArray(analysis) && analysis.length > 0) {
       analysisBlock.style.display = 'block';
-      analysisList.innerHTML = analysis.map(a => `<li>${a}</li>`).join('');
+      analysis.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = String(item || '');
+        analysisList.appendChild(li);
+      });
     } else {
       analysisBlock.style.display = 'none';
     }
@@ -1230,49 +1457,145 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('detailScore').textContent = formatScore(score);
     document.getElementById('detailMax').textContent = ` / ${formatScore(max)}`;
 
-    const audioBlock = document.getElementById('detailAudioBlock');
-    const audioEl = document.getElementById('detailAudio');
-
-    if (audioUrl) {
-      audioBlock.style.display = 'block';
-      audioEl.src = audioUrl;
-      audioEl.load();
-    } else {
-      audioBlock.style.display = 'none';
-      audioEl.removeAttribute('src');
-      audioEl.load();
-    }
-
     modal.show('answerDetailModal');
   }
 
+  function sendFinalizeBeacon(reason = 'exit_exam') {
+    if (state.examFinished || state.exitFinalizeSent) return;
+
+    state.exitFinalizeSent = true;
+
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', csrfToken);
+    formData.append('reason', reason);
+
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(API_ENDPOINTS.FINALIZE, formData);
+        return;
+      }
+    } catch (error) {
+      console.warn('sendBeacon failed:', error);
+    }
+
+    fetch(API_ENDPOINTS.FINALIZE, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+      keepalive: true,
+    }).catch((error) => {
+      console.warn('Finalize keepalive failed:', error);
+    });
+  }
+
   function setupEventListeners() {
-    document.getElementById('question-list').addEventListener('click', (e) => {
-      const btn = e.target.closest('.question-choice-btn');
-      if (btn && !btn.classList.contains('pointer-events-none')) {
-        const question = state.questions.find(q => q.id === Number(btn.dataset.questionId));
+    // Xử lý sự kiện click trên toàn bộ body nhưng ủy quyền lại cho các phần tử cụ thể
+    document.body.addEventListener('click', (e) => {
+
+      // 1. Nhấn nút Xem chi tiết (.detail-btn)
+      const detailBtn = e.target.closest('.detail-btn');
+      if (detailBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const qid = Number(detailBtn.dataset.questionId || 0);
+        if (!qid) return;
+
+        const question = state.questions.find(q => Number(q.id) === qid);
+        const result = state.mainResults.find(r => Number(r.question_id) === qid);
+
+        if (!question || !result) {
+          showAlert('Không tìm thấy dữ liệu chi tiết của câu hỏi này.');
+          return;
+        }
+
+        showAnswerDetail({
+          title: `Câu ${question.order || ''}`,
+          question: question.question_text || '',
+          transcript: result.transcript || '',
+          feedback: result.feedback || 'Chưa có nhận xét',
+          analysis: Array.isArray(result.analysis) ? result.analysis : [],
+          score: result.score || 0,
+          max: result.maxScore || getQuestionMaxScore(qid)
+        });
+        return;
+      }
+      // 2. Nhấn nút Đóng Modal Chi Tiết
+      const closeDetailBtn = e.target.closest('#btnCloseDetail');
+      if (closeDetailBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        modal.hide('answerDetailModal');
+        return;
+      }
+
+      // 3. Nhấn nút Hoàn thành và về trang chủ
+      const btnFinishAll = e.target.closest('#btnFinishAll');
+      if (btnFinishAll) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Tắt guard bằng state
+        state.hasUnloadGuard = false;
+
+        window.location.href = DASHBOARD_URL;
+        return;
+      }
+
+      // 4. Các nút Chọn câu hỏi để làm bài
+      const questionBtn = e.target.closest('.question-choice-btn');
+      if (questionBtn && !questionBtn.classList.contains('pointer-events-none')) {
+        const question = state.questions.find(q => q.id === Number(questionBtn.dataset.questionId));
         if (question) startAnswering(question);
       }
     });
 
-    document.getElementById('finalResultModal').addEventListener('click', (e) => {
-      const btn = e.target.closest('.detail-btn');
-      if (!btn) return;
+    // Vẫn giữ lại listener bắt các thẻ <a> chuyển hướng trang để chặn nếu người dùng vô ý rời trang thi
+    document.addEventListener('click', (event) => {
+      const link = event.target.closest('a');
+      if (!link || state.examFinished) return;
 
-      const qid = Number(btn.dataset.questionId);
-      const question = state.questions.find(q => q.id === qid);
-      const result = state.mainResults.find(r => r.question_id === qid);
+      const href = link.getAttribute('href') || '';
+      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
 
-      showAnswerDetail({
-        title: `Câu ${question?.order || ''}`,
-        question: question?.question_text || '',
-        feedback: result?.feedback || 'Chưa có nhận xét',
-        analysis: result?.analysis || [],
-        score: result?.score || 0,
-        max: result?.maxScore || getQuestionMaxScore(qid),
-        audioUrl: result?.audioUrl || ''
-      });
-    });
+      const targetUrl = new URL(link.href, window.location.href);
+
+      const isLeavingCurrentExamPage =
+        targetUrl.origin === window.location.origin &&
+        targetUrl.pathname !== window.location.pathname;
+
+      if (isLeavingCurrentExamPage) {
+        if (state.mediaRecorder?.state === 'recording') {
+          event.preventDefault();
+
+          state.pendingExamFinalize = true;
+          state.pendingFinalizeIsTimeout = false;
+          state.forcedFinishReason = 'Sinh viên rời khỏi bài thi. Hệ thống đã tự nộp câu ghi âm hiện tại và chốt bài.';
+
+          forceStopRecordingAndSubmitCurrentQuestion(
+            'Sinh viên rời khỏi bài thi. Đang tự nộp câu ghi âm hiện tại để chấm điểm...'
+          );
+
+          return;
+        }
+
+        if (state.isSubmittingAnswer) {
+          event.preventDefault();
+
+          state.pendingExamFinalize = true;
+          state.pendingFinalizeIsTimeout = false;
+          state.forcedFinishReason = 'Sinh viên rời khỏi bài thi khi câu trả lời đang được chấm. Hệ thống sẽ chốt bài sau khi chấm xong.';
+
+          showAlert('Câu trả lời đang được chấm. Hệ thống sẽ tự chốt bài sau khi chấm xong.');
+          setAnswerUIState('grading');
+          showScreen('answer');
+
+          return;
+        }
+
+        sendFinalizeBeacon('student_left_exam_page');
+      }
+    }, true);
 
     elements.backBtn.onclick = () => {
       if (state.mediaRecorder?.state === 'recording' || state.isSubmittingAnswer || state.pendingExamFinalize || state.isFinalizingExam) return;
@@ -1282,6 +1605,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     elements.stopBtn.onclick = stopRecording;
+
     document.getElementById('finish-exam-btn').onclick = async () => {
       if (state.isFinalizingExam) {
         return;
@@ -1316,15 +1640,17 @@ document.addEventListener('DOMContentLoaded', () => {
       await finalizeAndShowResult(false);
     };
 
-    document.getElementById('btnCloseDetail').onclick = () => modal.hide('answerDetailModal');
-    document.getElementById('btnFinishAll').onclick = () => {
-      window.location.href = "{% url 'qna:dashboard' %}";
-    };
-
+    // Before Unload guard
     window.addEventListener('beforeunload', (event) => {
-      if (!state.examFinished && !state.isFinalizingExam && state.hasUnloadGuard) {
-        event.preventDefault();
-        event.returnValue = '';
+      if (!state.hasUnloadGuard) return; // Nếu đã chủ động tắt guard thì bỏ qua
+
+      if (state.mediaRecorder?.state === 'recording') {
+        try {
+          state.mediaRecorder.requestData?.();
+        } catch (error) {
+          console.warn('requestData before unload failed:', error);
+        }
+        saveCurrentRecordingDraft().catch(() => {});
       }
     });
   }
@@ -1447,14 +1773,44 @@ document.addEventListener('DOMContentLoaded', () => {
     proctoringState.lastViolationTime = now;
 
     const warning = document.createElement('div');
-    warning.style.cssText = `position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 3px solid #f59e0b; border-radius: 16px; padding: 24px 32px; z-index: 10000; box-shadow: 0 10px 40px rgba(245, 158, 11, 0.4); animation: pulse-warning 0.5s ease-in-out; max-width: 400px;`;
-    warning.innerHTML = `
-      <div style="text-align: center;">
-        <i class="fas fa-exclamation-triangle text-5xl text-amber-600 mb-4"></i>
-        <h3 style="color: #92400e; font-size: 20px; font-weight: bold; margin-bottom: 8px;">CẢNH BÁO GIÁM SÁT</h3>
-        <p style="color: #78350f; font-size: 14px; line-height: 1.5;">${message}</p>
-        <button onclick="this.parentElement.parentElement.remove();" style="margin-top: 16px; background: #f59e0b; color: white; border: none; padding: 8px 24px; border-radius: 8px; font-weight: bold; cursor: pointer;">Đã hiểu</button>
-      </div>`;
+    warning.style.cssText = `
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border: 3px solid #f59e0b;
+      border-radius: 16px;
+      padding: 24px 32px;
+      z-index: 10000;
+      box-shadow: 0 10px 40px rgba(245, 158, 11, 0.4);
+      animation: pulse-warning 0.5s ease-in-out;
+      max-width: 400px;
+    `;
+
+    const box = document.createElement('div');
+    box.style.textAlign = 'center';
+
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-exclamation-triangle text-5xl text-amber-600 mb-4';
+
+    const title = document.createElement('h3');
+    title.style.cssText = 'color:#92400e;font-size:20px;font-weight:bold;margin-bottom:8px;';
+    title.textContent = 'CẢNH BÁO GIÁM SÁT';
+
+    const text = document.createElement('p');
+    text.style.cssText = 'color:#78350f;font-size:14px;line-height:1.5;';
+    text.textContent = message;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Đã hiểu';
+    btn.style.cssText = 'margin-top:16px;background:#f59e0b;color:white;border:none;padding:8px 24px;border-radius:8px;font-weight:bold;cursor:pointer;';
+    btn.addEventListener('click', () => warning.remove());
+
+    box.appendChild(icon);
+    box.appendChild(title);
+    box.appendChild(text);
+    box.appendChild(btn);
+    warning.appendChild(box);
     document.body.appendChild(warning);
   }
 
@@ -1608,14 +1964,208 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function restorePendingGradingIfNeeded() {
+    const questionId = getPendingGradingQuestionId();
+
+    if (!questionId) return false;
+
+    if (hasExistingResult(questionId)) {
+      forgetPendingGradingQuestion();
+      return false;
+    }
+
+    const question = state.questions.find(q => Number(q.id) === Number(questionId));
+    if (!question) {
+      forgetPendingGradingQuestion();
+      return false;
+    }
+
+    try {
+      const draft = await readDraftRecording();
+
+      if (
+        draft &&
+        draft.question &&
+        Number(draft.question.id || 0) === Number(questionId) &&
+        Array.isArray(draft.chunks) &&
+        draft.chunks.length
+      ) {
+        state.currentAudioMimeType = normalizeAudioMimeType(draft.mimeType || 'audio/webm');
+
+        state.currentAudioBlob = new Blob(draft.chunks, {
+          type: state.currentAudioMimeType || 'audio/webm',
+        });
+
+        state.audioChunks = draft.chunks;
+      }
+    } catch (error) {
+      console.warn('Không thể khôi phục audio draft cho câu đang chấm:', error);
+    }
+    state.currentQuestion = { ...question, type: 'main' };
+    state.pendingGradingQuestionId = questionId;
+
+    elements.aTitle.textContent = 'Câu hỏi';
+    elements.aQuestion.textContent = question.question_text || '';
+    setQuestionListLocked(true);
+    setSubmittingAnswer(true);
+    resetGradingProgress('Đang khôi phục tiến trình chấm câu trả lời...');
+    setAnswerUIState('grading');
+    showScreen('answer');
+
+    startGradingStatusPolling(questionId);
+    return true;
+  }
+
+  async function restoreDraftRecordingIfNeeded() {
+    let draft = null;
+
+    try {
+      draft = await readDraftRecording();
+    } catch (error) {
+      console.warn('Không thể đọc draft ghi âm:', error);
+      return false;
+    }
+
+    if (!draft || !draft.question || !Array.isArray(draft.chunks) || !draft.chunks.length) {
+      return false;
+    }
+
+    const questionId = Number(draft.question.id || 0);
+
+    if (!questionId || hasExistingResult(questionId)) {
+      await clearDraftRecording();
+      return false;
+    }
+
+    const question = state.questions.find(q => Number(q.id) === questionId) || draft.question;
+
+    state.currentQuestion = { ...question, type: 'main' };
+    state.currentAudioMimeType = normalizeAudioMimeType(draft.mimeType || 'audio/webm');
+
+    const audioBlob = new Blob(draft.chunks, {
+      type: state.currentAudioMimeType || 'audio/webm',
+    });
+
+    state.currentAudioBlob = audioBlob;
+    state.audioChunks = draft.chunks;
+
+    elements.aTitle.textContent = 'Câu hỏi';
+    elements.aQuestion.textContent = question.question_text || '';
+    setQuestionListLocked(true);
+    resetGradingProgress('Trang vừa được tải lại. Hệ thống đang tự nộp câu ghi âm trước đó để chấm điểm...');
+    setAnswerUIState('grading');
+    showScreen('answer');
+
+    await submitAudio(audioBlob, { waitSocket: true, fromDraft: true });
+    return true;
+  }
+
+  function forceStopRecordingAndSubmitCurrentQuestion(message = '') {
+    if (state.mediaRecorder?.state === 'recording') {
+
+      resetGradingProgress(message || 'Hệ thống đang tự nộp câu ghi âm hiện tại để chấm điểm...');
+      setAnswerUIState('grading');
+      showScreen('answer');
+
+      try {
+        state.mediaRecorder.requestData?.();
+      } catch (error) {
+        console.warn('requestData failed:', error);
+      }
+
+      state.mediaRecorder.stop();
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleBrowserBackAttempt() {
+    if (state.examFinished || state.isFinalizingExam) return;
+
+    if (state.mediaRecorder?.state === 'recording') {
+      state.pendingExamFinalize = true;
+      state.pendingFinalizeIsTimeout = false;
+      state.forcedFinishReason = 'Sinh viên bấm Back. Hệ thống đã tự nộp câu ghi âm hiện tại và chốt bài.';
+
+      showAlert('Bạn vừa bấm Back. Hệ thống sẽ tự nộp câu ghi âm hiện tại rồi chốt bài.');
+      forceStopRecordingAndSubmitCurrentQuestion('Sinh viên bấm Back. Đang tự nộp câu ghi âm hiện tại...');
+      return;
+    }
+
+    if (state.isSubmittingAnswer) {
+      state.pendingExamFinalize = true;
+      state.pendingFinalizeIsTimeout = false;
+      state.forcedFinishReason = 'Sinh viên bấm Back khi câu trả lời đang được chấm. Hệ thống sẽ chốt bài sau khi chấm xong.';
+
+      showAlert('Câu trả lời đang được chấm. Hệ thống sẽ tự chốt bài sau khi chấm xong.');
+      setAnswerUIState('grading');
+      showScreen('answer');
+      return;
+    }
+
+    state.pendingExamFinalize = false;
+    state.pendingFinalizeIsTimeout = false;
+    state.forcedFinishReason = 'Sinh viên bấm Back/rời khỏi bài thi. Hệ thống đã tự động nộp bài.';
+
+    showAlert('Bạn vừa bấm Back. Hệ thống sẽ tự động nộp bài thi.');
+    finalizeAndShowResult(false, state.forcedFinishReason).catch((error) => {
+      console.error('Finalize after browser back failed:', error);
+    });
+  }
+
+  async function sendHeartbeat() {
+    if (state.examFinished || state.isFinalizingExam) return;
+
+    try {
+      const response = await fetch(API_ENDPOINTS.HEARTBEAT, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (data.status === 'finalized') {
+        state.examFinished = true;
+        stopHeartbeat();
+        showAlert('Bài thi đã được hệ thống chốt.');
+      }
+    } catch (error) {
+      console.warn('Heartbeat failed:', error);
+    }
+  }
+
+  function startHeartbeat() {
+    stopHeartbeat();
+
+    sendHeartbeat();
+
+    state.heartbeatTimer = window.setInterval(() => {
+      sendHeartbeat();
+    }, 5000);
+  }
+
+  function stopHeartbeat() {
+    if (state.heartbeatTimer) {
+      window.clearInterval(state.heartbeatTimer);
+      state.heartbeatTimer = null;
+    }
+  }
+
   function init() {
     const sidebar = document.getElementById('sidebar');
     if (sidebar) sidebar.classList.add('collapsed');
     resetGradingProgress();
 
     history.pushState({ examLocked: true }, '', window.location.href);
+
     window.addEventListener('popstate', () => {
       history.pushState({ examLocked: true }, '', window.location.href);
+      handleBrowserBackAttempt();
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -1627,6 +2177,16 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     connectWebSocket();
     startMainTimer();
+    startHeartbeat();
+
+    restorePendingGradingIfNeeded()
+      .then((restoredGrading) => {
+        if (restoredGrading) return true;
+        return restoreDraftRecordingIfNeeded();
+      })
+      .catch((error) => {
+        console.error('Restore exam state failed:', error);
+      });
 
     initializeProctoring().catch(err => {
       console.error('Proctoring initialization failed:', err);
@@ -1634,7 +2194,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener('pagehide', () => {
+    if (state.mediaRecorder?.state === 'recording') {
+      try {
+        state.mediaRecorder.requestData?.();
+      } catch (error) {
+        console.warn('requestData pagehide failed:', error);
+      }
+
+      saveCurrentRecordingDraft().catch(() => {});
+    }
+
+    stopHeartbeat();
     window.clearTimeout(window.__wsReconnectTimer);
     stopGradingStatusPolling();
     stopMonitoring();
@@ -1643,11 +2214,4 @@ document.addEventListener('DOMContentLoaded', () => {
   init();
 });
 </script>
-
-<style>
-@keyframes pulse-warning {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); }
-  50% { transform: translate(-50%, -50%) scale(1.05); }
-}
-</style>
 {% endblock %}

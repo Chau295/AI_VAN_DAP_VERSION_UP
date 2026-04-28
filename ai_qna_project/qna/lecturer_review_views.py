@@ -68,57 +68,91 @@ LIST_PAGE_SIZE = 8
 # REVIEW / EXPORT
 # =========================================================
 
+def _force_lecturer_review_status_completed_or_absent(session: ExamSession) -> str:
+    """
+    Màn kết quả giảng viên chỉ hiển thị 2 trạng thái:
+    - COMPLETED: Đã hoàn thành
+    - ABSENT: Vắng thi
+
+    Không hiển thị STARTED/IN_PROGRESS/PENDING/Đang thực hiện.
+    """
+    resolved_status = _resolve_exam_session_status(session, allow_in_progress=True)
+    raw_status = getattr(session, "session_status", "") or ""
+
+    if resolved_status == "ABSENT" or raw_status == "ABSENT":
+        if getattr(session, "final_score", None) is None:
+            session.final_score = 0
+            if getattr(session, "pk", None):
+                session.save(update_fields=["final_score"])
+        return "ABSENT"
+
+    # Các session PENDING được tạo để bù vắng thi cũng phải là Vắng thi.
+    has_started = bool(getattr(session, "started_at", None))
+    has_completed = bool(getattr(session, "completed_at", None))
+    has_result = False
+
+    if getattr(session, "pk", None):
+        has_result = ExamResult.objects.filter(exam_session_id=session).exists()
+
+    if raw_status == "PENDING" and not has_started and not has_completed and not has_result:
+        if getattr(session, "final_score", None) is None:
+            session.final_score = 0
+            if getattr(session, "pk", None):
+                session.save(update_fields=["final_score"])
+        return "ABSENT"
+
+    # Còn lại, bên màn kết quả giảng viên đều coi là Đã hoàn thành.
+    if getattr(session, "pk", None) and raw_status != "COMPLETED":
+        _, final_total = _compute_scores(session)
+        final_total = round(float(final_total or 0), 2)
+
+        update_fields = []
+
+        session.session_status = "COMPLETED"
+        update_fields.append("session_status")
+
+        if getattr(session, "completed_at", None) is None:
+            session.completed_at = timezone.now()
+            update_fields.append("completed_at")
+
+        if session.final_score != final_total:
+            session.final_score = final_total
+            update_fields.append("final_score")
+
+        if update_fields:
+            session.save(update_fields=update_fields)
+
+    return "COMPLETED"
+
+
 def _attach_review_status_meta(session: ExamSession) -> None:
-    """
-    Chỉ gán các field tạm thời KHÔNG đụng vào property.
-    """
-    resolved_status = _resolve_exam_session_status(session)
+    resolved_status = _force_lecturer_review_status_completed_or_absent(session)
     session.review_status = resolved_status
 
-    if resolved_status == "COMPLETED":
+    if resolved_status == "ABSENT":
+        session.review_status_label = "Vắng thi"
+        session.review_status_class = "status-absent"
+        session.can_view_detail = bool(getattr(session, "id", None))
+        session.can_display_score = True
+        if getattr(session, "final_score", None) is None:
+            session.final_score = 0
+    else:
         session.review_status_label = "Đã hoàn thành"
         session.review_status_class = "status-completed"
         session.can_view_detail = True
         session.can_display_score = True
-
-
-    elif resolved_status == "ABSENT":
-
-        session.review_status_label = "Vắng thi"
-
-        session.review_status_class = "status-absent"
-
-        # Cho phép bấm xem chi tiết bài thi vắng thi
-
-        session.can_view_detail = bool(getattr(session, "id", None))
-
-        # Vắng thi vẫn hiển thị điểm 0/10
-
-        session.can_display_score = True
-
-        if getattr(session, "final_score", None) is None:
-            session.final_score = 0
-
-    else:
-        session.review_status_label = "Đang thực hiện"
-        session.review_status_class = "status-in-progress"
-        session.can_view_detail = False
-        session.can_display_score = False
 
     session.status_label = session.review_status_label
     session.status_class = session.review_status_class
 
 
 def _attach_history_status_meta(session: ExamSession) -> None:
-    resolved_status = _resolve_exam_session_status(session, allow_in_progress=True)
-    session.history_status = resolved_status or "IN_PROGRESS"
+    resolved_status = _force_lecturer_review_status_completed_or_absent(session)
+    session.history_status = resolved_status
 
-    if session.history_status == "ABSENT":
+    if resolved_status == "ABSENT":
         session.history_status_label = "Vắng thi"
         session.history_status_class = "status-absent"
-    elif session.history_status == "IN_PROGRESS":
-        session.history_status_label = "Đang thực hiện"
-        session.history_status_class = "status-in-progress"
     else:
         session.history_status_label = "Đã hoàn thành"
         session.history_status_class = "status-completed"
@@ -278,7 +312,7 @@ def lecturer_student_review_screen(request):
     selected_semester = raw_semester if raw_semester in valid_semesters else ""
 
     raw_status = (request.GET.get("status") or "").strip()
-    valid_review_statuses = {"COMPLETED", "ABSENT", "IN_PROGRESS"}
+    valid_review_statuses = {"COMPLETED", "ABSENT"}
     selected_status = raw_status if raw_status in valid_review_statuses else ""
 
     selected_exam_group_id = int(raw_exam_group_id) if raw_exam_group_id.isdigit() else None
@@ -293,7 +327,6 @@ def lecturer_student_review_screen(request):
         ("", "Trạng thái: Tất cả"),
         ("COMPLETED", "Đã hoàn thành"),
         ("ABSENT", "Vắng thi"),
-        ("IN_PROGRESS", "Đang thực hiện"),
     ]
 
     if selected_subject:
@@ -423,12 +456,13 @@ def lecturer_student_review_screen(request):
         if getattr(row, "has_violation_warning", False):
             flagged_count += 1
 
-        status_label = getattr(row, "review_status_label", "")
-        if status_label == "Đã hoàn thành":
+        status = getattr(row, "review_status", None)
+
+        if status == "ABSENT":
+            absent_count += 1
+        else:
             completed_count += 1
             total_score += float(getattr(row, "final_score", 0.0) or 0.0)
-        elif status_label == "Vắng thi":
-            absent_count += 1
 
     average_score = round(total_score / completed_count, 1) if completed_count else 0
 
@@ -500,9 +534,6 @@ def lecturer_session_detail(request, session_id):
     if session.final_score != final_total:
         session.final_score = final_total
     _attach_review_status_meta(session)
-    if getattr(session, "review_status", None) == "IN_PROGRESS":
-        messages.error(request, "Phiên thi đang diễn ra. Chưa thể xem chi tiết.")
-        return redirect("qna:lecturer_student_review_screen")
     _attach_session_score_meta(session)
     _attach_session_duration_meta(session)
     _attach_session_assignment_meta(session)

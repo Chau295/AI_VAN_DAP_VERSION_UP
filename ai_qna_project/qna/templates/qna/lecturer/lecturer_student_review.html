@@ -371,7 +371,11 @@
                     <td>{{ session.exam_date_display|date:"d/m/Y" }}</td>
                     <td>{{ session.actual_duration_display|default:"-" }}</td>
                     <td>
-                      <span class="status-pill {{ session.review_status_class|default:session.status_class }}">{{ session.review_status_label|default:session.status_label }}</span>
+                      {% if session.review_status == "ABSENT" or session.session_status == "ABSENT" %}
+                        <span class="status-pill status-absent">Vắng thi</span>
+                      {% else %}
+                        <span class="status-pill status-completed">Đã hoàn thành</span>
+                      {% endif %}
                     </td>
                     <td>
                       <span class="score-value">

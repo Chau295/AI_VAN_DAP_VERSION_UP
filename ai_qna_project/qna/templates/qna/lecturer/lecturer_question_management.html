@@ -1411,7 +1411,6 @@
   let pollingTimer = null;
   let editingQuestionId = null;
   let deletingQuestionId = null;
-  const pendingQuestionEdits = {};
   // Cảnh báo thoát trang đã bị tắt để tránh phiền người dùng
 
   function getCookie(name) {
@@ -1478,47 +1477,6 @@
 
     return workspaceId;
 
-}
-
-  function markQuestionAsPendingEdit(row, questionId, content, difficulty) {
-    if (!row || !questionId) return;
-
-    const key = String(questionId);
-
-    pendingQuestionEdits[key] = {
-      question_id: Number(questionId),
-      content: content,
-      difficulty: difficulty
-    };
-
-    row.classList.add('draft-row', 'selected');
-    row.dataset.isPendingEdit = 'true';
-
-    const checkbox = row.querySelector('.question-checkbox');
-    if (checkbox) checkbox.checked = true;
-
-    const contentNode = row.querySelector('.qm2-question-content');
-    if (contentNode) contentNode.textContent = content;
-
-    row.querySelectorAll('.qm2-inline-edit-select').forEach(select => {
-      select.value = difficulty;
-      if (select.classList.contains('question-difficulty-select')) {
-        select.dataset.originalValue = difficulty;
-      }
-    });
-
-    const extraNode = row.querySelector('.qm2-question-extra');
-    if (extraNode && !extraNode.querySelector('.pending-edit-pill')) {
-      extraNode.insertAdjacentHTML(
-        'afterbegin',
-        '<span class="qm2-draft-pill pending-edit-pill"><i class="fas fa-pen"></i> Đã chỉnh sửa (Chưa cập nhật)</span>'
-      );
-    }
-
-    row.querySelectorAll('.qm2-edit-mode').forEach(el => el.style.display = 'none');
-    row.querySelectorAll('.qm2-view-mode').forEach(el => el.style.display = '');
-
-    updateQuestionSelectionUI();
 }
 
   async function confirmUploadFiles(files) {
@@ -1846,22 +1804,21 @@
     }
 
     questionList.innerHTML = questions.map(q => {
-      const pendingEdit = pendingQuestionEdits[String(q.question_id)] || null;
-      const displayContent = pendingEdit ? pendingEdit.content : q.content;
-      const displayDifficulty = pendingEdit ? pendingEdit.difficulty : q.difficulty;
+      const displayContent = q.content;
+      const displayDifficulty = q.difficulty;
 
-      const isDraftLike = q.is_draft || !!pendingEdit;
+      const isDraftLike = q.is_draft;
       const draftClass = isDraftLike ? 'draft-row' : '';
 
-      const draftBadge = pendingEdit
-        ? `<span class="qm2-draft-pill pending-edit-pill"><i class="fas fa-pen"></i> Đã chỉnh sửa (Chưa cập nhật)</span>`
-        : (q.is_draft ? `<span class="qm2-draft-pill"><i class="fas fa-star"></i> Mới tạo (Chưa lưu)</span>` : '');
+      const draftBadge = q.is_draft
+        ? `<span class="qm2-draft-pill"><i class="fas fa-star"></i> Mới tạo / chỉnh sửa (Chưa lưu)</span>`
+        : '';
 
       const autoCheck = isDraftLike ? 'checked' : '';
       const disabled = '';
 
       return `
-      <div class="qm2-question-row ${draftClass}" data-question-id="${q.question_id}" data-difficulty="${displayDifficulty}" data-is-draft="${q.is_draft ? 'true' : 'false'}" data-is-pending-edit="${pendingEdit ? 'true' : 'false'}">
+      <div class="qm2-question-row ${draftClass}" data-question-id="${q.question_id}" data-difficulty="${displayDifficulty}" data-is-draft="${q.is_draft ? 'true' : 'false'}" data-is-pending-edit="false">
         <input type="checkbox" class="question-checkbox" value="${q.question_id}" data-question-id="${q.question_id}" ${autoCheck}>
 
         <div class="qm2-question-main">
@@ -1942,16 +1899,6 @@
 
         this.disabled = true;
 
-        if (viewType === 'bank' && !isRealDraft) {
-          const contentNode = row.querySelector('.qm2-question-content');
-          const content = contentNode ? contentNode.textContent.trim() : '';
-
-          markQuestionAsPendingEdit(row, questionId, content, difficulty);
-          showToast('Đã đánh dấu thay đổi. Bấm Cập nhật vào ngân hàng để lưu.');
-          this.disabled = false;
-          return;
-        }
-
         try {
           const res = await fetch(`/api/lecturer/questions/${questionId}/update/`, {
             method: 'POST',
@@ -1972,7 +1919,6 @@
           }
 
           this.dataset.originalValue = difficulty;
-          showToast('Đã cập nhật mức độ câu hỏi');
           await fetchQuestions();
         } catch (err) {
           this.value = originalValue;
@@ -2036,13 +1982,6 @@
         this.disabled = true;
         const isRealDraft = row?.dataset.isDraft === 'true';
 
-        if (viewType === 'bank' && !isRealDraft) {
-            markQuestionAsPendingEdit(row, id, content, difficulty);
-            showToast('Đã đánh dấu thay đổi. Bấm Cập nhật vào ngân hàng để lưu.');
-            this.innerHTML = originalHtml;
-            this.disabled = false;
-            return;
-        }
         try {
             const url = `/api/lecturer/questions/${id}/update/`; // Endpoint update của bạn
             const res = await fetch(url, {
@@ -2059,7 +1998,6 @@
 
             if (data.status !== 'SUCCESS') throw new Error(data.message || 'Lỗi cập nhật câu hỏi');
 
-            showToast('Đã lưu thành công');
             await fetchQuestions(); // Tải lại danh sách để render lại view chuẩn
         } catch (err) {
             showToast(err.message, 'error');
@@ -2430,7 +2368,6 @@
       textarea.value = '';
       editingQuestionId = null;
       toggleModal('addQuestionModal', false);
-      showToast(isEditing ? 'Cập nhật thành công' : 'Tạo câu hỏi thành công');
       await fetchQuestions();
     } catch (err) {
       showToast(err.message || 'Thao tác thất bại.', 'error');
@@ -2446,50 +2383,35 @@
     }
 
     if (viewType === 'bank') {
-      const draftUpdates = [];
-
-      ids.forEach(id => {
-        const row = document.querySelector(`.qm2-question-row[data-question-id="${id}"]`);
-        if (!row) return;
-
-        const isRealDraft = row.dataset.isDraft === 'true';
-        const contentNode = row.querySelector('.qm2-question-content');
-        const content = contentNode ? contentNode.textContent.trim() : '';
-
-        if (isRealDraft) {
-          draftUpdates.push(
-            fetch(`/api/lecturer/questions/${id}/update/`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-              },
-              body: JSON.stringify({
-                difficulty: selectedBulkLevel,
-                workspace_id: workspaceId,
-                view_type: viewType
-              })
-            })
-          );
-        } else {
-          markQuestionAsPendingEdit(row, id, content, selectedBulkLevel);
-        }
-      });
+      const activeWorkspaceId = ensureWorkspaceId();
 
       try {
-        if (draftUpdates.length) {
-          const responses = await Promise.all(draftUpdates);
-          for (const response of responses) {
-            const data = await response.json();
-            if (data.status !== 'SUCCESS') {
-              throw new Error(data.message || 'Không thể cập nhật mức độ câu hỏi nháp.');
-            }
+        const updateRequests = ids.map(id => {
+          return fetch(`/api/lecturer/questions/${id}/update/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+              difficulty: selectedBulkLevel,
+              workspace_id: activeWorkspaceId,
+              view_type: viewType
+            })
+          });
+        });
+
+        const responses = await Promise.all(updateRequests);
+
+        for (const response of responses) {
+          const data = await response.json();
+          if (data.status !== 'SUCCESS') {
+            throw new Error(data.message || 'Không thể cập nhật mức độ câu hỏi.');
           }
-          await fetchQuestions();
         }
 
         toggleModal('changeLevelModal', false);
-        showToast('Đã đánh dấu/cập nhật thay đổi mức độ. Bấm Cập nhật vào ngân hàng để lưu chính thức.');
+        await fetchQuestions();
       } catch (err) {
         showToast(err.message || 'Thay đổi mức độ thất bại.', 'error');
       }
@@ -2547,9 +2469,6 @@
 
       deletingQuestionId = null;
       showToast('Xóa thành công');
-      ids.forEach(id => {
-        delete pendingQuestionEdits[String(id)];
-      });
       clearQuestionSelection();
       await fetchQuestions();
     } catch (err) {
@@ -2559,10 +2478,6 @@
 
   async function handleSaveBank() {
     const ids = getSelectedQuestionIds();
-    const pendingEdits = ids
-      .map(id => pendingQuestionEdits[String(id)])
-      .filter(Boolean);
-
     if (ids.length === 0) {
       showToast('Vui lòng chọn ít nhất 1 câu hỏi để lưu.', 'warning');
       return;
@@ -2580,8 +2495,7 @@
           },
           body: JSON.stringify({
             question_ids: ids,
-            workspace_id: workspaceId,
-            pending_edits: pendingEdits
+            workspace_id: workspaceId
           })
         });
 
@@ -2597,9 +2511,6 @@
         }
 
         await loadBanks(selectedSubjectId, { silent: true, updateUrl: false });
-        ids.forEach(id => {
-          delete pendingQuestionEdits[String(id)];
-        });
         clearQuestionSelection();
         await fetchQuestions();
         await fetchDocs();

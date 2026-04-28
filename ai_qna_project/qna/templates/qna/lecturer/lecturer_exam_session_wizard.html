@@ -15,7 +15,17 @@
     --danger: #DC2626;
   }
 
-  .es-page { min-height: calc(100vh - 5rem); margin: -2.5rem; background: #FFFFFF; color: var(--text-dark); font-family: sans-serif;}
+  /* Đã thêm box-sizing, padding và overflow để chống lỗi mất cuộn */
+  .es-page {
+    min-height: calc(100vh - 5rem);
+    margin: -2.5rem;
+    padding: 2.5rem; /* Bù lại phần margin âm */
+    background: #FFFFFF;
+    color: var(--text-dark);
+    font-family: sans-serif;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
 
   /* Header Section */
   .top-header { background: #fff; padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; margin-top: 0; }
@@ -26,7 +36,7 @@
   /* Ẩn các class cũ không dùng đến */
   .es-breadcrumb, .es-title { display: none; }
 
-  .es-shell { max-width: 1240px; margin: 0 auto; padding: 0 2rem 2.5rem; }
+  .es-shell { max-width: 1240px; margin: 0 auto; padding: 0 0 2.5rem; }
   .page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--text-dark);}
 
   /* Buttons */
@@ -48,7 +58,7 @@
   .es-step:last-child::before { display: none; }
 
   .es-step-number { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border-gray); background: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.875rem;}
-  .es-step-label { font-size: 0.875rem; font-weight: 600; }
+  .es-step-label { font-size: 0.875rem; font-weight: 600; text-align: center; }
 
   .es-step.active .es-step-number { background: #1E3A8A; border-color: #1E3A8A; color: #fff; }
   .es-step.active .es-step-label { color: #1E3A8A; font-weight: 700;}
@@ -64,10 +74,16 @@
   .es-card-subtitle { margin-top: 0.25rem; color: var(--text-muted); font-size: 0.875rem; }
   .es-card-body { padding: 1.5rem; }
 
+  /* Các class Layout Grid Responsive mới */
+  .es-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+  .col-span-1 { grid-column: span 1; }
+  .col-span-2 { grid-column: span 2; }
+  .col-span-4 { grid-column: span 4; }
+
   .es-field label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 600; color: #374151; }
   .es-required { color: var(--danger); }
 
-  .es-input, .es-select, .es-textarea { width: 100%; border-radius: 8px; border: 1px solid var(--border-gray); background: var(--bg-input); padding: 0.625rem 0.75rem; font-size: 0.875rem; outline: none; transition: 0.2s; color: var(--text-dark);}
+  .es-input, .es-select, .es-textarea { width: 100%; border-radius: 8px; border: 1px solid var(--border-gray); background: var(--bg-input); padding: 0.625rem 0.75rem; font-size: 0.875rem; outline: none; transition: 0.2s; color: var(--text-dark); box-sizing: border-box;}
   .es-input:focus, .es-select:focus, .es-textarea:focus { border-color: var(--sidebar-blue); }
   .es-input[readonly], .es-select[disabled], .es-input:disabled { background: #E5E7EB; color: var(--text-muted); cursor: not-allowed;}
   .es-textarea { min-height: 100px; resize: vertical; }
@@ -75,8 +91,8 @@
   .es-inline-time { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.75rem; align-items: center; }
 
   /* Table Styles */
-  .es-table-wrap { border: 1px solid var(--border-gray); border-radius: 8px; overflow: hidden; }
-  .es-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem;}
+  .es-table-wrap { border: 1px solid var(--border-gray); border-radius: 8px; overflow-x: auto; }
+  .es-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem; min-width: 700px; } /* Đảm bảo table không bị bóp méo quá nhỏ */
   .es-table th { padding: 0.75rem 1rem; background: #FFFFFF; border-bottom: 1px solid var(--border-gray); color: #6B7280; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
   .es-table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-gray); vertical-align: middle; }
   .es-table tbody tr:last-child td { border-bottom: 0; }
@@ -84,8 +100,8 @@
   .es-hidden { display: none !important; }
 
   /* Buttons dưới cùng (Actions) */
-  .es-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 1.5rem; }
-  .es-actions-right { display: flex; gap: 0.75rem; margin-left: auto; }
+  .es-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 1.5rem; flex-wrap: wrap; gap: 1rem;}
+  .es-actions-right { display: flex; gap: 0.75rem; margin-left: auto; flex-wrap: wrap; }
 
   /* KẾT DÍNH FORM VÀ NÚT Ở BƯỚC 1 */
   section[data-step-panel="1"]:not(.es-hidden) {
@@ -104,7 +120,7 @@
   }
 
   /* Step 2 & 3 Specifics */
-  .es-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .es-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;}
   .es-section-header h3 { font-size: 1rem; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 0.5rem;}
 
   .es-assign-layout { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; margin-bottom: 1.5rem; }
@@ -114,13 +130,35 @@
   .es-room-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
 
   /* Custom Scrollbar cho Room Tables ở Bước 3 */
-  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
   .custom-scrollbar::-webkit-scrollbar-track { background: #F3F4F6; border-radius: 4px; }
   .custom-scrollbar::-webkit-scrollbar-thumb { background: #9CA3AF; border-radius: 4px; }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6B7280; }
 
   .es-modal-backdrop { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
   .es-modal-backdrop.open { display: flex; }
+
+  /* =========================================
+     MEDIA QUERIES (Sửa lỗi hiển thị khi zoom to / màn hình nhỏ)
+     ========================================= */
+  @media (max-width: 1024px) {
+    .es-grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .col-span-4 { grid-column: span 2; }
+    .es-assign-layout { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .top-header { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
+    .es-grid-4 { grid-template-columns: 1fr; }
+    .col-span-1, .col-span-2, .col-span-4 { grid-column: span 1 !important; }
+    .es-room-grid { grid-template-columns: 1fr; }
+    .es-stepper-track { flex-direction: column; gap: 1rem; align-items: flex-start; }
+    .es-step { flex-direction: row; justify-content: flex-start; width: 100%; }
+    .es-step::before { display: none; }
+    .es-actions { flex-direction: column; align-items: stretch; }
+    .es-actions-right { margin-left: 0; justify-content: space-between; width: 100%; }
+    .es-actions-right .es-btn { flex: 1; }
+  }
 </style>
 <div class="es-page">
   <div class="top-header">
@@ -163,16 +201,16 @@
       </div>
       <div class="es-card-body">
 
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem;">
-          <div class="es-field" style="grid-column: span 2;">
+        <div class="es-grid-4">
+          <div class="es-field col-span-2">
             <label for="sessionGroupName">Tên kỳ thi <span class="es-required">*</span></label>
             <input id="sessionGroupName" class="es-input" type="text" placeholder="Nhập tên kỳ thi (ví dụ: Thi vấn đáp)">
           </div>
-          <div class="es-field" style="grid-column: span 1;">
+          <div class="es-field col-span-1">
             <label for="sessionAcademicYear">Năm học <span class="es-required">*</span></label>
             <select id="sessionAcademicYear" class="es-select"></select>
           </div>
-          <div class="es-field" style="grid-column: span 1;">
+          <div class="es-field col-span-1">
             <label for="sessionSemester">Học kì <span class="es-required">*</span></label>
             <select id="sessionSemester" class="es-select">
               <option value="HK1">HK1</option>
@@ -181,7 +219,7 @@
             </select>
           </div>
 
-          <div class="es-field" style="grid-column: span 2;">
+          <div class="es-field col-span-2">
             <label for="sessionSubjectSelect">Môn học</label>
             {% if screen_mode == "create" %}
               <select id="sessionSubjectSelect" class="es-select">
@@ -195,19 +233,19 @@
               <input class="es-input" type="text" value="{{ selected_subject.name }}" readonly disabled>
             {% endif %}
           </div>
-          <div class="es-field" style="grid-column: span 2;">
+          <div class="es-field col-span-2">
             <label for="sessionExamDate">Ngày diễn ra <span class="es-required">*</span></label>
             <input id="sessionExamDate" class="es-input" type="date">
           </div>
 
-          <div class="es-field" style="grid-column: span 2;">
+          <div class="es-field col-span-2">
             <label for="sessionDuration">Thời gian làm bài (phút) <span class="es-required">*</span></label>
             <div style="position: relative;">
                 <input id="sessionDuration" class="es-input" type="number" placeholder="Ví dụ: 90" readonly style="padding-right: 2.5rem;">
                 <i class="far fa-clock" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: #9CA3AF;"></i>
             </div>
           </div>
-          <div class="es-field" style="grid-column: span 2;">
+          <div class="es-field col-span-2">
             <label>Thời gian thi (Bắt đầu - Kết thúc) <span class="es-required">*</span></label>
             <div class="es-inline-time">
               <input id="sessionStartTime" class="es-input" type="time">
@@ -216,7 +254,7 @@
             </div>
           </div>
 
-          <div class="es-field" style="grid-column: span 4;">
+          <div class="es-field col-span-4">
             <label for="sessionDescription">Mô tả kỳ thi</label>
             <textarea id="sessionDescription" class="es-textarea" placeholder="Nhập mô tả chi tiết về nội dung, quy định của kỳ thi..."></textarea>
           </div>
@@ -238,7 +276,7 @@
       <div style="display: none;"><span id="roomCountSummary">0</span><span id="roomCapacitySummary">0</span></div>
 
       <div class="es-card">
-        <div class="es-card-head" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 1rem;">
+        <div class="es-card-head" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
           <h3 style="margin: 0; font-size: 1rem; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 0.5rem;">
             <span style="display:inline-flex; align-items:center; justify-content:center; width: 24px; height: 24px; border: 1.5px solid var(--sidebar-blue); border-radius: 4px; color: var(--sidebar-blue);"><i class="fas fa-cog" style="font-size: 0.75rem;"></i></span>
             Danh sách phân phòng và cấu hình bảo mật
@@ -252,11 +290,11 @@
             <table class="es-table" style="border: 1px solid var(--border-gray); border-radius: 8px;">
               <thead style="background: #FFFFFF;">
                 <tr>
-                  <th style="width: 25%; color: #6B7280;">TÊN PHÒNG</th>
-                  <th style="width: 15%; color: #6B7280;">SỐ LƯỢNG SV <span class="es-required">*</span></th>
-                  <th style="width: 25%; color: #6B7280;">MẬT KHẨU <span class="es-required">*</span></th>
-                  <th style="width: 25%; color: #6B7280;">BỘ ĐỀ THI GÁN CHO PHÒNG</th>
-                  <th style="width: 10%; text-align: center; color: #6B7280;">THAO TÁC</th>
+                  <th style="width: 25%; color: #6B7280; vertical-align: middle;">TÊN PHÒNG</th>
+                  <th style="width: 15%; color: #6B7280; vertical-align: middle;">SỐ LƯỢNG SV <span class="es-required">*</span></th>
+                  <th style="width: 25%; color: #6B7280; vertical-align: middle;">MẬT KHẨU <span class="es-required">*</span></th>
+                  <th style="width: 25%; color: #6B7280; text-align: center; vertical-align: middle;">BỘ ĐỀ THI GÁN CHO PHÒNG</th>
+                  <th style="width: 10%; text-align: center; color: #6B7280; vertical-align: middle;">THAO TÁC</th>
                 </tr>
               </thead>
               <tbody id="roomTableBody"></tbody>
@@ -290,21 +328,21 @@
         </div>
 
         <div class="es-card" style="margin-bottom: 0;">
-          <div class="es-card-head" style="padding-bottom: 1rem; border-bottom: none;">
+          <div class="es-card-head" style="padding-bottom: 1rem; border-bottom: none; display: flex; align-items: center; justify-content: space-between;">
             <h3 class="es-card-title" style="font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;"><i class="fas fa-paperclip" style="color: #6B7280;"></i> Nguồn danh sách SV</h3>
             <span id="assignStudentCountChip" style="display:none;">0 SV</span>
           </div>
           <div class="es-card-body" style="padding-top: 0;">
-            <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem; align-items: flex-end;">
-              <div style="flex-grow: 1;">
+            <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem; align-items: flex-end; flex-wrap: wrap;">
+              <div style="flex-grow: 1; min-width: 200px;">
                 <label style="font-size: 0.875rem; color: #111827; display: block; margin-bottom: 0.5rem; font-weight: 500;">Chọn danh sách lớp</label>
                 <select id="rosterPicker" class="es-select"></select>
               </div>
-              <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="height: 42px; padding: 0 1.5rem;">Thêm danh sách</button>
+              <button type="button" id="addRosterButton" class="es-btn es-btn-primary" style="height: 42px; padding: 0 1.5rem; white-space: nowrap;">Thêm danh sách</button>
             </div>
 
-            <div style="background: #F3F4F6; border-radius: 8px; padding: 0.25rem;">
-              <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem; text-align: center;">
+            <div style="background: #F3F4F6; border-radius: 8px; padding: 0.25rem; overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem; text-align: center; min-width: 400px;">
                 <thead>
                   <tr>
                     <th style="padding: 1rem; color: #4B5563; font-weight: 600; text-align: left; padding-left: 2rem;">Tên File</th>
@@ -594,7 +632,7 @@
           </div>
 
           <div class="es-modal-body" style="padding: 24px 32px 16px; overflow-y: auto;">
-            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; background: #fff;">
+            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; background: #fff;">
               <div style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #475569;">
                 <i class="fas fa-door-open" style="color: #94a3b8; width: 16px;"></i>
                 <span>Phòng thi: <strong id="pickerRoomName" style="color: #2563eb; font-weight: 600;">-</strong></span>
@@ -613,7 +651,7 @@
               </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 16px; margin-bottom: 24px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
               <div class="es-field" style="margin: 0;">
                 <label for="pickerAcademicYear" style="margin-bottom: 8px; display:block; font-size:0.875rem; font-weight:600;">Năm học</label>
                 <select id="pickerAcademicYear" class="es-select" style="height: 42px; border-radius: 8px; width:100%; border: 1px solid var(--border-gray);"></select>
@@ -629,8 +667,8 @@
             </div>
 
             <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px 8px; margin-bottom: 24px; background: #fff;">
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-                <div style="position: relative; width: 400px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 1rem;">
+                <div style="position: relative; flex: 1; min-width: 250px;">
                   <i class="fas fa-search" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
                   <input id="pickerSearch" type="text" class="es-input" placeholder="Tìm theo mã đề..." style="height: 42px; border-radius: 8px; padding-left: 38px; width:100%; border: 1px solid var(--border-gray);">
                 </div>
@@ -644,8 +682,8 @@
                 </div>
               </div>
 
-              <div style="max-height: 260px; overflow-y: auto; margin-left: -24px; margin-right: -24px; padding: 0 24px;">
-                <table class="es-table" style="background: transparent; border: none; width:100%; text-align:left;">
+              <div style="max-height: 260px; overflow-y: auto; overflow-x: auto; margin-left: -24px; margin-right: -24px; padding: 0 24px;">
+                <table class="es-table" style="background: transparent; border: none; width:100%; text-align:left; min-width: 400px;">
                   <thead style="position: sticky; top: 0; background: #fff; z-index: 10;">
                     <tr>
                       <th style="width: 40px; border-bottom: 1px solid #edf2f8; padding: 12px 16px;"></th>
@@ -659,7 +697,7 @@
               </div>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 12px; min-height: 32px;">
+            <div style="display: flex; align-items: center; gap: 12px; min-height: 32px; flex-wrap: wrap;">
               <strong style="font-size: 14px; color: #1e293b;">Mã đề đã chọn:</strong>
               <div id="pickerSelectedTags" style="display: flex; gap: 8px; flex-wrap:wrap;"></div>
             </div>
@@ -1049,24 +1087,38 @@
     roomTableBody.innerHTML = wizardState.roomConfigs.map((room, index) => {
       hydrateRoomLabels(room);
       const hasCode = room.exam_code_ids.length > 0;
-      // Đổi chữ hiển thị giống với hình ảnh của bạn
-      const actionLabel = hasCode ? "Xem bộ đề - mã đề" : "Xem bộ đề - mã đề";
+
+      // Xây dựng mã HTML cho cột thao tác dựa vào trạng thái đã có đề hay chưa
+      let actionHtml = "";
+      if (hasCode) {
+        // ĐÃ CÓ ĐỀ: Hiện text link "Xem bộ đề - mã đề"
+        actionHtml = `
+          <a href="javascript:void(0)"
+             style="color: #1D4ED8; text-decoration: underline; font-weight: 600; font-size: 0.875rem; cursor: pointer; display: inline-block;"
+             data-open-exam-picker="${index}">
+             Xem bộ đề - mã đề
+          </a>
+        `;
+      } else {
+        // CHƯA CÓ ĐỀ: Hiện nút bấm "+ Thêm đề"
+        actionHtml = `
+          <button type="button" class="es-btn es-btn-primary" style="font-size: 0.875rem; height: 36px; padding: 0 1rem; border-radius: 6px; background-color: #1E3A8A;" data-open-exam-picker="${index}">
+            <i class="fas fa-plus"></i> Thêm đề
+          </button>
+        `;
+      }
 
       return `
         <tr>
-          <td style="padding: 1rem;"><input class="es-input" type="text" value="${escapeHtml(room.room_name)}" data-room-field="room_name" data-room-index="${index}" ${isViewMode() ? "readonly" : ""}></td>
-          <td style="padding: 1rem;"><input class="es-input es-room-count-input" type="number" min="0" step="1" inputmode="numeric" pattern="[0-9]*" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" data-last-valid-value="${room.student_count}" ${isViewMode() ? "readonly" : ""}></td>
-          <td style="padding: 1rem;"><input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Mật khẩu tự random" ${isViewMode() ? "readonly" : ""}></td>
+          <td style="padding: 1rem; vertical-align: middle;"><input class="es-input" type="text" value="${escapeHtml(room.room_name)}" data-room-field="room_name" data-room-index="${index}" ${isViewMode() ? "readonly" : ""}></td>
+          <td style="padding: 1rem; vertical-align: middle;"><input class="es-input es-room-count-input" type="number" min="0" step="1" inputmode="numeric" pattern="[0-9]*" value="${room.student_count}" data-room-field="student_count" data-room-index="${index}" data-last-valid-value="${room.student_count}" ${isViewMode() ? "readonly" : ""}></td>
+          <td style="padding: 1rem; vertical-align: middle;"><input class="es-input" type="text" maxlength="5" value="${escapeHtml(room.password)}" data-room-field="password" data-room-index="${index}" placeholder="Mật khẩu tự random" ${isViewMode() ? "readonly" : ""}></td>
 
-          <td style="padding: 1rem;">
-            <a href="javascript:void(0)"
-               style="color: #1D4ED8; text-decoration: underline; font-weight: 500; font-size: 0.875rem; cursor: pointer;"
-               data-open-exam-picker="${index}">
-               ${actionLabel}
-            </a>
+          <td style="padding: 1rem; text-align: center; vertical-align: middle;">
+            ${actionHtml}
           </td>
 
-          <td style="text-align: center; padding: 1rem;">
+          <td style="text-align: center; padding: 1rem; vertical-align: middle;">
             ${isViewMode() ? '<span style="color:#94a3b8;"><i class="fas fa-lock"></i></span>' : `<button type="button" class="es-btn es-btn-ghost" data-remove-room="${index}" style="color: #9CA3AF; font-size: 1.1rem; padding: 0.5rem;"><i class="far fa-trash-alt"></i></button>`}
           </td>
         </tr>

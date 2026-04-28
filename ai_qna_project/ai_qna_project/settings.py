@@ -50,7 +50,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "qna",
+    "qna.apps.QnaConfig",
 ]
 
 ROOT_URLCONF = "ai_qna_project.urls"
@@ -125,3 +125,10 @@ CACHES = {
 
 FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "ffmpeg")
 FFPROBE_BINARY = os.getenv("FFPROBE_BINARY", "ffprobe")
+QNA_ENABLE_STALE_EXAM_FINALIZER = True
+
+# Cứ 15 giây quét một lần
+QNA_STALE_EXAM_CHECK_INTERVAL_SECONDS = 15
+
+# Mất heartbeat quá 45 giây thì tự chốt bài
+QNA_STALE_EXAM_SECONDS = 45

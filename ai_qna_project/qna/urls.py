@@ -216,6 +216,9 @@ urlpatterns = [
     # 11. Export word
     path("api/lecturer/export-questions-word/", lecturer_question_views.lecturer_export_questions_word,
          name="lecturer_export_questions_word"),
+    # 12. heartbeat
+    path("student/exam/<int:session_id>/heartbeat/", views.exam_heartbeat_view, name="exam_heartbeat"),
+    path("student/exam/save-recording-chunk/", views.save_exam_recording_chunk_view, name="save_exam_recording_chunk"),
 ]
 
 if settings.DEBUG:

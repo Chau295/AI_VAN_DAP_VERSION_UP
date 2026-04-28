@@ -524,6 +524,39 @@ def api_save_question_bank_questions(request, bank_id):
             original_question.save()
 
         for q in selected_drafts:
+            source_question_id = _parse_edit_draft_source_id(
+                q.question_id_in_barem or "",
+                workspace_id,
+            )
+
+            if source_question_id:
+                original_question = Question.objects.select_for_update().filter(
+                    pk=source_question_id,
+                    subject_id=subject,
+                    question_bank_id=bank,
+                    is_exam_clone=False,
+                ).first()
+
+                if original_question:
+                    clean_question_text = _strip_draft_edit_text_marker(q.question_text)
+
+                    if _question_exists_in_subject_excluding_ids(
+                            subject,
+                            clean_question_text,
+                            exclude_ids=[original_question.pk, q.pk],
+                    ):
+                        return JsonResponse(
+                            {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+                            status=400,
+                        )
+
+                    original_question.question_text = clean_question_text
+                    original_question.difficulty = q.difficulty
+                    original_question.save()
+
+                    q.delete()
+                    continue
+
             q.question_id_in_barem = q.question_id_in_barem.replace(draft_prefix, "SAVED_")
             q.question_bank_id = bank
             q.save(update_fields=["question_id_in_barem", "question_bank_id"])
@@ -805,29 +838,63 @@ def api_get_questions(request):
         request.user,
         subject_id=subject_id,
     )
-    all_qs = Question.objects.filter(subject_id=subject, is_exam_clone=False)
+
+    all_qs = Question.objects.filter(
+        subject_id=subject,
+        is_exam_clone=False,
+    )
 
     if view_type == "generate" and workspace_id:
-        filtered_qs = all_qs.filter(question_id_in_barem__startswith=_draft_prefix(workspace_id))
+        filtered_qs = all_qs.filter(
+            question_id_in_barem__startswith=_draft_prefix(workspace_id)
+        )
+
     elif view_type == "bank" and real_bank_id:
-        bank_obj = _get_lecturer_question_banks(request).filter(subject_id=subject, pk=real_bank_id).first()
+        bank_obj = _get_lecturer_question_banks(request).filter(
+            subject_id=subject,
+            pk=real_bank_id,
+        ).first()
+
         if bank_obj is None:
-            return JsonResponse({"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."}, status=404)
-        if workspace_id:
-            filtered_qs = all_qs.filter(
-                Q(question_bank_id=bank_obj) | Q(question_id_in_barem__startswith=_draft_prefix(workspace_id))
+            return JsonResponse(
+                {"status": "FAIL", "message": "Ngân hàng câu hỏi không hợp lệ."},
+                status=404,
             )
+
+        official_bank_qs = all_qs.filter(
+            question_bank_id=bank_obj,
+        ).exclude(
+            question_id_in_barem__startswith="DRAFT_",
+        )
+
+        if workspace_id:
+            workspace_draft_qs = all_qs.filter(
+                question_id_in_barem__startswith=_draft_prefix(workspace_id),
+            )
+            filtered_qs = (official_bank_qs | workspace_draft_qs).distinct()
         else:
-            filtered_qs = all_qs.filter(question_bank_id=bank_obj)
+            filtered_qs = official_bank_qs
+
     else:
         filtered_qs = Question.objects.none()
 
-    summary_qs = filtered_qs
-    if difficulty and difficulty != "ALL":
-        filtered_qs = filtered_qs.filter(difficulty=difficulty)
+    display_questions = list(filtered_qs.order_by("-pk"))
 
-    display_questions = list(summary_qs.order_by("-pk"))
+    if view_type == "bank" and workspace_id:
+        edit_source_ids = {
+            source_id
+            for source_id in (
+                _parse_edit_draft_source_id(item.question_id_in_barem or "", workspace_id)
+                for item in display_questions
+            )
+            if source_id
+        }
 
+        display_questions = [
+            item
+            for item in display_questions
+            if item.pk not in edit_source_ids
+        ]
 
     if difficulty and difficulty != "ALL":
         response_questions = [
@@ -895,7 +962,16 @@ def api_create_manual_question(request):
             status=400,
         )
 
-    bank_obj = None
+    if view_type == "bank":
+        if not workspace_id:
+            return JsonResponse(
+                {"status": "FAIL", "message": "Thiếu workspace_id để tạo câu hỏi nháp."},
+                status=400,
+            )
+        question_code = f"{_draft_prefix(workspace_id)}{uuid4().hex[:8]}"
+        bank_obj = None
+    else:
+        question_code = f"MAN_{subject.subject_code}_{uuid4().hex[:8]}"
     if view_type == "generate":
         if not workspace_id:
             return JsonResponse({"status": "FAIL", "message": "Thiếu workspace_id."}, status=400)
@@ -982,12 +1058,26 @@ def api_update_question_bank_question(request, question_id):
 
     # Nếu đang sửa draft thì lưu vào chính draft đó.
     if is_draft:
-        next_text = question_text or question.question_text
+        current_text = _strip_draft_edit_text_marker(question.question_text)
+        next_text = _strip_draft_edit_text_marker(question_text) if question_text else current_text
 
-        if next_text and _question_exists_in_subject(
+        content_changed = bool(question_text) and (
+                normalize_question_text(next_text) != normalize_question_text(current_text)
+        )
+
+        source_question_id = _parse_edit_draft_source_id(
+            question.question_id_in_barem or "",
+            workspace_id,
+        )
+
+        exclude_ids = [question.pk]
+        if source_question_id:
+            exclude_ids.append(source_question_id)
+
+        if content_changed and _question_exists_in_subject_excluding_ids(
                 question.subject,
                 next_text,
-                exclude_question_id=question.pk,
+                exclude_ids=exclude_ids,
         ):
             return JsonResponse(
                 {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
@@ -995,7 +1085,14 @@ def api_update_question_bank_question(request, question_id):
             )
 
         if question_text:
-            question.question_text = question_text
+            if source_question_id:
+                question.question_text = _append_draft_edit_text_marker(
+                    next_text,
+                    question.question_id_in_barem or f"EDIT_{question.pk}",
+                )
+            else:
+                question.question_text = next_text
+
         if difficulty in ["EASY", "MEDIUM", "HARD"]:
             question.difficulty = difficulty
 
@@ -1021,21 +1118,98 @@ def api_update_question_bank_question(request, question_id):
     # Nếu đang sửa câu hỏi đã lưu trong ngân hàng thì tạo bản nháp chỉnh sửa,
     # không ghi đè câu hỏi gốc ngay lập tức.
     if view_type == "bank":
+        if not workspace_id:
+            return JsonResponse(
+                {
+                    "status": "FAIL",
+                    "message": "Thiếu workspace_id để tạo bản nháp chỉnh sửa.",
+                },
+                status=400,
+            )
+
+        draft_prefix = f"{_edit_draft_prefix(workspace_id)}{question.pk}_"
+
+        draft_question = Question.objects.filter(
+            subject_id=question.subject,
+            is_exam_clone=False,
+            question_id_in_barem__startswith=draft_prefix,
+        ).first()
+
+        base_text = (
+            _strip_draft_edit_text_marker(draft_question.question_text)
+            if draft_question
+            else _strip_draft_edit_text_marker(question.question_text)
+        )
+
+        next_text = _strip_draft_edit_text_marker(question_text) if question_text else base_text
+
+        content_changed = bool(question_text) and (
+                normalize_question_text(next_text) != normalize_question_text(base_text)
+        )
+
+        exclude_ids = [question.pk]
+
+        if draft_question:
+            exclude_ids.append(draft_question.pk)
+
+        if content_changed and _question_exists_in_subject_excluding_ids(
+                question.subject,
+                next_text,
+                exclude_ids=exclude_ids,
+        ):
+            return JsonResponse(
+                {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+                status=400,
+            )
+
+        if draft_question is None:
+            draft_code = _make_edit_draft_code(workspace_id, question.pk)
+            draft_question = Question(
+                subject_id=question.subject,
+                question_bank_id=None,
+                question_id_in_barem=draft_code,
+            )
+
+        draft_question.question_text = _append_draft_edit_text_marker(
+            next_text,
+            draft_question.question_id_in_barem,
+        )
+        draft_question.difficulty = difficulty if difficulty in ["EASY", "MEDIUM", "HARD"] else question.difficulty
+        try:
+            draft_question.save()
+        except IntegrityError:
+            return JsonResponse(
+                {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
+                status=400,
+            )
+
+        serialized = _serialize_question(draft_question)
+        serialized["updated_at"] = timezone.localtime(timezone.now()).strftime("%H:%M - %d/%m/%Y")
+
         return JsonResponse(
             {
-                "status": "FAIL",
-                "message": "Chỉnh sửa câu hỏi đã lưu chỉ được lưu tạm trên giao diện. Hãy bấm Cập nhật vào ngân hàng để lưu chính thức.",
-            },
-            status=400,
+                "status": "SUCCESS",
+                "question": serialized,
+                "message": "Đã lưu bản nháp chỉnh sửa. Bấm Cập nhật vào ngân hàng để lưu chính thức.",
+            }
         )
 
     # Nhánh cũ cho các màn không thuộc ngân hàng.
     next_text = question_text or question.question_text
 
-    if next_text and _question_exists_in_subject(
+    source_question_id = _parse_edit_draft_source_id(
+        question.question_id_in_barem or "",
+        workspace_id,
+    )
+    next_text = question_text or question.question_text
+    exclude_ids = [question.pk]
+    if source_question_id:
+        exclude_ids.append(source_question_id)
+
+    if next_text and _question_exists_in_subject_excluding_ids(
             question.subject,
             next_text,
-            exclude_question_id=question.pk,
+            exclude_ids=exclude_ids,
     ):
         return JsonResponse(
             {"status": "FAIL", "message": "Câu hỏi bị trùng trong môn học này."},
@@ -1598,6 +1772,59 @@ def _get_workspace_id(request, payload=None):
 def _draft_prefix(workspace_id: str) -> str:
     return f"DRAFT_{workspace_id}_" if workspace_id else "DRAFT_"
 
+DRAFT_EDIT_TEXT_MARKER_RE = re.compile(r"\s*\[DRAFT_EDIT:[^\]]+\]\s*$")
+
+
+def _strip_draft_edit_text_marker(question_text: str) -> str:
+    return DRAFT_EDIT_TEXT_MARKER_RE.sub("", question_text or "").strip()
+
+
+def _append_draft_edit_text_marker(question_text: str, draft_code: str) -> str:
+    clean_text = _strip_draft_edit_text_marker(question_text)
+    return f"{clean_text}\n[DRAFT_EDIT:{draft_code}]"
+
+def _edit_draft_prefix(workspace_id: str) -> str:
+    return f"{_draft_prefix(workspace_id)}EDIT_"
+
+
+def _make_edit_draft_code(workspace_id: str, source_question_id: int) -> str:
+    return f"{_edit_draft_prefix(workspace_id)}{source_question_id}_{uuid4().hex[:8]}"
+
+
+def _parse_edit_draft_source_id(question_code: str, workspace_id: str):
+    if not question_code or not workspace_id:
+        return None
+
+    pattern = rf"^{re.escape(_edit_draft_prefix(workspace_id))}(\d+)_"
+    match = re.match(pattern, question_code)
+
+    if not match:
+        return None
+
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _question_exists_in_subject_excluding_ids(subject, question_text, exclude_ids=None):
+    normalized = normalize_question_text(question_text)
+    queryset = Question.objects.filter(
+        subject_id=subject,
+        question_text_normalized=normalized,
+        is_exam_clone=False,
+    )
+
+    clean_exclude_ids = [
+        int(item)
+        for item in (exclude_ids or [])
+        if str(item).isdigit()
+    ]
+
+    if clean_exclude_ids:
+        queryset = queryset.exclude(pk__in=clean_exclude_ids)
+
+    return queryset.exists()
 
 def _is_draft_question(question: Question) -> bool:
     return bool((question.question_id_in_barem or "").startswith("DRAFT_"))
@@ -1659,7 +1886,8 @@ def _get_lecturer_question_banks_with_counts(request, subject=None):
     return queryset.annotate(
         question_count_value=Count(
             "questions",
-            filter=Q(questions__is_exam_clone=False),
+            filter=Q(questions__is_exam_clone=False)
+                   & ~Q(questions__question_id_in_barem__startswith="DRAFT_"),
             distinct=True,
         )
     )
@@ -1732,7 +1960,7 @@ def _serialize_question(question: Question):
 
     return {
         "question_id": question.id,
-        "content": question.question_text,
+        "content": _strip_draft_edit_text_marker(question.question_text),
         "difficulty": question.difficulty,
         "difficulty_label": question.get_difficulty_display(),
         "source": source_text,

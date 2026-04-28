@@ -70,45 +70,71 @@ def _get_avatar_data_url(profile: UserProfile) -> str:
             pass
     return static("images/logo.jpg")
 
+def _force_started_session_completed_for_result(session: ExamSession) -> str:
+    """
+    Khi hiển thị lịch sử/kết quả, tuyệt đối không để session treo STARTED/IN_PROGRESS.
+    Chỉ trả về COMPLETED hoặc ABSENT.
+    """
+    resolved_status = _resolve_exam_session_status(session, allow_in_progress=True)
+
+    if resolved_status == "ABSENT" or getattr(session, "session_status", None) == "ABSENT":
+        if getattr(session, "final_score", None) is None:
+            session.final_score = 0
+            session.save(update_fields=["final_score"])
+        return "ABSENT"
+
+    # Nếu đã bắt đầu thi nhưng chưa chốt, ép chốt thành COMPLETED.
+    if resolved_status == "IN_PROGRESS" or getattr(session, "session_status", None) not in {"COMPLETED", "ABSENT"}:
+        _, final_total = _compute_scores(session)
+        final_total = round(float(final_total or 0), 2)
+
+        update_fields = []
+
+        if getattr(session, "session_status", None) != "COMPLETED":
+            session.session_status = "COMPLETED"
+            update_fields.append("session_status")
+
+        if getattr(session, "completed_at", None) is None:
+            session.completed_at = timezone.now()
+            update_fields.append("completed_at")
+
+        if session.final_score != final_total:
+            session.final_score = final_total
+            update_fields.append("final_score")
+
+        if update_fields:
+            session.save(update_fields=update_fields)
+
+    return "COMPLETED"
 
 def _attach_review_status_meta(session: ExamSession) -> None:
-    resolved_status = _resolve_exam_session_status(session)
+    resolved_status = _force_started_session_completed_for_result(session)
     session.review_status = resolved_status
 
-    if resolved_status == "COMPLETED":
-        session.review_status_label = "Đã hoàn thành"
-        session.review_status_class = "status-completed"
-        session.can_view_detail = True
-        session.can_display_score = True
-    elif resolved_status == "ABSENT":
+    if resolved_status == "ABSENT":
         session.review_status_label = "Vắng thi"
         session.review_status_class = "status-absent"
         session.can_view_detail = bool(getattr(session, "id", None))
-
-        # Vắng thi vẫn hiển thị điểm 0/10
         session.can_display_score = True
         if getattr(session, "final_score", None) is None:
             session.final_score = 0
     else:
-        session.review_status_label = "Đang thực hiện"
-        session.review_status_class = "status-in-progress"
-        session.can_view_detail = False
-        session.can_display_score = False
+        session.review_status_label = "Đã hoàn thành"
+        session.review_status_class = "status-completed"
+        session.can_view_detail = True
+        session.can_display_score = True
 
     session.status_label = session.review_status_label
     session.status_class = session.review_status_class
 
 
 def _attach_history_status_meta(session: ExamSession) -> None:
-    resolved_status = _resolve_exam_session_status(session, allow_in_progress=True)
-    session.history_status = resolved_status or "IN_PROGRESS"
+    resolved_status = _force_started_session_completed_for_result(session)
+    session.history_status = resolved_status
 
-    if session.history_status == "ABSENT":
+    if resolved_status == "ABSENT":
         session.history_status_label = "Vắng thi"
         session.history_status_class = "status-absent"
-    elif session.history_status == "IN_PROGRESS":
-        session.history_status_label = "Đang thực hiện"
-        session.history_status_class = "status-in-progress"
     else:
         session.history_status_label = "Đã hoàn thành"
         session.history_status_class = "status-completed"
@@ -175,7 +201,7 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
             status_label = "Đã hoàn thành ca thi"
             entry_button_label = "Không thể vào lại"
         elif reentry_state == "STARTED":
-            status_label = "Đang thực hiện ca thi"
+            status_label = "Tiếp tục ca thi"
             entry_button_label = "Tiếp tục thi"
         else:
             status_label = (
@@ -278,10 +304,6 @@ def history_detail_view(request: HttpRequest, session_id: int) -> HttpResponse:
     _attach_session_score_meta(session)
     _attach_session_duration_meta(session)
     _attach_review_status_meta(session)
-
-    if getattr(session, "review_status", None) == "IN_PROGRESS":
-        messages.info(request, "Phiên thi đang diễn ra. Hệ thống chuyển bạn trở lại màn hình làm bài.")
-        return redirect("qna:exam_page", subject_code=session.subject.subject_code)
 
     question_details = _build_session_question_details(session)
 

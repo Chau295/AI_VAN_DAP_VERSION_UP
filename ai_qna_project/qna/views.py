@@ -174,6 +174,7 @@ from .student_exam_helpers import (
     _ensure_student_absent_sessions_for_history,
     _sync_student_subjects_from_rosters,
 )
+from django.core.files.storage import default_storage
 # =========================================================
 # COMMON HELPERS
 # =========================================================
@@ -193,6 +194,34 @@ def _json_body(request: HttpRequest) -> Dict[str, Any]:
         pass
     return {}
 
+def _exam_heartbeat_key(session_id: int) -> str:
+    return f"exam_heartbeat:{session_id}"
+
+
+def _exam_active_sessions_key() -> str:
+    return "exam_active_sessions"
+
+
+def _mark_exam_session_active(session_id: int) -> None:
+    try:
+        active_ids = cache.get(_exam_active_sessions_key(), set())
+        if not isinstance(active_ids, set):
+            active_ids = set(active_ids or [])
+        active_ids.add(int(session_id))
+        cache.set(_exam_active_sessions_key(), active_ids, timeout=24 * 60 * 60)
+    except Exception:
+        pass
+
+
+def _unmark_exam_session_active(session_id: int) -> None:
+    try:
+        active_ids = cache.get(_exam_active_sessions_key(), set())
+        if not isinstance(active_ids, set):
+            active_ids = set(active_ids or [])
+        active_ids.discard(int(session_id))
+        cache.set(_exam_active_sessions_key(), active_ids, timeout=24 * 60 * 60)
+    except Exception:
+        pass
 
 def _is_ajax_request(request):
     return (
@@ -210,6 +239,17 @@ def _extract_ffmpeg_duration_seconds(metadata_text: str) -> float:
 
     hours, minutes, seconds = match.groups()
     return (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
+
+def _exam_active_question_key(session_id: int) -> str:
+    return f"exam_active_question:{session_id}"
+
+
+def _exam_recording_meta_key(session_id: int, question_id: int) -> str:
+    return f"exam_recording_meta:{session_id}:{question_id}"
+
+
+def _exam_recording_chunk_dir(session_id: int, question_id: int) -> str:
+    return f"exam_recording_drafts/session_{session_id}/question_{question_id}"
 
 @login_required
 @require_GET
@@ -526,8 +566,13 @@ def _finalize_started_exam_session(session: ExamSession | None) -> bool:
     if not _is_session_finalized(session):
         _sync_session_completion_flags(session)
 
+        if session.completed_at is None:
+            session.completed_at = timezone.now()
+            session.save(update_fields=["completed_at"])
+
     _, final_total = _compute_scores(session)
     final_total = round(float(final_total or 0), 2)
+
     if session.final_score != final_total:
         session.final_score = final_total
         session.save(update_fields=["final_score"])
@@ -597,6 +642,92 @@ class RegistrationForm(forms.Form):
             self.add_error("password2", "Mật khẩu nhập lại không khớp.")
         return cleaned_data
 
+@login_required
+@require_POST
+@student_required_json
+def save_exam_recording_chunk_view(request: HttpRequest) -> JsonResponse:
+    session_id = request.POST.get("session_id")
+    question_id = request.POST.get("question_id")
+    chunk_index = request.POST.get("chunk_index")
+    audio_mime_type = request.POST.get("audio_mime_type") or "audio/webm"
+    audio_chunk = request.FILES.get("audio_chunk")
+
+    if not session_id or not question_id or chunk_index is None:
+        return JsonResponse(
+            {"status": "error", "message": "Thiếu dữ liệu chunk ghi âm."},
+            status=400,
+        )
+
+    if not audio_chunk:
+        return JsonResponse(
+            {"status": "error", "message": "Không tìm thấy chunk ghi âm."},
+            status=400,
+        )
+
+    try:
+        session_id_int = int(session_id)
+        question_id_int = int(question_id)
+        chunk_index_int = int(chunk_index)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {"status": "error", "message": "Dữ liệu chunk không hợp lệ."},
+            status=400,
+        )
+
+    session = get_object_or_404(ExamSession, pk=session_id_int)
+    _ensure_owner(session, request.user)
+
+    if _is_session_finalized(session):
+        return JsonResponse(
+            {"status": "error", "message": "Phiên thi đã kết thúc."},
+            status=400,
+        )
+
+    if not session.questions.filter(pk=question_id_int).exists():
+        return JsonResponse(
+            {"status": "error", "message": "Câu hỏi không thuộc phiên thi này."},
+            status=400,
+        )
+
+    chunk_dir = _exam_recording_chunk_dir(session_id_int, question_id_int)
+    chunk_name = f"{chunk_dir}/chunk_{chunk_index_int:06d}.webm"
+
+    # Nếu upload lại cùng index thì xóa bản cũ để tránh lỗi storage không ghi đè.
+    if default_storage.exists(chunk_name):
+        default_storage.delete(chunk_name)
+
+    saved_path = default_storage.save(chunk_name, ContentFile(audio_chunk.read()))
+
+    now_ts = timezone.now().timestamp()
+
+    cache.set(_exam_heartbeat_key(session_id_int), now_ts, timeout=120)
+    _mark_exam_session_active(session_id_int)
+
+    cache.set(
+        _exam_active_question_key(session_id_int),
+        question_id_int,
+        timeout=24 * 60 * 60,
+    )
+
+    cache.set(
+        _exam_recording_meta_key(session_id_int, question_id_int),
+        {
+            "session_id": session_id_int,
+            "question_id": question_id_int,
+            "audio_mime_type": audio_mime_type,
+            "latest_chunk_index": chunk_index_int,
+            "updated_ts": now_ts,
+        },
+        timeout=24 * 60 * 60,
+    )
+
+    return JsonResponse(
+        {
+            "status": "success",
+            "saved_path": saved_path,
+            "chunk_index": chunk_index_int,
+        }
+    )
 
 @login_required
 @require_POST
@@ -796,6 +927,32 @@ def save_violation_image(request: HttpRequest) -> JsonResponse:
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
+@login_required
+@require_POST
+@student_required_json
+def exam_heartbeat_view(request: HttpRequest, session_id: int) -> JsonResponse:
+    session = get_object_or_404(
+        ExamSession.objects.select_related("user_id"),
+        pk=session_id,
+    )
+    _ensure_owner(session, request.user)
+
+    if _is_session_finalized(session):
+        _unmark_exam_session_active(session.pk)
+        return JsonResponse({
+            "status": "finalized",
+            "message": "Phiên thi đã kết thúc.",
+        })
+
+    now_ts = timezone.now().timestamp()
+
+    cache.set(_exam_heartbeat_key(session.pk), now_ts, timeout=120)
+    _mark_exam_session_active(session.pk)
+
+    return JsonResponse({
+        "status": "success",
+        "heartbeat_ts": now_ts,
+    })
 
 @login_required
 @require_POST
@@ -807,19 +964,32 @@ def finalize_session_view(request: HttpRequest, session_id: int) -> JsonResponse
     )
     _ensure_owner(session, request.user)
 
-    # Idempotent finalize
     already_finalized = _is_session_finalized(session)
+
     if not already_finalized:
         if not _finalize_started_exam_session(session):
             _sync_session_completion_flags(session)
+
+            if session.completed_at is None:
+                session.completed_at = timezone.now()
+                session.save(update_fields=["completed_at"])
+
             _, final_total = _compute_scores(session)
-            session.final_score = round(float(final_total or 0), 2)
-            session.save(update_fields=["final_score"])
+            final_total = round(float(final_total or 0), 2)
+
+            if session.final_score != final_total:
+                session.final_score = final_total
+                session.save(update_fields=["final_score"])
 
     _attach_session_score_meta(session)
-    if "_attach_session_duration_meta" in (globals() or {}):
+
+    if "_attach_session_duration_meta" in globals():
         _attach_session_duration_meta(session)
+
     deadline = _get_session_appeal_deadline(session)
+    _unmark_exam_session_active(session.pk)
+    cache.delete(_exam_heartbeat_key(session.pk))
+
     return JsonResponse(
         {
             "status": "success",
