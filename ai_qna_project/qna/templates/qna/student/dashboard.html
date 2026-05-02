@@ -21,6 +21,10 @@
             <div class="flex-1">
                 <h3 class="text-xl font-bold text-gray-800">{{ item.subject.name }}</h3>
                 <p class="text-gray-500 text-sm mt-1">Mã HP: {{ item.subject.subject_code }}</p>
+                <!-- Chỉ hiển thị đúng tên phòng thi -->
+                {% if item.active_group %}
+                <p class="text-gray-500 text-sm mt-1">Phòng thi: {{ item.active_room.room_name|default:"Chưa xếp" }}</p>
+                {% endif %}
             </div>
             <div
                 data-status-badge
@@ -181,7 +185,7 @@
             icon: "fa-lock",
             buttonLabel: "Không thể vào lại",
             buttonClass: "bg-gray-300 text-gray-600 pointer-events-none cursor-not-allowed",
-            buttonIcon: "fa-ban",
+            buttonIcon: "fa-lock",
             buttonDisabled: true,
         },
     };

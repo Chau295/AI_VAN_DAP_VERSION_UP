@@ -47,7 +47,7 @@
   .status-absent { background: var(--detail-red-soft); color: var(--detail-red); }
   .exam-info-card { padding: 20px 22px; }
   .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--detail-text); font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
-  .section-head i { color: #0f172a; }
+  .section-head svg { color: #0f172a; } /* Đổi màu cho SVG icon */
   .exam-info-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 24px; }
   .detail-block { min-width: 0; }
   .detail-block .meta-value { font-size: 1.35rem; line-height: 1.25; }
@@ -159,20 +159,24 @@
                 <div><span class="status-pill {{ session.detail_status_class }}">{{ session.detail_status_label }}</span></div>
               </div>
               <div>
-                <div class="meta-label">Thời gian thi</div>
+                <div class="meta-label">Thời gian làm bài</div>
                 <div class="meta-value">
-                  {% if session.exam_group.start_at and session.exam_group.end_at %}
-                    {{ session.exam_group.start_at|date:"H:i" }}-{{ session.exam_group.end_at|date:"H:i" }}
-                  {% else %}
-                    -
-                  {% endif %}
+                  {{ session.actual_duration_display|default:"-" }}
                 </div>
               </div>
             </div>
           </div>
 
           <div class="detail-card exam-info-card">
-            <div class="section-head"><i class="far fa-info-circle"></i> THÔNG TIN HỌC PHẦN & PHÒNG THI</div>
+            <!-- ĐÃ THAY ĐỔI: Chuyển thẻ <i> thành mã SVG thanh mảnh -->
+            <div class="section-head">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              THÔNG TIN HỌC PHẦN & PHÒNG THI
+            </div>
             <div class="exam-info-grid">
               <div class="detail-block">
                 <div class="meta-label">Học phần</div>
@@ -195,9 +199,13 @@
                 <div class="meta-value">{{ session.room_display|default:'-' }}</div>
               </div>
               <div class="detail-block">
-                <div class="meta-label">Thời gian thi</div>
+                <div class="meta-label">Thời gian ca thi</div>
                 <div class="meta-value">
-                  {{ session.actual_duration_display|default:'-' }}
+                  {% if session.exam_group.start_at and session.exam_group.end_at %}
+                    {{ session.exam_group.start_at|date:"H:i" }} - {{ session.exam_group.end_at|date:"H:i" }}
+                  {% else %}
+                    -
+                  {% endif %}
                 </div>
               </div>
             </div>

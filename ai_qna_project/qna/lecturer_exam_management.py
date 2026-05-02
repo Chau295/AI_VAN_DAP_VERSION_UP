@@ -244,7 +244,6 @@ def _clone_question_for_exam(source_question: Question) -> Question:
         subject_id=source_question.subject_id,
         question_bank_id=None,
         question_text=source_question.question_text,
-        question_id_in_barem=f"EC_{uuid4().hex[:8]}",
         difficulty=source_question.difficulty,
         is_exam_clone=True,
     )
@@ -760,7 +759,6 @@ def _update_exam_code_content_from_payload(code: ExamCode, payload_items: list):
             question = Question.objects.create(
                 subject_id=code.subject_id,
                 question_text=content,
-                question_id_in_barem=f"MANUAL_{uuid4().hex[:8]}",
                 difficulty=existing.difficulty,
                 is_exam_clone=True,
             )

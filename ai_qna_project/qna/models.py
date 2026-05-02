@@ -226,11 +226,6 @@ class Question(models.Model):
         blank=True,
         null=True,
     )
-    question_id_in_barem = models.CharField(
-        max_length=50,
-        verbose_name="ID câu hỏi trong tệp barem",
-        help_text="Ví dụ: Q1, Q2...",
-    )
     difficulty = models.CharField(
         max_length=10,
         choices=DifficultyLevel.choices,
@@ -243,7 +238,7 @@ class Question(models.Model):
 
     class Meta:
         db_table = "question"
-        ordering = ["question_id_in_barem", "question_id"]
+        ordering = ["-created_at", "question_id"]
         verbose_name = "Câu hỏi"
         verbose_name_plural = "Câu hỏi"
         constraints = [
@@ -313,14 +308,13 @@ class ExamSet(models.Model):
         default=SemesterChoices.HK1,
         verbose_name="Học kỳ",
     )
-    number_of_versions = models.PositiveIntegerField(default=1, verbose_name="Số mã đề")
-    easy_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu dễ trong ma trận")
-    medium_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu trung bình trong ma trận")
-    hard_pool_size = models.PositiveIntegerField(default=1, verbose_name="Số câu khó trong ma trận")
-    easy_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.0, verbose_name="Điểm câu dễ")
-    medium_score = models.DecimalField(max_digits=5, decimal_places=1, default=2.5, verbose_name="Điểm câu trung bình")
-    hard_score = models.DecimalField(max_digits=5, decimal_places=1, default=3.0, verbose_name="Điểm câu khó")
-    shuffle_question_order = models.BooleanField(default=True, verbose_name="Tự động xáo trộn thứ tự câu hỏi")
+    number_of_versions = models.PositiveIntegerField(default=0, verbose_name="Số mã đề")
+    easy_pool_size = models.PositiveIntegerField(default=0, verbose_name="Số câu dễ trong ma trận")
+    medium_pool_size = models.PositiveIntegerField(default=0, verbose_name="Số câu trung bình trong ma trận")
+    hard_pool_size = models.PositiveIntegerField(default=0, verbose_name="Số câu khó trong ma trận")
+    easy_score = models.DecimalField(max_digits=5, decimal_places=1, default=0, verbose_name="Điểm câu dễ")
+    medium_score = models.DecimalField(max_digits=5, decimal_places=1, default=0, verbose_name="Điểm câu trung bình")
+    hard_score = models.DecimalField(max_digits=5, decimal_places=1, default=0, verbose_name="Điểm câu khó")
     allow_duplicate_questions = models.BooleanField(
         default=False,
         verbose_name="Cho phép câu hỏi trùng lặp giữa các mã đề",
