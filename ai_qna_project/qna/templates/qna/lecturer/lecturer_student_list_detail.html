@@ -162,16 +162,6 @@
   }
 
   .qm2-card {
-      <form method="get" class="qm2-filters">
-        <div class="qm2-search">
-          <i class="fas fa-search"></i>
-          <input type="text" name="q" class="qm2-input" value="{{ search_query }}" placeholder="Tìm kiếm sinh viên trong danh sách...">
-        </div>
-        <a href="{% url 'qna:lecturer_student_list_detail' roster.id %}" class="qm2-btn qm2-btn-secondary">
-          <i class="fas fa-rotate-left"></i>
-          Xóa bộ lọc
-        </a>
-      </form>
     background: var(--qm-panel);
     border: 1px solid var(--qm-border);
     border-radius: var(--qm-radius-xl);

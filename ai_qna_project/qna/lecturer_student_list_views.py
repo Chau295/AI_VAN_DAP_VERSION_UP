@@ -899,7 +899,6 @@ def lecturer_student_list_create_accounts(request, roster_id):
 
     default_password = (request.POST.get("default_password") or "").strip()
     confirm_password = (request.POST.get("confirm_password") or "").strip()
-    skip_existing = str(request.POST.get("skip_existing") or "").strip() in {"1", "true", "yes", "on"}
 
     if not default_password:
         return _student_account_modal_error(request, roster, "Vui lòng nhập mật khẩu.")
@@ -934,10 +933,13 @@ def lecturer_student_list_create_accounts(request, roster_id):
     for student_row in roster.students.select_related("linked_user_id").order_by("row_number"):
         if _row_is_created_in_roster(student_row):
             continue
+
         existing_user = student_row.linked_user_id or _student_find_user(student_row.student_code)
+
         if existing_user or student_row.account_status == StudentRosterAccountStatus.EXISTING:
             if _row_has_canonical_existing_account(student_row, existing_user):
                 continue
+
             existing_rows.append(
                 {
                     "student_code": student_row.student_code,
@@ -948,52 +950,56 @@ def lecturer_student_list_create_accounts(request, roster_id):
         else:
             pending_rows.append(student_row)
 
-    # Neu chi co existing_rows (khong co pending), tu dong enroll khong can confirm
-    if existing_rows and not pending_rows and not skip_existing:
-        skip_existing = True
-
-    if existing_rows and pending_rows and not skip_existing:
-        return _student_account_modal_error(
-            request,
-            roster,
-            "Một số sinh viên đã có tài khoản. Vui lòng bấm 'Bỏ qua' để tiếp tục tạo cho các sinh viên còn lại.",
-            existing_students=existing_rows,
-            need_skip_confirm=True,
-        )
-
     created_count = 0
     skipped_existing_count = len(existing_rows)
 
     try:
         with transaction.atomic():
+            # Tự động liên kết và cấp quyền môn cho sinh viên đã có tài khoản.
             for student_row in roster.students.select_related("linked_user_id").order_by("row_number"):
                 if _row_is_created_in_roster(student_row):
                     continue
 
                 existing_user = student_row.linked_user_id or _student_find_user(student_row.student_code)
+
                 if existing_user:
                     student_row.linked_user_id = existing_user
                     student_row.account_created = True
                     student_row.account_status = StudentRosterAccountStatus.EXISTING
-                    student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+                    student_row.save(
+                        update_fields=[
+                            "linked_user_id",
+                            "account_created",
+                            "account_status",
+                        ]
+                    )
                     _ensure_student_enrolled_subject(existing_user, roster.subject)
 
+            # Tạo tài khoản mới cho sinh viên chưa có tài khoản.
             for student_row in pending_rows:
                 user, created, _ = _student_provision_account(student_row, default_password)
+
                 student_row.linked_user_id = user
                 student_row.account_created = True
                 student_row.account_status = (
-                    StudentRosterAccountStatus.CREATED if created else StudentRosterAccountStatus.EXISTING
+                    StudentRosterAccountStatus.CREATED
+                    if created
+                    else StudentRosterAccountStatus.EXISTING
                 )
-                student_row.save(update_fields=["linked_user_id", "account_created", "account_status"])
+                student_row.save(
+                    update_fields=[
+                        "linked_user_id",
+                        "account_created",
+                        "account_status",
+                    ]
+                )
 
-                # Dù là newly created hay do race-condition thành existing, đều phải cấp quyền môn
                 _ensure_student_enrolled_subject(user, roster.subject)
 
                 if created:
                     created_count += 1
 
-            # Dong bo trang thai tat ca roster cung subject (cu + moi cua cung file)
+            # Đồng bộ trạng thái tất cả roster cùng subject + cùng file.
             related_rosters = StudentRosterUpload.objects.filter(
                 subject_id=roster.subject_id,
                 original_file_name=roster.original_file_name,
@@ -1009,17 +1015,10 @@ def lecturer_student_list_create_accounts(request, roster_id):
         )
         return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
 
-    if skipped_existing_count:
-        request.session["student_account_modal"] = {
-            "open": True,
-            "error": "",
-            "existing_students": existing_rows,
-            "need_skip_confirm": False,
-        }
-
     messages.success(
         request,
-        f"Tạo tài khoản hoàn tất: {created_count} tài khoản mới, {skipped_existing_count} sinh viên đã có sẵn tài khoản.",
+        f"Tạo tài khoản hoàn tất: {created_count} tài khoản mới, "
+        f"{skipped_existing_count} sinh viên đã có sẵn tài khoản và được tự động bỏ qua/liên kết.",
     )
-    return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
 
+    return redirect("qna:lecturer_student_list_detail", roster_id=roster.id)
