@@ -10,9 +10,6 @@ env/
 
 # Django runtime
 *.log
-db.sqlite3
-media/
-staticfiles/
 
 # Environment
 .env
@@ -27,10 +24,6 @@ staticfiles/
 .DS_Store
 Thumbs.db
 "@ | Set-Content -Encoding UTF8 .gitignore
-*.sqlite3
-ai_qna_project/db.sqlite3
 .env
 __pycache__/
 *.pyc
-media/
-staticfiles/

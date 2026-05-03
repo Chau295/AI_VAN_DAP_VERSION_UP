@@ -1066,9 +1066,9 @@
         <h1 style="font-size: 24px;">Ngân hàng câu hỏi</h1>
         <div class="sub">Màn hình quản lý ngân hàng câu hỏi theo môn học</div>
       </div>
-      <a href="{% url 'qna:lecturer_dashboard' %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-back" id="backToSubjectsBtn">
+      <a href="{% url 'qna:lecturer_dashboard' %}" class="qm2-back" id="backToSubjectsBtn">
         <i class="fas fa-arrow-left"></i>
-        <span>Quay lại trang chủ</span>
+        <span>Quay lại danh sách môn</span>
       </a>
     </div>
 
@@ -1142,7 +1142,7 @@
         </button>
         {% endif %}
 
-        <a href="{% url 'qna:lecturer_questions_screen' %}{% if selected_subject %}?subject_id={{ selected_subject.id }}{% endif %}" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href=this.href; } return false;" class="qm2-back">
+        <a href="{% url 'qna:lecturer_questions_screen' %}{% if selected_subject %}?subject_id={{ selected_subject.id }}{% endif %}" class="qm2-back">
           <i class="fas fa-arrow-left"></i>
           <span>Quay lại</span>
         </a>
