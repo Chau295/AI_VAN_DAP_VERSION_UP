@@ -5,6 +5,9 @@ import os
 import re
 import asyncio
 import subprocess
+from time import perf_counter
+
+from qna.services.ai_usage_service import record_ai_usage
 from datetime import timedelta
 from unicodedata import normalize
 from uuid import uuid4
@@ -97,6 +100,53 @@ def _create_main_exam_result(session_id, question_id, transcript, score, feedbac
         )
         return {"id": exam_result.id, "score": exam_result.score, "created": False}
 
+@database_sync_to_async
+def _record_worker_ai_usage(
+    *,
+    group_id: str,
+    feature: str,
+    step_name: str,
+    model_name: str,
+    usage=None,
+    session_id=None,
+    question_id=None,
+    latency_ms: int = 0,
+    audio_duration_seconds: float = 0,
+    success: bool = True,
+    error_message: str = "",
+    metadata: dict | None = None,
+):
+    session = None
+    question = None
+
+    if session_id:
+        session = (
+            ExamSession.objects
+            .select_related("subject_id", "user_id")
+            .filter(pk=session_id)
+            .first()
+        )
+
+    if question_id:
+        question = Question.objects.filter(pk=question_id).first()
+
+    return record_ai_usage(
+        group_id=group_id,
+        feature=feature,
+        step_name=step_name,
+        model_name=model_name,
+        usage=usage,
+        user=session.user_id if session else None,
+        subject=session.subject_id if session else None,
+        exam_session=session,
+        question=question,
+        latency_ms=latency_ms,
+        audio_duration_seconds=audio_duration_seconds,
+        success=success,
+        error_message=error_message,
+        metadata=metadata or {},
+    )
+
 logger = logging.getLogger(__name__)
 
 # ====== HẰNG SỐ / HELPERS ======
@@ -134,7 +184,15 @@ def preprocess_text_vietnamese(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
-async def rephrase_text_with_chatgpt(text, question_text, client):
+async def rephrase_text_with_chatgpt(
+    text,
+    question_text,
+    client,
+    *,
+    usage_group_id: str = "",
+    session_id=None,
+    question_id=None,
+):
     if not text or client is None:
         return text
 
@@ -170,6 +228,8 @@ Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
 """
 
     try:
+        started_at = perf_counter()
+
         resp = await asyncio.to_thread(
             client.chat.completions.create,
             model="gpt-4o-mini",
@@ -177,8 +237,26 @@ Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.0,  # Giảm randomness
+            temperature=0.0,
         )
+
+        latency_ms = int((perf_counter() - started_at) * 1000)
+
+        if usage_group_id:
+            await _record_worker_ai_usage(
+                group_id=usage_group_id,
+                feature="ANSWER_REPHRASE",
+                step_name=f"rephrase_question_{question_id}",
+                model_name="gpt-4o-mini",
+                usage=resp.usage,
+                session_id=session_id,
+                question_id=question_id,
+                latency_ms=latency_ms,
+                metadata={
+                    "input_length": len(text or ""),
+                    "question_length": len(question_text or ""),
+                },
+            )
         rephrased = resp.choices[0].message.content.strip()
 
         # Validation: Kiểm tra độ tương đồng
@@ -204,7 +282,16 @@ Chỉ sửa lỗi chính tả/đánh máy. Giữ nguyên mọi thứ khác.
         return text
 
 
-async def score_student_answer_with_openai(student_answer_raw, question_text, openai_client, model_name="gpt-4o-mini"):
+async def score_student_answer_with_openai(
+    student_answer_raw,
+    question_text,
+    openai_client,
+    model_name="gpt-4o-mini",
+    *,
+    usage_group_id: str = "",
+    session_id=None,
+    question_id=None,
+):
     if openai_client is None: return 0.0, "OpenAI client chưa được khởi tạo."
 
     max_score = 10.0
@@ -235,6 +322,8 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
     )
 
     try:
+        started_at = perf_counter()
+
         resp = await asyncio.to_thread(
             openai_client.chat.completions.create,
             model=model_name,
@@ -244,6 +333,24 @@ async def score_student_answer_with_openai(student_answer_raw, question_text, op
                 {"role": "user", "content": user_prompt}
             ],
         )
+
+        latency_ms = int((perf_counter() - started_at) * 1000)
+
+        if usage_group_id:
+            await _record_worker_ai_usage(
+                group_id=usage_group_id,
+                feature="EXAM_GRADING",
+                step_name=f"grade_question_{question_id}",
+                model_name=model_name,
+                usage=resp.usage,
+                session_id=session_id,
+                question_id=question_id,
+                latency_ms=latency_ms,
+                metadata={
+                    "answer_length": len(student_answer_raw or ""),
+                    "question_length": len(question_text or ""),
+                },
+            )
         data = json.loads(resp.choices[0].message.content)
         score = min(max(float(data.get("diem_so", 0.0)), 0.0), max_score)
         feedback = data.get("phan_hoi", "Không có phản hồi.")
@@ -459,14 +566,15 @@ class Command(BaseCommand):
         )
 
     async def process_audio_and_transcribe(
-        self,
-        reply_channel,
-        reply_group,
-        chunks,
-        whisper_prompt: Optional[str] = None,
-        session_id=None,
-        question_id=None,
-        audio_mime_type: Optional[str] = None,
+            self,
+            reply_channel,
+            reply_group,
+            chunks,
+            whisper_prompt: Optional[str] = None,
+            session_id=None,
+            question_id=None,
+            audio_mime_type: Optional[str] = None,
+            usage_group_id: str = "",
     ):
         logger.info(
             "[ASR] Bắt đầu xử lý audio: session_id=%s question_id=%s reply_channel=%s chunks_count=%s",
@@ -646,6 +754,8 @@ class Command(BaseCommand):
                 question_id=question_id,
                 detail="Đang gọi Whisper để nhận diện giọng nói.",
             )
+            started_at = perf_counter()
+
             with open(wav_path, "rb") as audio_file:
                 transcription = await asyncio.to_thread(
                     self.openai_client.audio.transcriptions.create,
@@ -654,6 +764,26 @@ class Command(BaseCommand):
                     language="vi",
                     temperature=0,
                     prompt=context_prompt,
+                )
+
+            latency_ms = int((perf_counter() - started_at) * 1000)
+
+            if usage_group_id:
+                await _record_worker_ai_usage(
+                    group_id=usage_group_id,
+                    feature="SPEECH_TO_TEXT",
+                    step_name=f"transcribe_question_{question_id}",
+                    model_name="whisper-1",
+                    usage=getattr(transcription, "usage", None),
+                    session_id=session_id,
+                    question_id=question_id,
+                    latency_ms=latency_ms,
+                    audio_duration_seconds=duration,
+                    metadata={
+                        "audio_mime_type": audio_mime_type,
+                        "rms": rms,
+                        "duration_seconds": duration,
+                    },
                 )
 
             raw = transcription.text.strip()
@@ -726,6 +856,7 @@ class Command(BaseCommand):
         reply_group = message.get('reply_group')
         question_id = message.get('question_id')
         session_id = message.get('session_id')
+        usage_group_id = f"exam_attempt_{session_id}"
         chunks = message.get('__chunks', [])
         logger.info(
             "[MAIN] Bắt đầu process_main_question: session_id=%s question_id=%s reply_channel=%s chunks_count=%s",
@@ -842,6 +973,7 @@ class Command(BaseCommand):
                 session_id=session_id,
                 question_id=question_id_int,
                 audio_mime_type=message.get('audio_mime_type'),
+                usage_group_id=usage_group_id,
             )
             logger.info(
                 "[MAIN] Kết thúc bước process_audio_and_transcribe: session_id=%s question_id=%s transcript_status=%s",
@@ -871,7 +1003,14 @@ class Command(BaseCommand):
                 detail="Đang sửa lỗi và chuẩn hóa câu trả lời.",
                 transcript=raw_transcript,
             )
-            rephrased = await rephrase_text_with_chatgpt(raw_transcript, question_context["question_text"], self.openai_client)
+            rephrased = await rephrase_text_with_chatgpt(
+                raw_transcript,
+                question_context["question_text"],
+                self.openai_client,
+                usage_group_id=usage_group_id,
+                session_id=session_id,
+                question_id=question_id_int,
+            )
             if rephrased == raw_transcript:
                 logger.info(
                     "[MAIN] Kết thúc bước rephrase_text_with_chatgpt: session_id=%s question_id=%s action=skip_or_no_change transcript=%r",
@@ -912,7 +1051,14 @@ class Command(BaseCommand):
                 transcript=raw_transcript,
                 rephrased=rephrased,
             )
-            final_score, feedback = await score_student_answer_with_openai(rephrased, question_context["question_text"], self.openai_client)
+            final_score, feedback = await score_student_answer_with_openai(
+                rephrased,
+                question_context["question_text"],
+                self.openai_client,
+                usage_group_id=usage_group_id,
+                session_id=session_id,
+                question_id=question_id_int,
+            )
             final_score = float(min(max(final_score, 0.0), 10.0))
             logger.info(
                 "[MAIN] Kết thúc bước score_student_answer_with_openai: session_id=%s question_id=%s label=%s final_score=%.2f",

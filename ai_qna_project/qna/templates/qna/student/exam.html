@@ -204,7 +204,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const SCORE_SCALE_WARNING = "{{ score_scale_warning|default:''|escapejs }}";
   const CLIENT_NOW_MS = Date.now();
   const SERVER_CLIENT_OFFSET_MS = SERVER_NOW_MS ? (SERVER_NOW_MS - CLIENT_NOW_MS) : 0;
-  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  function getCookie(name) {
+    const cookies = document.cookie ? document.cookie.split(';') : [];
+
+    for (let cookie of cookies) {
+      cookie = cookie.trim();
+
+      if (cookie.startsWith(name + '=')) {
+        return decodeURIComponent(cookie.substring(name.length + 1));
+      }
+    }
+
+    return '';
+  }
+
+  function getCsrfToken() {
+    const input = document.querySelector('[name=csrfmiddlewaretoken]');
+    return input?.value || getCookie('csrftoken') || '';
+  }
+
+  const csrfToken = getCsrfToken();
   const SESSION_ID = JSON.parse(document.getElementById('session_id_data').textContent);
   const EXISTING_RESULTS = JSON.parse(document.getElementById('existing_results_data').textContent || '[]');
   const QUESTION_SCORE_MAP = JSON.parse(document.getElementById('question_score_map_data').textContent || '{}');
@@ -434,6 +453,53 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+  async function examFetch(url, options = {}) {
+    const method = String(options.method || 'GET').toUpperCase();
+    const headers = new Headers(options.headers || {});
+
+    headers.set('X-Requested-With', 'XMLHttpRequest');
+
+    if (method !== 'GET' && !headers.has('X-CSRFToken')) {
+      headers.set('X-CSRFToken', getCsrfToken());
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      method,
+      headers,
+      credentials: 'same-origin',
+    });
+
+    if (response.redirected || response.url.includes('/accounts/login/')) {
+      stopHeartbeat();
+
+      showAlert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+
+      window.setTimeout(() => {
+        window.location.href = response.url || '/accounts/login/';
+      }, 1200);
+
+      throw new Error('Phiên đăng nhập đã hết hạn.');
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+
+    return response;
+  }
+
+  async function examFetchJson(url, options = {}) {
+    const response = await examFetch(url, options);
+    const contentType = response.headers.get('content-type') || '';
+
+    if (!contentType.includes('application/json')) {
+      throw new Error('Backend không trả về JSON. Có thể phiên đăng nhập đã hết hạn hoặc request bị redirect.');
+    }
+
+    return response.json();
+  }
   function showSystemPopup({
     title = 'Thông báo',
     message = '',
@@ -610,19 +676,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function postJSON(url, data) {
-    const res = await fetch(url, {
+    return await examFetchJson(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-      body: JSON.stringify(data)
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
     });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error(`API Error on ${url}:`, errorText);
-      throw new Error(errorText);
-    }
-
-    return res.json();
   }
 
   function stopGradingStatusPolling() {
@@ -639,12 +699,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const response = await fetch(getGradingStatusUrl(questionId), {
+      const data = await examFetchJson(getGradingStatusUrl(questionId), {
         method: 'GET',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
       });
-      const data = await response.json().catch(() => ({}));
       const gradingState = data.grading_state || null;
 
       if (gradingState?.status === 'PROGRESS' && gradingState.progress) {
@@ -970,13 +1027,9 @@ document.addEventListener('DOMContentLoaded', () => {
     );
 
     try {
-      await fetch(API_ENDPOINTS.SAVE_RECORDING_CHUNK, {
+      await examFetch(API_ENDPOINTS.SAVE_RECORDING_CHUNK, {
         method: 'POST',
-        headers: {
-          'X-CSRFToken': csrfToken,
-        },
         body: formData,
-        credentials: 'same-origin',
       });
     } catch (error) {
       console.warn('Không thể upload chunk ghi âm:', error);
@@ -1207,16 +1260,10 @@ document.addEventListener('DOMContentLoaded', () => {
       formData.append('allow_after_expiry', '1');
     }
 
-    const response = await fetch('{% url "qna:save_exam_result" %}', {
+    const data = await examFetchJson('{% url "qna:save_exam_result" %}', {
       method: 'POST',
-      headers: { 'X-CSRFToken': csrfToken },
-      body: formData
+      body: formData,
     });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.message || 'Không thể đính kèm file ghi âm.');
-    }
 
     return data.audio_url || '';
   }
@@ -2118,16 +2165,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.examFinished || state.isFinalizingExam) return;
 
     try {
-      const response = await fetch(API_ENDPOINTS.HEARTBEAT, {
+      const data = await examFetchJson(API_ENDPOINTS.HEARTBEAT, {
         method: 'POST',
-        headers: {
-          'X-CSRFToken': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        credentials: 'same-origin',
       });
-
-      const data = await response.json().catch(() => ({}));
 
       if (data.status === 'finalized') {
         state.examFinished = true;

@@ -1349,3 +1349,72 @@ class StudentRosterStudent(models.Model):
     @linked_user.setter
     def linked_user(self, value):
         self.linked_user_id = value
+
+class AIUsageLog(models.Model):
+    group_id = models.CharField(max_length=100, db_index=True)
+
+    feature = models.CharField(max_length=80)
+    step_name = models.CharField(max_length=100, blank=True)
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    subject = models.ForeignKey(
+        "Subject",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    exam_session = models.ForeignKey(
+        "ExamSession",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    exam_result = models.ForeignKey(
+        "ExamResult",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    question = models.ForeignKey(
+        "Question",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    model_name = models.CharField(max_length=100)
+
+    prompt_tokens = models.IntegerField(default=0)
+    completion_tokens = models.IntegerField(default=0)
+    total_tokens = models.IntegerField(default=0)
+    cached_tokens = models.IntegerField(default=0)
+
+    audio_duration_seconds = models.FloatField(default=0)
+
+    latency_ms = models.IntegerField(default=0)
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True)
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "ai_usage_log"
+        ordering = ["-created_at"]
+        verbose_name = "Log sử dụng AI"
+        verbose_name_plural = "Log sử dụng AI"
+
+    def __str__(self):
+        return f"{self.feature} - {self.model_name} - {self.total_tokens} tokens"
+
+#Mỗi lần backend gọi OpenAI API thì ghi log ngay sau response. Sau đó gom các log đó theo một group_id để biết một lần tạo câu hỏi / một lần sinh viên thi tốn tổng bao nhiêu token.

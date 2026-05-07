@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-
+from time import perf_counter
 import csv
 import io
 import json
@@ -32,7 +32,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
-
+from .services.ai_usage_service import record_ai_usage, summarize_ai_usage
 from .exam_guards import subject_has_active_exam_group
 from .forms import LecturerManualQuestionForm
 from .models import (
@@ -1486,7 +1486,7 @@ def api_generate_questions(request):
         requested_counts = _normalize_requested_question_counts(total_count, level_config)
     except ValueError as exc:
         return JsonResponse({"status": "FAIL", "message": str(exc)}, status=400)
-
+    generation_profile = _get_ai_generation_profile(total_count)
     materials = list(
         LectureMaterial.objects.filter(
             subject_id=subject,
@@ -1501,6 +1501,7 @@ def api_generate_questions(request):
         )
 
     job_id = uuid4().hex
+    usage_group_id = f"question_generation_{job_id}"
 
     try:
         skipped_duplicates = 0
@@ -1515,43 +1516,176 @@ def api_generate_questions(request):
             if item
         }
 
-        for _ in range(3):
+        no_progress_count = 0
+
+        for batch_index in range(generation_profile["max_api_calls"]):
+            before_count = len(prepared_questions)
+
             remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
             remaining_total = sum(remaining_counts.values())
             if remaining_total <= 0:
                 break
 
+            batch_counts = _build_batch_question_counts(
+                remaining_counts,
+                batch_size=generation_profile["batch_size"],
+            )
+            batch_total = sum(batch_counts.values())
+
+            if batch_total <= 0:
+                break
+
+            excluded_for_next_call = retry_excluded_texts + [
+                item["content"]
+                for item in prepared_questions
+                if item.get("content")
+            ]
+
             generation_result = _generate_questions_from_ai(
                 subject=subject,
                 materials=materials,
-                total_count=remaining_total,
-                level_config=_question_generation_level_config(remaining_counts),
-                excluded_question_texts=retry_excluded_texts,
+                total_count=batch_total,
+                level_config=_question_generation_level_config(batch_counts),
+                excluded_question_texts=excluded_for_next_call,
+                batch_index=batch_index,
+                generation_profile=generation_profile,
+                usage_group_id=usage_group_id,
+                usage_feature="QUESTION_GENERATION",
+                usage_step_name=f"batch_{batch_index + 1}",
+                user=request.user,
             )
+
             if isinstance(generation_result, dict):
                 ai_questions = generation_result.get("questions", [])
             else:
                 ai_questions = generation_result
+
             if not isinstance(ai_questions, list):
                 ai_questions = []
 
             for item in ai_questions:
-                content_key = normalize_question_text(item["content"])
+                content = (item.get("content") or "").strip()
+                if not content:
+                    continue
+
+                content_key = normalize_question_text(content)
                 if not content_key:
                     continue
+
                 if content_key in known_question_keys:
                     skipped_duplicates += 1
-                    retry_excluded_texts.append(item["content"])
+                    retry_excluded_texts.append(content)
                     continue
 
                 difficulty = item.get("difficulty")
                 if remaining_counts.get(difficulty, 0) <= 0:
-                    retry_excluded_texts.append(item["content"])
+                    retry_excluded_texts.append(content)
                     continue
 
                 prepared_questions.append(item)
                 known_question_keys.add(content_key)
                 remaining_counts[difficulty] -= 1
+
+            if len(retry_excluded_texts) > 60:
+                retry_excluded_texts = retry_excluded_texts[-60:]
+
+            if len(prepared_questions) == before_count:
+                no_progress_count += 1
+            else:
+                no_progress_count = 0
+
+            if no_progress_count >= generation_profile["no_progress_limit"]:
+                break
+
+        # =====================================================
+        # BÙ CUỐI: nếu batch chính còn thiếu ít câu, gọi AI thêm
+        # một request nhỏ để lấy đủ số lượng yêu cầu.
+        # =====================================================
+        remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+        remaining_total = sum(remaining_counts.values())
+
+        if remaining_total > 0:
+            refill_profile = _get_ai_refill_generation_profile(
+                remaining_total=remaining_total,
+                base_profile=generation_profile,
+            )
+
+            for refill_index in range(refill_profile["max_api_calls"]):
+                before_count = len(prepared_questions)
+
+                remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
+                remaining_total = sum(remaining_counts.values())
+
+                if remaining_total <= 0:
+                    break
+
+                batch_counts = _build_batch_question_counts(
+                    remaining_counts,
+                    batch_size=refill_profile["batch_size"],
+                )
+                batch_total = sum(batch_counts.values())
+
+                if batch_total <= 0:
+                    break
+
+                excluded_for_next_call = retry_excluded_texts + [
+                    item["content"]
+                    for item in prepared_questions
+                    if item.get("content")
+                ]
+
+                generation_result = _generate_questions_from_ai(
+                    subject=subject,
+                    materials=materials,
+                    total_count=batch_total,
+                    level_config=_question_generation_level_config(batch_counts),
+                    excluded_question_texts=excluded_for_next_call,
+                    batch_index=generation_profile["max_api_calls"] + refill_index,
+                    generation_profile=refill_profile,
+                    usage_group_id=usage_group_id,
+                    usage_feature="QUESTION_GENERATION_REFILL",
+                    usage_step_name=f"refill_{refill_index + 1}",
+                    user=request.user,
+                )
+
+                if isinstance(generation_result, dict):
+                    ai_questions = generation_result.get("questions", [])
+                else:
+                    ai_questions = generation_result
+
+                if not isinstance(ai_questions, list):
+                    ai_questions = []
+
+                for item in ai_questions:
+                    content = (item.get("content") or "").strip()
+                    if not content:
+                        continue
+
+                    content_key = normalize_question_text(content)
+                    if not content_key:
+                        continue
+
+                    if content_key in known_question_keys:
+                        skipped_duplicates += 1
+                        retry_excluded_texts.append(content)
+                        continue
+
+                    difficulty = item.get("difficulty")
+                    if remaining_counts.get(difficulty, 0) <= 0:
+                        retry_excluded_texts.append(content)
+                        continue
+
+                    prepared_questions.append(item)
+                    known_question_keys.add(content_key)
+                    remaining_counts[difficulty] -= 1
+
+                if len(retry_excluded_texts) > 60:
+                    retry_excluded_texts = retry_excluded_texts[-60:]
+
+                # Nếu lượt bù không thêm được câu nào thì dừng,
+                # tránh gọi AI vô ích.
+                if len(prepared_questions) == before_count:
+                    break
 
         remaining_counts = _remaining_question_counts(requested_counts, prepared_questions)
         shortage, shortage_text = _build_question_shortage(remaining_counts)
@@ -1583,6 +1717,7 @@ def api_generate_questions(request):
             "medium": len([q for q in created_questions if q["difficulty"] == "MEDIUM"]),
             "hard": len([q for q in created_questions if q["difficulty"] == "HARD"]),
         }
+        token_usage = summarize_ai_usage(usage_group_id)
         is_partial = bool(shortage)
         response_status = "PARTIAL_SUCCESS" if is_partial else "SUCCESS"
         process_status = "PARTIAL_SUCCESS" if is_partial else "COMPLETE"
@@ -1601,9 +1736,10 @@ def api_generate_questions(request):
                 "message": message,
                 "questions": created_questions,
                 "summary": summary,
+                "token_usage": token_usage,
                 "error_message": shortage_message if is_partial else "",
                 "shortage": shortage,
-                "shortage_message": shortage_message,
+                "shortage_message": "",
                 "created_count": len(created_questions),
                 "requested_count": total_count,
                 "skipped_duplicates": skipped_duplicates,
@@ -1617,10 +1753,11 @@ def api_generate_questions(request):
                 "message": message,
                 "questions": created_questions,
                 "summary": summary,
+                "token_usage": token_usage,
                 "created_count": len(created_questions),
                 "requested_count": total_count,
                 "shortage": shortage,
-                "shortage_message": shortage_message,
+                "shortage_message": "",
                 "skipped_duplicates": skipped_duplicates,
             }
         )
@@ -1848,11 +1985,86 @@ def lecturer_export_questions_word(request):
 # =========================================================
 QUESTION_JOB_PREFIX = "qna_question_job_"
 QUESTION_JOB_TIMEOUT = 60 * 30
+AI_MAX_API_CALLS = 7
+AI_BATCH_TARGET_TOTAL = 20
+AI_BATCH_OVERSAMPLE_RATIO = 1.6
+AI_MATERIAL_MAX_CHARS_PER_FILE = 8000
+AI_MATERIAL_MAX_TOTAL_CHARS = 32000
+AI_TEXT_CACHE_TIMEOUT = 60 * 60
 QUESTION_JOB_LOCAL_FALLBACK = {}
 QUESTION_JOB_LOCAL_FALLBACK_LOCK = Lock()
 QUESTION_BANK_DUPLICATE_NAME_MESSAGE = "Tên ngân hàng đã tồn tại trong môn học này."
 QUESTION_BANK_NAME_REQUIRED_MESSAGE = "Tên ngân hàng không được để trống."
 
+def _get_ai_generation_profile(total_count: int) -> dict:
+    total_count = int(total_count or 0)
+
+    # Tạo rất ít câu: ưu tiên nhanh
+    # Tạo nhiều: cần batch và context lớn hơn
+    if total_count <= 60:
+        return {
+            "max_api_calls": 5,
+            "batch_size": 20,
+            "oversample_ratio": 1.6,
+            "min_extra": 3,
+            "max_chars_per_file": 6000,
+            "max_total_chars": 24000,
+            "no_progress_limit": 3,
+        }
+
+    # Tạo vừa: cân bằng tốc độ và độ đủ
+    if total_count <= 30:
+        return {
+            "max_api_calls": 2,
+            "batch_size": 15,
+            "oversample_ratio": 1.25,
+            "min_extra": 1,
+            "max_chars_per_file": 4000,
+            "max_total_chars": 14000,
+            "no_progress_limit": 2,
+        }
+
+    # Tạo nhiều: cần batch và context lớn hơn
+    if total_count <= 60:
+        return {
+            "max_api_calls": 4,
+            "batch_size": 20,
+            "oversample_ratio": 1.4,
+            "min_extra": 2,
+            "max_chars_per_file": 6000,
+            "max_total_chars": 24000,
+            "no_progress_limit": 2,
+        }
+
+    # Tạo rất nhiều, ví dụ 100 câu
+    return {
+        "max_api_calls": 8,
+        "batch_size": AI_BATCH_TARGET_TOTAL,
+        "oversample_ratio": 1.75,
+        "min_extra": 3,
+        "max_chars_per_file": AI_MATERIAL_MAX_CHARS_PER_FILE,
+        "max_total_chars": AI_MATERIAL_MAX_TOTAL_CHARS,
+        "no_progress_limit": 3,
+    }
+
+def _get_ai_refill_generation_profile(remaining_total: int, base_profile: dict) -> dict:
+    remaining_total = int(remaining_total or 0)
+
+    return {
+        # Chỉ dùng để bù phần thiếu cuối, nên tối đa 1-2 request nhỏ.
+        "max_api_calls": 2 if remaining_total > 3 else 1,
+        "batch_size": max(remaining_total, 1),
+
+        # Tạo dư mạnh hơn ở lượt bù vì thường chỉ thiếu 1-5 câu.
+        "oversample_ratio": 2.5,
+        "min_extra": 5,
+
+        # Context ngắn hơn để không làm chậm nhiều.
+        "max_chars_per_file": min(int(base_profile.get("max_chars_per_file", 6000)), 6000),
+        "max_total_chars": min(int(base_profile.get("max_total_chars", 16000)), 16000),
+
+        "no_progress_limit": 1,
+    }
 
 def _get_lecturer_subjects(request):
     return request.user.userprofile.subjects_taught.all().order_by("name")
@@ -2227,6 +2439,18 @@ def _extract_text_from_material(material: LectureMaterial) -> str:
 
     return ""
 
+def _extract_text_from_material_cached(material: LectureMaterial) -> str:
+    uploaded_at = getattr(material, "uploaded_at", None)
+    version = int(uploaded_at.timestamp()) if uploaded_at else 0
+    cache_key = f"qna_material_text_{material.pk}_{version}"
+
+    cached_text = cache.get(cache_key)
+    if cached_text is not None:
+        return cached_text
+
+    text = _extract_text_from_material(material)
+    cache.set(cache_key, text, timeout=AI_TEXT_CACHE_TIMEOUT)
+    return text
 
 def _truncate_text_for_llm(text: str, max_chars: int = 18000) -> str:
     text = (text or "").strip()
@@ -2234,18 +2458,58 @@ def _truncate_text_for_llm(text: str, max_chars: int = 18000) -> str:
         return text
     return text[:max_chars]
 
+def _slice_text_for_batch(text: str, max_chars: int, batch_index: int) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
 
-def _build_material_context(materials) -> str:
+    if len(text) <= max_chars:
+        return text
+
+    # Mỗi batch lấy một đoạn khác nhau của tài liệu.
+    step = max_chars
+    start = (batch_index * step) % len(text)
+    end = start + max_chars
+
+    if end <= len(text):
+        return text[start:end]
+
+    first_part = text[start:]
+    second_part = text[: max_chars - len(first_part)]
+    return f"{first_part}\n{second_part}"
+
+def _build_material_context(
+        materials,
+        batch_index: int = 0,
+        max_chars_per_file: int = AI_MATERIAL_MAX_CHARS_PER_FILE,
+        max_total_chars: int = AI_MATERIAL_MAX_TOTAL_CHARS,
+) -> str:
     blocks = []
+    used_chars = 0
+
     for idx, material in enumerate(materials, start=1):
-        text = _extract_text_from_material(material)
-        text = _truncate_text_for_llm(text, max_chars=12000)
+        if used_chars >= max_total_chars:
+            break
+
+        full_text = _extract_text_from_material_cached(material)
+
+        remaining_limit = max_total_chars - used_chars
+        per_file_limit = min(max_chars_per_file, remaining_limit)
+
+        text = _slice_text_for_batch(
+            full_text,
+            max_chars=per_file_limit,
+            batch_index=batch_index,
+        )
 
         if text.strip():
-            blocks.append(
+            block = (
                 f"TÀI LIỆU {idx}: {material.title}\n"
-                f"NỘI DUNG:\n{text}"
+                f"NỘI DUNG TRÍCH ĐOẠN BATCH {batch_index + 1}:\n{text}"
             )
+            blocks.append(block)
+            used_chars += len(block)
+
     return "\n\n" + ("\n\n" + "=" * 80 + "\n\n").join(blocks)
 
 
@@ -2283,6 +2547,70 @@ def _remaining_question_counts(target_counts: dict[str, int], questions) -> dict
             remaining_counts[difficulty] -= 1
     return remaining_counts
 
+def _build_batch_question_counts(
+        remaining_counts: dict[str, int],
+        batch_size: int = AI_BATCH_TARGET_TOTAL,
+) -> dict[str, int]:
+    remaining_total = sum(int(v or 0) for v in remaining_counts.values())
+
+    if remaining_total <= 0:
+        return {"EASY": 0, "MEDIUM": 0, "HARD": 0}
+
+    batch_total = min(batch_size, remaining_total)
+
+    batch_counts = {"EASY": 0, "MEDIUM": 0, "HARD": 0}
+
+    # Chia theo tỷ lệ còn thiếu của từng mức độ.
+    allocated = 0
+    for difficulty, count in remaining_counts.items():
+        count = int(count or 0)
+        if count <= 0:
+            continue
+
+        value = max(1, round(batch_total * count / remaining_total))
+        value = min(value, count)
+        batch_counts[difficulty] = value
+        allocated += value
+
+    # Điều chỉnh nếu làm tròn bị lệch.
+    while allocated > batch_total:
+        for difficulty in ("HARD", "MEDIUM", "EASY"):
+            if allocated <= batch_total:
+                break
+            if batch_counts[difficulty] > 0:
+                batch_counts[difficulty] -= 1
+                allocated -= 1
+
+    while allocated < batch_total:
+        for difficulty in ("EASY", "MEDIUM", "HARD"):
+            if allocated >= batch_total:
+                break
+            if batch_counts[difficulty] < int(remaining_counts.get(difficulty, 0) or 0):
+                batch_counts[difficulty] += 1
+                allocated += 1
+
+    return batch_counts
+
+def _build_oversampled_question_counts(
+        target_counts: dict[str, int],
+        oversample_ratio: float = AI_BATCH_OVERSAMPLE_RATIO,
+        min_extra: int = 2,
+) -> dict[str, int]:
+    request_counts = {}
+
+    for difficulty, count in target_counts.items():
+        count = int(count or 0)
+
+        if count <= 0:
+            request_counts[difficulty] = 0
+            continue
+
+        request_counts[difficulty] = max(
+            count + min_extra,
+            int(round(count * oversample_ratio)),
+        )
+
+    return request_counts
 
 def _normalize_ai_generated_questions(raw_questions, excluded_question_keys=None):
     excluded_question_keys = set(excluded_question_keys or [])
@@ -2337,19 +2665,12 @@ def _build_question_generation_message(
         skipped_duplicates: int = 0,
         shortage_text: str = "",
 ) -> tuple[str, str]:
-    shortage_message = ""
-    if shortage_text:
-        shortage_message = f"AI chỉ tạo được {created_count}/{requested_count} câu."
-        shortage_message = f"{shortage_message} Còn thiếu: {shortage_text}."
-        message = f"Tạo câu hỏi một phần: {created_count}/{requested_count} câu. {shortage_message}"
+    if created_count > 0:
+        message = f"Đã tạo {created_count} câu hỏi hợp lệ từ tài liệu."
     else:
-        message = f"Tạo câu hỏi thành công: {created_count}/{requested_count} câu."
+        message = "Chưa tạo được câu hỏi hợp lệ từ tài liệu đã chọn."
 
-    if skipped_duplicates > 0:
-        message = f"{message} (Đã sinh bù {skipped_duplicates} câu trùng.)"
-
-    return message, shortage_message
-
+    return message, ""
 
 def _generate_questions_from_ai(
         subject: Subject,
@@ -2357,6 +2678,12 @@ def _generate_questions_from_ai(
         total_count: int,
         level_config: dict,
         excluded_question_texts=None,
+        batch_index: int = 0,
+        generation_profile=None,
+        usage_group_id: str = "",
+        usage_feature: str = "QUESTION_GENERATION",
+        usage_step_name: str = "",
+        user=None,
 ):
     api_key = getattr(settings, "OPENAI_API_KEY", None)
     if not api_key:
@@ -2364,11 +2691,24 @@ def _generate_questions_from_ai(
         if not api_key:
             raise Exception("Thiếu OPENAI_API_KEY trong settings.py hoặc biến môi trường")
 
-    context_text = _build_material_context(materials)
+    generation_profile = generation_profile or _get_ai_generation_profile(total_count)
+
+    context_text = _build_material_context(
+        materials,
+        batch_index=batch_index,
+        max_chars_per_file=generation_profile["max_chars_per_file"],
+        max_total_chars=generation_profile["max_total_chars"],
+    )
     if not context_text.strip():
         raise Exception("Không trích xuất được nội dung từ tài liệu tải lên.")
 
     target_counts = _normalize_requested_question_counts(total_count, level_config)
+    request_counts = _build_oversampled_question_counts(
+        target_counts,
+        oversample_ratio=generation_profile["oversample_ratio"],
+        min_extra=generation_profile["min_extra"],
+    )
+    request_total = sum(request_counts.values())
 
     client = OpenAI(api_key=api_key)
 
@@ -2377,11 +2717,19 @@ def _generate_questions_from_ai(
         for text in (excluded_question_texts or [])
         if (text or "").strip()
     ]
+
     excluded_question_keys = {
         normalize_question_text(text)
         for text in excluded_question_texts
         if normalize_question_text(text)
     }
+
+    excluded_items = list(dict.fromkeys(excluded_question_texts))[-12:]
+    excluded_block = ""
+    if excluded_items:
+        excluded_block = "\n\nCác câu không được lặp lại:\n" + "\n".join(
+            f"- {item}" for item in excluded_items
+        )
 
     system_prompt = """
     Bạn là trợ lý tạo câu hỏi vấn đáp cho giảng viên đại học.
@@ -2394,10 +2742,16 @@ def _generate_questions_from_ai(
     - Không được tạo câu hỏi trùng ý nhau quá nhiều.
     - Phân loại đúng mức độ EASY / MEDIUM / HARD.
 
+    Yêu cầu ngôn ngữ bắt buộc:
+    - Tất cả câu hỏi trong trường "content" phải viết bằng tiếng Việt.
+    - Nếu tài liệu nguồn là tiếng Anh, hãy hiểu nội dung và chuyển thành câu hỏi tiếng Việt.
+    - Không được trả câu hỏi hoàn toàn bằng tiếng Anh.
+    - Có thể giữ lại thuật ngữ chuyên ngành tiếng Anh nếu cần, ví dụ: Decision Tree, Naïve Bayes, Data Warehouse, nhưng câu hỏi chính vẫn phải là tiếng Việt.
+
     Mức độ:
-    - EASY: hỏi khái niệm, định nghĩa, trình bày cơ bản
-    - MEDIUM: hỏi phân tích, so sánh, giải thích, liên hệ
-    - HARD: hỏi vận dụng, đánh giá, tình huống, lập luận sâu
+    - EASY: hỏi khái niệm, định nghĩa, trình bày cơ bản.
+    - MEDIUM: hỏi phân tích, so sánh, giải thích, liên hệ.
+    - HARD: hỏi vận dụng, đánh giá, tình huống, lập luận sâu.
 
     Đầu ra:
     Trả về JSON hợp lệ theo đúng format:
@@ -2410,81 +2764,109 @@ def _generate_questions_from_ai(
         }
       ]
     }
+
     Không thêm markdown, không thêm giải thích ngoài JSON.
-    Phải tuân thủ chính xác số lượng từng mức độ được yêu cầu.
-    Không được trả về câu hỏi trùng lặp hoặc gần như trùng lặp.
     """
 
-    collected_questions = []
-    collected_question_keys = set()
-
-    for _ in range(3):
-        remaining_counts = _remaining_question_counts(target_counts, collected_questions)
-        remaining_total = sum(remaining_counts.values())
-        if remaining_total <= 0:
-            break
-
-        excluded_items = list(
-            dict.fromkeys(excluded_question_texts + [item["content"] for item in collected_questions])
-        )[-20:]
-        excluded_block = ""
-        if excluded_items:
-            excluded_block = "\n\nCác câu không được lặp lại:\n" + "\n".join(
-                f"- {item}" for item in excluded_items
-            )
-
-        user_prompt = f"""
+    user_prompt = f"""
 Môn học: {subject.name}
 Mã môn: {subject.subject_code}
+Ngôn ngữ đầu ra bắt buộc: tiếng Việt.
+Nếu tài liệu là tiếng Anh, hãy chuyển ý sang câu hỏi tiếng Việt tự nhiên.
 
-        Hãy tạo chính xác {remaining_total} câu hỏi vấn đáp mới dựa trên nội dung tài liệu bên dưới.
+Hãy tạo đúng {request_total} câu hỏi vấn đáp mới cho batch hiện tại dựa trên nội dung tài liệu bên dưới.
+Đây chỉ là một batch nhỏ trong quá trình tạo ngân hàng câu hỏi, không cần bao phủ toàn bộ tài liệu trong một lần.
 
-        Yêu cầu số lượng bắt buộc:
-- EASY: {remaining_counts['EASY']}
-- MEDIUM: {remaining_counts['MEDIUM']}
-- HARD: {remaining_counts['HARD']}
+Số lượng AI cần tạo:
+- EASY: {request_counts['EASY']}
+- MEDIUM: {request_counts['MEDIUM']}
+- HARD: {request_counts['HARD']}
 
-        Yêu cầu chất lượng:
-        - Câu hỏi phải bám sát tài liệu
-- Câu hỏi ngắn gọn, rõ ràng, có chiều sâu
-- Không lặp lại nội dung giữa các câu
-- Tổng số phần tử trong mảng questions phải đúng bằng {remaining_total}
-- Không được trả về câu hỏi thừa so với từng mức độ yêu cầu{excluded_block}
+Sau khi AI trả về, backend sẽ lọc trùng và chỉ chọn đúng số câu cần cho batch này:
+- EASY: {target_counts['EASY']}
+- MEDIUM: {target_counts['MEDIUM']}
+- HARD: {target_counts['HARD']}
+
+Yêu cầu chất lượng:
+- Câu hỏi phải bám sát tài liệu.
+- Câu hỏi ngắn gọn, rõ ràng, có chiều sâu.
+- Không lặp lại nội dung giữa các câu.
+- Không được tạo câu hỏi trùng hoặc gần trùng với danh sách loại trừ.
+- Có thể tạo dư số lượng, nhưng mọi câu hỏi đều phải đúng nội dung tài liệu.
+{excluded_block}
 
 TÀI LIỆU:
 {context_text}
 """
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.2,
-            response_format={"type": "json_object"},
+    started_at = perf_counter()
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
+
+    latency_ms = int((perf_counter() - started_at) * 1000)
+
+    if usage_group_id:
+        record_ai_usage(
+            group_id=usage_group_id,
+            feature=usage_feature,
+            step_name=usage_step_name or f"batch_{batch_index + 1}",
+            model_name="gpt-4o-mini",
+            usage=response.usage,
+            user=user,
+            subject=subject,
+            latency_ms=latency_ms,
+            metadata={
+                "batch_index": batch_index,
+                "target_total": total_count,
+                "ai_request_total": request_total,
+                "target_counts": target_counts,
+                "request_counts": request_counts,
+                "material_ids": [str(item.id) for item in materials],
+                "max_chars_per_file": generation_profile.get("max_chars_per_file") if generation_profile else None,
+                "max_total_chars": generation_profile.get("max_total_chars") if generation_profile else None,
+            },
         )
 
-        raw = response.choices[0].message.content or "{}"
-        data = json.loads(raw)
-        questions = data.get("questions", [])
-        if not isinstance(questions, list):
-            questions = []
+    raw = response.choices[0].message.content or "{}"
+    data = json.loads(raw)
+    questions = data.get("questions", [])
 
-        normalized_questions = _normalize_ai_generated_questions(
-            questions,
-            excluded_question_keys=excluded_question_keys | collected_question_keys,
-        )
+    if not isinstance(questions, list):
+        questions = []
 
-        for item in normalized_questions:
-            difficulty = item["difficulty"]
-            if remaining_counts.get(difficulty, 0) <= 0:
-                continue
-            collected_questions.append(item)
-            collected_question_keys.add(normalize_question_text(item["content"]))
-            remaining_counts[difficulty] -= 1
+    normalized_questions = _normalize_ai_generated_questions(
+        questions,
+        excluded_question_keys=excluded_question_keys,
+    )
 
-    remaining_counts = _remaining_question_counts(target_counts, collected_questions)
+    collected_questions = []
+    collected_question_keys = set()
+    remaining_counts = dict(target_counts)
+
+    for item in normalized_questions:
+        content_key = normalize_question_text(item["content"])
+        if not content_key or content_key in collected_question_keys:
+            continue
+
+        difficulty = item.get("difficulty")
+        if difficulty not in remaining_counts:
+            continue
+
+        if remaining_counts[difficulty] <= 0:
+            continue
+
+        collected_questions.append(item)
+        collected_question_keys.add(content_key)
+        remaining_counts[difficulty] -= 1
+
     shortage, shortage_text = _build_question_shortage(remaining_counts)
 
     return {
@@ -2494,5 +2876,3 @@ TÀI LIỆU:
         "shortage": shortage,
         "shortage_text": shortage_text,
     }
-
-

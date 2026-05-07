@@ -884,8 +884,7 @@ def exam_grading_status_view(request: HttpRequest, session_id: int, question_id:
                 "error_message": "",
                 "updated_at": "",
             },
-        },
-        status=404,
+        }
     )
 
 

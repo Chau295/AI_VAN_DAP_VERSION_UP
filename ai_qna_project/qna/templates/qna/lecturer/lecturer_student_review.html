@@ -37,19 +37,7 @@
   .subject-filter-label { font-size: 1rem; font-weight: 700; color: #0f172a; min-width: 144px; }
   .subject-filter-control { height: 50px; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; color: var(--review-text); padding: 0 18px; font-size: 1rem;}
   .subject-filter-control { flex: 1 1 420px; }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
-  .stat-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 98px; padding: 18px 22px; background: var(--review-card); border-radius: 18px; box-shadow: 0 12px 28px rgba(148, 163, 184, 0.16); overflow: hidden; }
-  .stat-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: 999px; }
-  .stat-card-average::before { background: #3b82f6; }
-  .stat-card-complete::before { background: #22c55e; }
-  .stat-card-absent::before { background: #f97316; }
-  .stat-meta { display: flex; flex-direction: column; gap: 4px; }
-  .stat-label { color: #6b7280; font-size: 0.95rem; }
-  .stat-value { color: #1f2937; font-size: 2rem; font-weight: 700; line-height: 1; }
-  .stat-icon { width: 42px; height: 42px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; }
-  .stat-card-average .stat-icon { background: var(--review-blue-soft); color: var(--review-blue); }
-  .stat-card-complete .stat-icon { background: var(--review-green-soft); color: var(--review-green); }
-  .stat-card-absent .stat-icon { background: var(--review-red-soft); color: var(--review-red); }
+
   .list-title { margin: 8px 0 0; color: #0f2b57; font-size: 1.95rem; font-weight: 800; }
   .table-panel { padding: 18px 18px 0; }
   .table-filters {
@@ -225,7 +213,6 @@
   }
 
   @media (max-width: 991px) {
-    .stats-grid { grid-template-columns: 1fr; }
     .student-review-title { font-size: 1.8rem; }
   }
 
@@ -264,30 +251,6 @@
     </form>
 
     {% if selected_subject %}
-      <div class="stats-grid">
-        <div class="stat-card stat-card-average">
-          <div class="stat-meta">
-            <span class="stat-label">Điểm trung bình</span>
-            <span class="stat-value">{{ average_score|floatformat:1 }}</span>
-          </div>
-          <span class="stat-icon"><i class="fas fa-clipboard-list"></i></span>
-        </div>
-        <div class="stat-card stat-card-complete">
-          <div class="stat-meta">
-            <span class="stat-label">Đã hoàn thành</span>
-            <span class="stat-value">{{ completed_count }}</span>
-          </div>
-          <span class="stat-icon"><i class="fas fa-check"></i></span>
-        </div>
-        <div class="stat-card stat-card-absent">
-          <div class="stat-meta">
-            <span class="stat-label">Vắng thi</span>
-            <span class="stat-value">{{ absent_count }}</span>
-          </div>
-          <span class="stat-icon"><i class="fas fa-times"></i></span>
-        </div>
-      </div>
-
       <h2 class="list-title">Danh sách Bài làm</h2>
 
       <div class="student-review-panel table-panel">

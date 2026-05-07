@@ -830,7 +830,7 @@
                         {% if student.linked_user %}Tài khoản liên kết: {{ student.linked_user.username }}{% else %}Đã có tài khoản từ trước{% endif %}
                       </div>
                     {% elif student.account_status == 'CREATED' %}
-                      <span class="qm2-pill qm2-pill-created">Mới tạo tài khoản</span>
+                      <span class="qm2-pill qm2-pill-created">Đã tài khoản</span>
                       <div class="qm2-status-meta-inline">Đăng nhập bằng MSSV và mật khẩu vừa cấp</div>
                     {% else %}
                       <span class="qm2-pill qm2-pill-pending">Chưa có tài khoản</span>
