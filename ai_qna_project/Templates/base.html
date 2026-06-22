@@ -354,17 +354,7 @@
             <div class="px-4 py-3 border-b border-blue-700">
                 <div class="flex items-center">
                     <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg overflow-hidden">
-                        {% if user.is_authenticated and user.userprofile.profile_image_blob %}
-                            <img
-                                id="navbar-avatar"
-                                src="{% url 'qna:profile' %}"
-                                alt="Avatar"
-                                class="w-full h-full object-cover hidden"
-                            >
-                            <span id="navbar-avatar-fallback">{{ user.username|slice:":1"|upper }}</span>
-                        {% else %}
-                            <span id="navbar-avatar-fallback">{{ user.username|slice:":1"|upper }}</span>
-                        {% endif %}
+                        <span id="navbar-avatar-fallback">{{ user.username|slice:":1"|upper }}</span>
                     </div>
                     <div class="ml-3 min-w-0">
                         <p class="text-white font-semibold truncate">

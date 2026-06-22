@@ -310,8 +310,12 @@ def _serialize_exam_set_for_session(exam_set):
     ]
     return {
         "id": exam_set.pk, # Changed to pk
-        "set_code": f"BD-{exam_set.pk:04d}",
-        "name": getattr(exam_set, "display_name", exam_set.name),
+        "set_code": (
+            getattr(exam_set, "exam_code", "")
+            or getattr(exam_set, "set_code", "")
+            or getattr(exam_set, "code", "")
+        ),
+        "name": exam_set.name,
         "academic_year": exam_set.academic_year,
         "semester": exam_set.semester,
         "semester_label": getattr(exam_set, "get_semester_display", lambda: exam_set.semester)(),
@@ -714,7 +718,7 @@ def _normalize_session_configuration(request, payload, exam_group=None):
                 "student_count": student_count,
                 "password": room_password,
                 "exam_set_id": exam_set.pk if exam_set else None,
-                "exam_set_name": getattr(exam_set, "display_name", exam_set.name) if exam_set else "",
+                "exam_set_name": exam_set.name if exam_set else "",
                 "exam_code_ids": [code.pk for code in valid_codes],
                 "exam_code_names": [code.code_name for code in valid_codes],
                 "assignments": normalized_assignments,

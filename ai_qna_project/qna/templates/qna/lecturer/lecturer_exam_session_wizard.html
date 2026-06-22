@@ -1450,23 +1450,20 @@
       return "";
     }
 
-    if (examSet.exam_set_code) {
-      return String(examSet.exam_set_code).trim();
-    }
-
-    if (examSet.code) {
-      return String(examSet.code).trim();
-    }
-
-    if (examSet.exam_code) {
-      return String(examSet.exam_code).trim();
-    }
-
-    return `BD-${String(examSet.id).padStart(4, "0")}`;
+    return String(
+      examSet.set_code ||
+      examSet.exam_set_code ||
+      examSet.code ||
+      examSet.exam_code ||
+      ""
+    ).trim();
   }
 
   function getExamSetOptionLabel(examSet) {
-    return `${getExamSetDisplayCode(examSet)} - ${examSet.name || "Bộ đề chưa đặt tên"}`;
+    const code = getExamSetDisplayCode(examSet);
+    const name = examSet.name || "Bộ đề chưa đặt tên";
+
+    return code ? `${code} - ${name}` : name;
   }
 
   function renderExamPickerSets() {

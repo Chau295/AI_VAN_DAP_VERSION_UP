@@ -37,17 +37,17 @@ from .models import (
 # ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
-
+'''kiểm tra user hiện tại có phải giảng viên không.'''
 def _ensure_lecturer(request):
     profile = getattr(request.user, "userprofile", None)
     if not profile or not profile.is_lecturer:
         raise PermissionDenied("Không có quyền truy cập.")
 
-
+'''lấy danh sách môn học mà giảng viên đang dạy.'''
 def _lecturer_subjects(request):
     return request.user.userprofile.subjects_taught.all().order_by("name")
 
-
+'''KIỂM TRA MÔN HỌC CÓ ĐANG CÓ CA THI HAY KHÔNG'''
 def _subject_has_ongoing_exam_group(subject: Subject) -> bool:
     return subject_has_active_exam_group(subject, now=timezone.now())
 
@@ -57,6 +57,8 @@ def _locked_subject_mutation_response():
         {"status": "FAIL", "message": "Không thể chỉnh sửa khi ca thi đang diễn ra."},
         status=403,
     )
+
+'''KIỂM TRA MỘT MÃ ĐỀ CÓ ĐANG ĐƯỢC DÙNG TRONG CA THI HAY KHÔNG'''
 def _exam_code_has_ongoing_session(code: ExamCode | None) -> bool:
     """
     Chỉ khóa mã đề nếu chính mã đề đó đang được gán vào ca thi ĐANG DIỄN RA.
@@ -66,9 +68,11 @@ def _exam_code_has_ongoing_session(code: ExamCode | None) -> bool:
     """
     if code is None or not getattr(code, "pk", None):
         return False
-
+    #Mã đề có thể được gán vào nhiều phòng thi.
     for room in code.session_rooms.select_related("exam_session_group_id").all():
+        #Lấy ca thi của phòng đó
         group = room.exam_session_group_id
+        #Nếu ca thi đang diễ ra thì khóa mã đề
         if getattr(group, "computed_status", None) == "ONGOING":
             return True
 
@@ -114,7 +118,7 @@ def _validate_exam_set_total_score(exam_set: ExamSet) -> None:
     if abs(float(total) - 10.0) > 0.001:
         raise ValueError("Tổng điểm bộ đề phải bằng 10.")
 
-
+#Lưu message dùng chung giữa backend và frontend.
 EXAM_SET_SUCCESS_MESSAGE = "Tạo bộ đề thành công."
 EXAM_SET_TOTAL_OVER_MESSAGE = "Tổng điểm hiện tại đang vượt quá 10 điểm."
 EXAM_SET_TOTAL_UNDER_MESSAGE = "Tổng điểm hiện tại chưa đủ 10 điểm."
@@ -126,30 +130,34 @@ EXAM_SET_TARGET_TOTAL_SCORE = Decimal("10")
 EXAM_QUESTION_TEXT_MAX_LENGTH = 5000
 EXAM_QUESTION_TEXT_TOO_LONG_MESSAGE = "Nội dung câu hỏi không được vượt quá 5000 ký tự."
 
-
+#Chuyển dữ liệu từ requesst sang số nguyên
 def _parse_int_field(raw_value, field_label: str) -> int:
     try:
         return int(raw_value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field_label} không hợp lệ.") from exc
 
-
+#Chuyển điểm sang Decimal
 def _parse_decimal_field(raw_value, field_label: str) -> Decimal:
     try:
         return Decimal(str(raw_value).strip())
     except (InvalidOperation, AttributeError, TypeError, ValueError) as exc:
         raise ValueError(f"{field_label} không hợp lệ.") from exc
 
-
+#Kiểm tra nội dung câu hỏi
 def _validate_exam_question_text(content: str) -> str:
+    #Lấy content, strip khoảng trắng, nếu rỗng hiển thị lỗi
     normalized_content = (content or "").strip()
     if not normalized_content:
         raise ValueError("Vui lòng nhập đầy đủ nội dung câu hỏi.")
+    #nếu vượt quá giới hạn ký tự thông báo lỗi
     if len(normalized_content) > EXAM_QUESTION_TEXT_MAX_LENGTH:
         raise ValueError(EXAM_QUESTION_TEXT_TOO_LONG_MESSAGE)
     return normalized_content
 
+#Validate tên/mã đề
 def _normalize_exam_code_name(raw_value: str) -> str:
+    #nhận tên mã đề, strip khoảng trắng
     code_name = (raw_value or "").strip()
     if not code_name:
         raise ValueError("Vui lòng nhập mã đề.")
@@ -176,7 +184,7 @@ def _exam_set_display_code(exam_set: ExamSet) -> str:
     if manual_code:
         return manual_code
     return f"BD-{exam_set.exam_set_id:04d}"
-
+#Validate rule khi tạo bộ đề.
 def _validate_exam_set_creation_rules(
         *,
         number_of_versions: int,
@@ -204,13 +212,13 @@ def _validate_exam_set_creation_rules(
         (medium_count, medium_score),
         (hard_count, hard_score),
     )
-
+    # điểm âm --> lỗi
     if any(score < 0 for _, score in score_pairs):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
-
+    # có câu nhưng điểm <=0 --> lỗi
     if any(count > 0 and score <= 0 for count, score in score_pairs):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
-
+    #quy tắc tính tổng điểm
     total_score = (
         Decimal(easy_count) * easy_score
         + Decimal(medium_count) * medium_score
@@ -218,16 +226,18 @@ def _validate_exam_set_creation_rules(
     )
 
     return total_score
-
+#Kiểm tra mã đề sau khi build câu hỏi có hợp lệ không
 def _validate_exam_code_items(items: Sequence[ExamCodeQuestion]) -> None:
+    #không được rỗng
     if not items:
         raise ValueError(EXAM_SET_NO_QUESTIONS_MESSAGE)
-
+    #Không có câu nào <0 điểm
     if any(Decimal(str(item.score or 0)) <= 0 for item in items):
         raise ValueError(EXAM_SET_INVALID_QUESTION_SCORE_MESSAGE)
 
-
+'''KIỂM TRA CÂU HỎI ĐÃ TỒN TẠI TRONG MÔN CHƯA'''
 def _question_exists_in_subject(subject: Subject, question_text: str, exclude_question_id: int | None = None) -> bool:
+    #Chuẩn hóa câu hỏi để chống trùng do khác hoa/thường/khoảng trắng.
     normalized = normalize_question_text(question_text)
     queryset = Question.objects.filter(
         subject_id=subject,
@@ -238,7 +248,7 @@ def _question_exists_in_subject(subject: Subject, question_text: str, exclude_qu
         queryset = queryset.exclude(pk=exclude_question_id)
     return queryset.exists()
 
-
+'''CLONE CÂU HỎI TỪ NGÂN HÀNG VỀ ĐỀ THI'''
 def _clone_question_for_exam(source_question: Question) -> Question:
     return Question.objects.create(
         subject_id=source_question.subject_id,
@@ -253,7 +263,7 @@ def _delete_exam_clone(question: Question | None) -> None:
     if question and question.is_exam_clone:
         question.delete()
 
-
+#Chuyển trạng thái bộ đề về chưa duyệt khi thay đổi nội dung mã đề
 def _mark_exam_set_draft(exam_set: ExamSet | None) -> None:
     if exam_set and exam_set.status != ExamSetStatus.DRAFT:
         exam_set.status = ExamSetStatus.DRAFT
@@ -277,7 +287,7 @@ def _sync_exam_set_status_from_codes(exam_set: ExamSet | None) -> None:
         exam_set.save(update_fields=["status", "updated_at"])
 
 
-
+#Map độ khó sang label hiển thị và slug CSS
 def _difficulty_meta():
     return {
         DifficultyLevel.EASY: {"label": "Dễ", "slug": "easy"},
@@ -285,7 +295,7 @@ def _difficulty_meta():
         DifficultyLevel.HARD: {"label": "Khó", "slug": "hard"},
     }
 
-
+#lấy điểm theo độ khó
 def _score_for_difficulty(exam_set: ExamSet, difficulty: str) -> Decimal:
     if difficulty == DifficultyLevel.EASY:
         return exam_set.easy_score
@@ -293,7 +303,7 @@ def _score_for_difficulty(exam_set: ExamSet, difficulty: str) -> Decimal:
         return exam_set.medium_score
     return exam_set.hard_score
 
-
+#Lấy số câu cần có cho từng độ khó
 def _required_counts(exam_set: ExamSet) -> Dict[str, int]:
     return {
         DifficultyLevel.EASY: exam_set.easy_pool_size,
@@ -306,12 +316,14 @@ def _next_exam_code_number(exam_set: ExamSet) -> int:
     latest_code = exam_set.exam_codes.order_by("-code_number", "-pk").first()
     return (latest_code.code_number if latest_code else 100) + 1
 
-
+#kiểm tra mã đề có đủ điều kiện duyệt hay không
 def _approval_error_for_code(code: ExamCode) -> str | None:
+    # Lấy các ExamCodeQuestion
     items = list(code.exam_code_questions.select_related("question_id").all())
+    #Không có câu hỏi --> lỗi
     if not items:
         return "Mã đề chưa có câu hỏi."
-
+    #Thiếu nội dung câu hỏi ---> lỗi
     for item in items:
         if item.question_id is None or not (item.question_id.question_text or "").strip():
             return "Vui lòng nhập đầy đủ nội dung câu hỏi trước khi duyệt."
@@ -351,7 +363,7 @@ SESSION_STATUS_UI_CHOICES = (
     ("COMPLETED", "Đã kết thúc"),
 )
 
-
+#Chuẩn hóa trạng thái
 def _normalize_session_status_for_ui(raw_status: str | None) -> str:
     if raw_status == "ONGOING":
         return "ONGOING"
@@ -359,13 +371,13 @@ def _normalize_session_status_for_ui(raw_status: str | None) -> str:
         return "COMPLETED"
     return "SCHEDULED"
 
-
+#Đổi mã trạng thái sang tiếng Việt
 def _session_status_ui_label(status_code: str) -> str:
     """Dùng riêng cho UI CA THI."""
     labels = dict(SESSION_STATUS_UI_CHOICES)
     return labels.get(status_code, labels["SCHEDULED"])
 
-
+#Tính trạng thái ca thi liên quan đến bộ đề
 def _exam_set_ui_status(exam_set: ExamSet) -> str:
     """Dùng nội bộ cho logic ca thi – KHÔNG dùng để render UI bộ đề."""
     raw_statuses = []
@@ -409,7 +421,7 @@ def _exam_set_approval_label(exam_set: ExamSet) -> str:
     labels = dict(EXAM_SET_UI_STATUS_CHOICES)
     return labels.get(_exam_set_approval_status(exam_set), "Chưa duyệt")
 
-
+#Lấy danh sách câu hỏi trong mã đề  theo thứ tự hiển thị
 def _ordered_items(code: ExamCode):
     meta = _difficulty_meta()
     items = []
@@ -430,11 +442,14 @@ def _ordered_items(code: ExamCode):
         )
     return items
 
-
+#convert ExamCode thành JSON/dict để FE dùng
 def _serialize_exam_code(code: ExamCode) -> dict:
+    #Lấy items bằng _ordered_items()
     items = _ordered_items(code)
+    #kiểm tra có đang dùng không
     is_currently_used = _exam_code_is_currently_used(code)
 
+    #built dict
     return {
         "id": code.pk,
         "code_name": code.code_name,
@@ -501,7 +516,7 @@ def _build_question_pools(
 
     return pools
 
-
+#Tính tối đa có thể tạo bao nhiêu mã đề nếu không cho lặp câu
 def _calculate_max_versions(
         pools: dict,
         easy_count: int,
@@ -521,7 +536,7 @@ def _calculate_max_versions(
         limits.append(len(pools[DifficultyLevel.HARD]) // hard_count)
     return min(limits) if limits else 0
 
-
+#Sinh bản thiết kế câu hỏi cho từng mã đề
 def _generate_version_blueprints(
         pools: dict,
         versions: int,
@@ -536,7 +551,7 @@ def _generate_version_blueprints(
         DifficultyLevel.MEDIUM: medium_count,
         DifficultyLevel.HARD: hard_count,
     }
-
+    #Sau đó _build_exam_code_items() dùng blueprint này để tạo mã đề thật.
     if allow_duplicates:
         for _ in range(versions):
             selected = {}
@@ -545,7 +560,7 @@ def _generate_version_blueprints(
                 selected[difficulty] = random.sample(pool, needed)
             result.append(selected)
         return result
-
+    #Tính max_versions nếu yêu cầu lớn hơn max_versions --> lỗi
     max_versions = _calculate_max_versions(
         pools=pools,
         easy_count=easy_count,
@@ -575,24 +590,26 @@ def _generate_version_blueprints(
 
     return result
 
-
+#Tạo danh sách ExamCodeQuestion cho một mã đề
 def _build_exam_code_items(
         exam_code: ExamCode,
+        #nhận blueprint của một mã đề
         selected_questions_by_difficulty: dict,
 ):
     items = []
     display_order = 1
-
+    #duyệt độ khó
     difficulty_sequence = [
         DifficultyLevel.EASY,
         DifficultyLevel.MEDIUM,
         DifficultyLevel.HARD,
     ]
-
+    #clone từng câu hỏi gốc
     flat_rows = []
     for difficulty in difficulty_sequence:
         for source_question in selected_questions_by_difficulty.get(difficulty, []):
             clone = _clone_question_for_exam(source_question)
+            #Tính điểm theo độ khó
             flat_rows.append(
                 {
                     "question": clone,
@@ -602,7 +619,7 @@ def _build_exam_code_items(
                 }
             )
             display_order += 1
-
+    #Tạo ExamCodeQuesstion object
     for index, row in enumerate(flat_rows, start=1):
         items.append(
             ExamCodeQuestion(
@@ -613,26 +630,28 @@ def _build_exam_code_items(
                 score=row["score"],
             )
         )
-
+        #trả về list object, chưa lưu DB
     return items
 
-
+#thay toàn bộ câu hỏi trong mã đề bằng bộ câu hỏi mới
 def _replace_exam_code_items(code: ExamCode, new_blueprint: dict):
+    #Lưu old_items
     old_items = list(code.exam_code_questions.select_related("question_id").all())
-
+    #xóa ExamCodeQuestion cũ
     code.exam_code_questions.all().delete()
-
+    #build items mới
     new_items = _build_exam_code_items(
         exam_code=code,
         selected_questions_by_difficulty=new_blueprint,
     )
+    #bulk_create items mới
     ExamCodeQuestion.objects.bulk_create(new_items)
-
+    #xóa các question clone cũ đi
     for old_item in old_items:
         _delete_exam_clone(old_item.question_id)
-
     code.is_approved = False
     code.save(update_fields=["is_approved", "updated_at"])
+    #sync lại trạng thái ExamSet
     _sync_exam_set_status_from_codes(code.exam_set_id)
 
 
@@ -801,9 +820,9 @@ LIST_PAGE_SIZE = 8
 
 @login_required
 @require_GET
+#Trả danh sách bộ đề
 def lecturer_exam_codes_screen(request):
     _ensure_lecturer(request)
-
     subjects = list(_lecturer_subjects(request))
     subject_id = (request.GET.get("subject_id") or "").strip()
     academic_year = (request.GET.get("academic_year") or "").strip()
@@ -898,7 +917,7 @@ def lecturer_exam_codes_screen(request):
         "paginator": paginator,
     }
     return render(request, "qna/lecturer/lecturer_exam_codes_management.html", context)
-
+#Dùng để mở màn tạo mã đề
 @login_required
 @require_GET
 def lecturer_generate_codes_screen(request):
@@ -910,7 +929,6 @@ def lecturer_generate_codes_screen(request):
     selected_subject = None
     if selected_subject_id:
         selected_subject = get_object_or_404(subjects_qs, pk=selected_subject_id)
-    # BUG_035: không auto-select môn đầu tiên khi không có subject_id trong URL
 
     question_banks = []
     if selected_subject:
@@ -964,7 +982,7 @@ def lecturer_generate_codes_screen(request):
 
     return response
 
-
+#Hiển thị chi tiết bộ đề
 @login_required
 @require_GET
 def lecturer_exam_set_detail_screen(request, exam_set_id):
@@ -983,7 +1001,6 @@ def lecturer_exam_set_detail_screen(request, exam_set_id):
 
     context = {
         "exam_set": exam_set,
-        # exam_set_approval_status: APPROVED hoặc UNAPPROVED – chỉ dùng cho UI bộ đề
         "exam_set_approval_status": approval_status,
         "exam_set_approval_label": approval_label,
         "exam_set_code": _exam_set_display_code(exam_set),

@@ -128,17 +128,20 @@ def _attach_review_status_meta(session: ExamSession) -> None:
 @login_required
 @lecturer_required
 def lecturer_dashboard(request):
+    '''Lấy danh sách môn giảng viên dạy'''
     subjects = request.user.userprofile.subjects_taught.annotate(
+        #đếm số ca thi đã tạo theo từng môn
         created_exam_count=Count("exam_session_groups", distinct=True),
+        #Đếm số sinh viên tham gia theo từng môn
         participating_student_count=Count(
             "student_roster_uploads__students__student_code",
             distinct=True,
         ),
-    ).order_by("name")
-
+    ).order_by("name")#sắp xếp theo tên
+    #Lấy subject_id đang chọn nếu có
     selected_subject_id = (request.GET.get("subject_id") or "").strip()
     recent_page_number = request.GET.get("recent_page")
-
+    #Đếm tổng số môn
     total_subjects = subjects.count()
     total_sessions = ExamSession.objects.filter(subject_id__in=subjects).count()
 
@@ -179,20 +182,24 @@ def lecturer_subject_list(request):
 @login_required
 @lecturer_required
 def lecturer_subject_workspace(request, subject_code):
+    '''Lấy môn học theo subject_code, nhưng chỉ nếu giảng viên có quyền dạy môn đó.'''
     subject = get_lecturer_subject_or_404(
         request.user,
         subject_code=subject_code,
     )
 
     upcoming_page_number = request.GET.get("upcoming_page")
-
+    #Lấy các ExamSession thuộc môn
     sessions_in_subject = ExamSession.objects.filter(subject_id=subject)
+    #Đếm tổng số bài thi/session
     total_exams = sessions_in_subject.count()
+    #Đếm tổng số bài thi đã hoàn thành
     completed_exams = sessions_in_subject.filter(session_status="COMPLETED").count()
+    #đếm số sinh viên đã có phiên thi trong môn
     total_students = sessions_in_subject.values("user_id").distinct().count()
-
+    #đếm số mã đề đã duyệt
     approved_codes = ExamCode.objects.filter(subject_id=subject, is_approved=True).count()
-
+    #Lấy các ca thi sắp tới
     upcoming_groups_qs = (
         ExamSessionGroup.objects.filter(subject_id=subject, exam_date__gte=timezone.now())
         .order_by("exam_date", "pk")
